@@ -2,7 +2,7 @@
 
 Asistente inteligente para la gestión financiera del hogar y de inmuebles en arriendo, basado en hiperautomatización y agentes de inteligencia artificial con supervisión humana.
 
-> **Estado:** la arquitectura está definida, pero **ningún servicio ha sido implementado ni desplegado todavía**. Este repositorio contiene únicamente la estructura inicial del monorepositorio.
+> **Estado (Fase 2):** la arquitectura está definida y el **backend inicial** (NestJS) ya existe y se ejecuta localmente, pero por ahora solo expone un endpoint de salud. Aún no hay base de datos, n8n, frontend, integraciones externas ni despliegues.
 
 ## Descripción
 
@@ -58,7 +58,7 @@ Servicios externos previstos (se incorporarán gradualmente; aún no configurado
 ```text
 notihouse-pal/
 ├── frontend/              # Aplicación React + Vite (pendiente)
-├── backend/               # API REST NestJS (pendiente)
+├── backend/               # API REST NestJS (inicializada: endpoint de salud)
 ├── database/
 │   └── migrations/        # Migraciones SQL versionadas
 ├── n8n/
@@ -83,18 +83,32 @@ Los archivos `.gitkeep` son marcadores temporales para versionar carpetas vacía
 |---|---|
 | Estructura del monorepositorio | Creada |
 | Frontend | No iniciado |
-| Backend | No iniciado |
+| Backend | Inicializado (Fase 2): configuración de entorno, CORS, Swagger, módulos base y `GET /api/v1/health`. Sin base de datos, autenticación ni lógica de negocio. |
 | Esquema y migraciones de base de datos | No iniciado |
 | Workflows de n8n | No iniciado |
 | Infraestructura Docker | No iniciada |
 | Integraciones externas (Gmail, LLM, STT, FCM) | No iniciadas |
 | Despliegues (Vercel, Render, Neon) | No configurados |
 
+## Backend: inicio rápido
+
+```bash
+cd backend
+npm ci
+cp .env.example .env
+npm run start:dev
+```
+
+- Salud: `GET http://localhost:3000/api/v1/health`
+- Swagger (fuera de producción): <http://localhost:3000/api/docs>
+
+La guía completa está en [docs/api/backend-setup.md](docs/api/backend-setup.md).
+
 ## Requisitos técnicos previstos
 
 Las versiones exactas se fijarán al iniciar cada componente.
 
-- Node.js (versión LTS) y npm.
+- Node.js `^22.22.3`, `^24.15.0` o `>=26` (se recomienda la LTS 24.x) y npm.
 - Git.
 - Docker y Docker Compose (para ejecutar n8n localmente).
 - Acceso a una base de datos PostgreSQL (Neon u otra instancia local).
@@ -102,7 +116,7 @@ Las versiones exactas se fijarán al iniciar cada componente.
 
 ## Variables de entorno y credenciales
 
-- La plantilla [`.env.example`](.env.example) documenta las variables previstas **sin valores reales**.
+- La plantilla [`.env.example`](.env.example) documenta las variables previstas **sin valores reales**. Cada componente tiene además su propia plantilla (p. ej. [`backend/.env.example`](backend/.env.example)).
 - Para trabajar localmente, copia la plantilla como `.env` y completa los valores. El archivo `.env` está excluido del control de versiones.
 - **Nunca** subas al repositorio credenciales, claves de API, tokens OAuth, cadenas de conexión reales ni archivos de cuentas de servicio.
 - Los secretos de los entornos desplegados se configurarán directamente en cada plataforma (Vercel, Render, Neon, n8n).
