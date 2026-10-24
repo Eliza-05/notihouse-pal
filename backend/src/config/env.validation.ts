@@ -10,7 +10,15 @@ export interface EnvironmentVariables {
   FRONTEND_URL: string;
   /** Cadena de Neon con pooling. Opcional solo en `test`. */
   DATABASE_URL?: string;
+  /** Secreto HS256 de los JWT. Opcional solo en `test`. */
+  JWT_SECRET?: string;
 }
+
+/** Equivale a 32 bytes aleatorios codificados en base64url. */
+export const JWT_SECRET_MIN_LENGTH = 43;
+
+const WEAK_JWT_SECRETS =
+  /^(changeme|secret|password|jwt[_-]?secret|test|example)/i;
 
 const DEFAULTS = {
   NODE_ENV: 'development',
@@ -63,6 +71,22 @@ export function validateEnv(
     errors.push('DATABASE_URL es obligatoria fuera del entorno de pruebas');
   }
 
+  // El mensaje nunca incluye el valor del secreto.
+  const jwtSecret = readString(config, 'JWT_SECRET');
+  if (jwtSecret) {
+    if (
+      jwtSecret.length < JWT_SECRET_MIN_LENGTH ||
+      WEAK_JWT_SECRETS.test(jwtSecret) ||
+      new Set(jwtSecret).size < 16
+    ) {
+      errors.push(
+        `JWT_SECRET es insegura: usa al menos ${JWT_SECRET_MIN_LENGTH} caracteres aleatorios (32 bytes)`,
+      );
+    }
+  } else if (nodeEnv !== 'test') {
+    errors.push('JWT_SECRET es obligatoria fuera del entorno de pruebas');
+  }
+
   if (errors.length > 0) {
     throw new Error(
       `Configuración de entorno inválida:\n- ${errors.join('\n- ')}`,
@@ -74,6 +98,7 @@ export function validateEnv(
     PORT: port,
     FRONTEND_URL: frontendUrl,
     DATABASE_URL: databaseUrl,
+    JWT_SECRET: jwtSecret,
   };
 }
 

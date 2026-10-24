@@ -12,6 +12,7 @@ const byName = new Map(configs.map((c) => [c.name, c]));
 
 const EXPECTED_TABLES = [
   'audit_events',
+  'auth_accounts',
   'case_proposals',
   'cases',
   'contracts',

@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { EnvironmentVariables } from './config/env.validation.js';
@@ -15,6 +15,14 @@ export function configureApp(app: INestApplication): void {
 
   app.setGlobalPrefix(API_PREFIX);
   app.enableCors({ origin: config.get('FRONTEND_URL', { infer: true }) });
+  // Rechaza propiedades no declaradas en los DTO (p. ej. un ownerId enviado por el cliente).
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
 
   // Swagger no se expone en producción hasta contar con protección.
   if (config.get('NODE_ENV', { infer: true }) !== 'production') {
@@ -24,6 +32,7 @@ export function configureApp(app: INestApplication): void {
         .setTitle('NotiHouse-Pal API')
         .setDescription('API REST del backend de NotiHouse-Pal')
         .setVersion('0.1.0')
+        .addBearerAuth()
         .build(),
     );
     SwaggerModule.setup(SWAGGER_PATH, app, document);

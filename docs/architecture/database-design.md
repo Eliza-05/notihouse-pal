@@ -2,7 +2,7 @@
 
 Modelo relacional de NotiHouse-Pal en PostgreSQL (Neon), implementado con Drizzle ORM en la Fase 3.
 
-> **Alcance actual:** el esquema existe y está migrado en Neon, y el backend puede conectarse. **No** existen todavía endpoints CRUD, autenticación, workflows de n8n ni procesos HITL funcionales: el modelo los prepara, pero no los implementa.
+> **Alcance actual:** el esquema está migrado en Neon (migraciones `0000` y `0001`) y contiene los cuatro usuarios de demostración con datos ficticios. La autenticación está implementada (ver [authentication.md](authentication.md)). **No** existen todavía endpoints CRUD de negocio, workflows de n8n ni procesos HITL funcionales: el modelo los prepara, pero no los implementa.
 
 - Definición del esquema: [`backend/src/database/schema/`](../../backend/src/database/schema/)
 - Migraciones: [`database/migrations/`](../../database/migrations/)
@@ -12,6 +12,7 @@ Modelo relacional de NotiHouse-Pal en PostgreSQL (Neon), implementado con Drizzl
 
 ```mermaid
 erDiagram
+    profiles ||--o| auth_accounts : "credenciales locales"
     profiles ||--o{ properties : posee
     profiles ||--o{ obligations : posee
     properties |o--o{ obligations : "se asocia (opcional)"
@@ -32,13 +33,14 @@ erDiagram
     profiles |o--o{ audit_events : ""
 ```
 
-Hay 15 tablas, 20 tipos enumerados, 29 claves foráneas, 18 restricciones `UNIQUE`, 34 restricciones `CHECK` y 63 índices (incluidos los de PK y `UNIQUE`). Todas las tablas viven en el esquema `public`. Drizzle registra el historial de migraciones en `drizzle.__drizzle_migrations`.
+Hay 16 tablas, 20 tipos enumerados, 30 claves foráneas, 20 restricciones `UNIQUE`, 37 restricciones `CHECK` y 66 índices (incluidos los de PK y `UNIQUE`). Todas las tablas viven en el esquema `public`. Drizzle registra el historial de migraciones en `drizzle.__drizzle_migrations`.
 
 ## 2. Tablas y responsabilidades
 
 | Tabla | Responsabilidad |
 |---|---|
-| `profiles` | Propietario de la información. `external_auth_id` queda reservado para el proveedor de identidad futuro. |
+| `profiles` | Propietario de la información. Su `id` es el `sub` de los JWT. `external_auth_id` queda reservado para un proveedor de identidad externo futuro; no se usa. |
+| `auth_accounts` | Credenciales locales (Fase 4.1): correo normalizado y único, hash Argon2id, `is_active` y `password_changed_at`. Una cuenta por perfil. Ver [authentication.md](authentication.md). |
 | `properties` | Inmuebles de un propietario. El nombre es único por propietario. |
 | `providers` | Catálogo **global** de proveedores (energía, agua, gas…), identificados por un `slug` único. |
 | `provider_payment_links` | Enlaces oficiales de pago por proveedor. Solo se presentan los `validated`. |
@@ -84,7 +86,7 @@ Todas las tablas de negocio llevan `owner_id NOT NULL`. Para evitar relacionar d
 
 Cuando la referencia opcional es `NULL`, PostgreSQL no evalúa la FK compuesta (`MATCH SIMPLE`), que es el comportamiento deseado.
 
-El filtrado por usuario autenticado en cada consulta será responsabilidad de la API cuando exista autenticación. Para entonces se evaluará añadir Row-Level Security.
+El filtrado por usuario autenticado en cada consulta es responsabilidad de la API: el `owner_id` se toma siempre del JWT (`@CurrentUser()`), nunca del cliente. Los endpoints de negocio que aplicarán este filtro llegan en la Fase 4.2. Row-Level Security queda como defensa adicional a evaluar antes del despliegue público.
 
 ## 4. Restricciones de integridad
 
@@ -199,6 +201,7 @@ Antes de aplicar cualquier migración en Neon:
 | Migración | Fecha de aplicación | Contenido | Resultado |
 |---|---|---|---|
 | `0000_initial_schema` | 2026-10-24 | 20 `CREATE TYPE`, 15 `CREATE TABLE`, 29 FKs, 30 `CREATE INDEX`, función y 2 triggers de auditoría | Aplicada. 0 operaciones destructivas. Hash registrado igual al SHA-256 del archivo. |
+| `0001_auth_accounts` | 2026-10-24 | 1 `CREATE TABLE` (`auth_accounts`, con 2 `UNIQUE` y 3 `CHECK`), 1 FK a `profiles` | Aplicada. 0 operaciones destructivas. `0000` y su snapshot sin cambios. |
 
 ## 12. Precauciones por usar una sola rama `production`
 
@@ -207,6 +210,6 @@ Durante la etapa académica, la rama `production` de Neon es también el **únic
 - Toda migración aplicada afecta directamente a la única base de datos. Revísala siguiendo la sección 11 y aplícala de forma deliberada. **Nunca** se ejecuta al iniciar la API.
 - Están prohibidas sin autorización explícita las operaciones destructivas: `DROP TABLE/COLUMN`, `TRUNCATE`, `DELETE` masivo, cambios de tipo con pérdida de datos, recrear tablas, `drizzle-kit push`, `--force`, borrar la base de datos o recrear la rama.
 - Las pruebas automáticas **no escriben en Neon**: las de integridad usan PGlite en memoria y `db:check` abre sesiones `default_transaction_read_only`.
-- No se cargan datos personales reales ni ficticios automáticamente (no hay *seeds*).
+- No se cargan datos personales reales. El único seed es `npm run db:seed:demo` (cuatro usuarios ficticios): se ejecuta de forma explícita, solo en desarrollo local, verifica la base antes de escribir y es idempotente (ver [authentication.md](authentication.md)).
 - Antes de un cambio de riesgo, crea un punto de restauración o una rama temporal de Neon. Requiere autorización: en esta etapa se decidió no crear ramas adicionales.
 - Cuando el proyecto tenga usuarios reales, conviene separar los entornos (rama `development` en Neon o una instancia local).

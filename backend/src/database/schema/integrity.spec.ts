@@ -107,7 +107,8 @@ describe('database integrity (PGlite, migraciones versionadas)', () => {
     const tables = await run(
       `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public'`,
     );
-    expect(tables[0]!.n).toBe(15);
+    // 15 tablas de la migración inicial + auth_accounts (0001).
+    expect(tables[0]!.n).toBe(16);
     const triggers = await run(
       `SELECT tgname FROM pg_trigger WHERE tgrelid = 'audit_events'::regclass AND NOT tgisinternal ORDER BY 1`,
     );

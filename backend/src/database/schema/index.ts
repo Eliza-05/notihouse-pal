@@ -1,5 +1,6 @@
 export * from './enums.js';
 export * from './profiles.js';
+export * from './auth-accounts.js';
 export * from './providers.js';
 export * from './properties.js';
 export * from './obligations.js';

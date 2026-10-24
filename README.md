@@ -2,7 +2,7 @@
 
 Asistente inteligente para la gestión financiera del hogar y de inmuebles en arriendo, basado en hiperautomatización y agentes de inteligencia artificial con supervisión humana.
 
-> **Estado (Fase 3):** el **backend** (NestJS) se ejecuta localmente y ya está conectado a **Neon PostgreSQL** mediante Drizzle ORM: el esquema relacional y la migración inicial están aplicados. Por ahora la API solo expone un endpoint de salud. Aún no hay endpoints CRUD, autenticación, n8n, frontend, integraciones externas ni despliegues.
+> **Estado (Fase 4.1):** el **backend** (NestJS) está conectado a **Neon PostgreSQL** mediante Drizzle ORM y tiene **autenticación privada**: inicio de sesión con correo y contraseña, JWT de 30 minutos y rutas privadas por defecto. Hay cuatro usuarios de demostración con datos ficticios. No hay registro público. Aún no hay endpoints CRUD de negocio, n8n, frontend, integraciones externas ni despliegues.
 
 ## Descripción
 
@@ -83,8 +83,8 @@ Los archivos `.gitkeep` son marcadores temporales para versionar carpetas vacía
 |---|---|
 | Estructura del monorepositorio | Creada |
 | Frontend | No iniciado |
-| Backend | Inicializado (Fase 2): configuración de entorno, CORS, Swagger, módulos base y `GET /api/v1/health`. Módulo de base de datos con Drizzle (Fase 3). Sin autenticación, CRUD ni lógica de negocio. |
-| Esquema y migraciones de base de datos | Fase 3: 15 tablas, migración inicial `0000_initial_schema` aplicada en Neon (rama `production`, base `neondb`), sin datos |
+| Backend | Configuración de entorno, CORS, Swagger y `GET /api/v1/health` (Fase 2). Módulo de base de datos con Drizzle (Fase 3). Autenticación: `POST /auth/login`, `GET /auth/me`, guard global JWT y seed de usuarios demo (Fase 4.1). Sin CRUD ni lógica de negocio. |
+| Esquema y migraciones de base de datos | 16 tablas; migraciones `0000_initial_schema` (Fase 3) y `0001_auth_accounts` (Fase 4.1) aplicadas en Neon (rama `production`, base `neondb`), con los cuatro usuarios demo y sus datos ficticios |
 | Workflows de n8n | No iniciado |
 | Infraestructura Docker | No iniciada |
 | Integraciones externas (Gmail, LLM, STT, FCM) | No iniciadas |
@@ -97,6 +97,7 @@ cd backend
 npm ci
 cp .env.example .env      # completar DATABASE_URL y DATABASE_URL_DIRECT
 npm run db:check          # verificar conexión con Neon (solo lectura)
+# npm run db:seed:demo    # solo la primera vez, si los usuarios demo no existen
 npm run start:dev
 ```
 

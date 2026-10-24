@@ -2,7 +2,7 @@
 
 Guía para que cualquier integrante del equipo ejecute la API de NotiHouse-Pal (`backend/`) en su computador.
 
-> **Estado (Fase 3):** el backend expone solo un endpoint de salud. La **persistencia en Neon PostgreSQL** está integrada (Drizzle ORM, esquema y migración inicial aplicada), pero **todavía no hay endpoints CRUD, autenticación ni integración con n8n**. Tampoco hay despliegue en Render. El diseño de la base de datos está en [docs/architecture/database-design.md](../architecture/database-design.md).
+> **Estado (Fase 4.1):** el backend tiene salud, **autenticación** (login, JWT, `GET /auth/me`, rutas privadas por defecto) y **persistencia en Neon** (Drizzle, migraciones `0000` y `0001`, cuatro usuarios demo). **Todavía no hay endpoints CRUD de negocio ni integración con n8n**, ni despliegue en Render. Diseño: [base de datos](../architecture/database-design.md) y [autenticación](../architecture/authentication.md).
 
 ## 1. Requisitos
 
@@ -46,7 +46,8 @@ copy .env.example .env      # Windows (cmd)
 | `PORT` | No | `3000` | Puerto HTTP. Debe ser un entero entre 1 y 65535. |
 | `FRONTEND_URL` | No | `http://localhost:5173` | Origen permitido por CORS (servidor de Vite). Debe ser un origen `http(s)` sin ruta. |
 | `DATABASE_URL` | Sí (salvo `NODE_ENV=test`) | — | Cadena de Neon **con** Connection Pooling. La usa la API. |
-| `DATABASE_URL_DIRECT` | Solo para migrar | — | Cadena de Neon **sin** Connection Pooling. La usan `db:migrate` y `db:check`. |
+| `DATABASE_URL_DIRECT` | Solo para migrar | — | Cadena de Neon **sin** Connection Pooling. La usan `db:migrate`, `db:check` y `db:seed:demo`. |
+| `JWT_SECRET` | Sí (salvo `NODE_ENV=test`) | — | Secreto HS256 de los JWT: mínimo 43 caracteres aleatorios (32 bytes). Se rechazan valores de ejemplo o de baja entropía. Genéralo localmente con `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Cada entorno tiene el suyo y nunca se comparte. |
 
 Las dos cadenas se obtienen en Neon > *Connect* (proyecto `notihouse-pal`, rama `production`, base `neondb`), activando o desactivando *Connection pooling*. Pídelas a la persona responsable del proyecto en Neon por un canal privado; **nunca** las compartas en el repositorio, issues o chats del equipo.
 
@@ -79,6 +80,8 @@ La API escucha en `0.0.0.0:<PORT>`, por lo que es accesible en `http://localhost
 |---|---|
 | `npm run db:check` | Compila y ejecuta `SELECT 1` por ambas conexiones en modo **solo lectura**; muestra base, rol, versión, tablas y migraciones aplicadas, sin credenciales |
 | `npm run db:check:migrations` | Verifica la consistencia del historial de migraciones (`drizzle-kit check`, sin conexión) |
+| `npm run db:demo:update-identities` | Solo para bases creadas con versiones anteriores del seed: renombra las cuentas demo `*@notihouse.test` a las identidades actuales, conservando sus UUID y datos. La contraseña se pasa en la variable temporal `DEMO_ACCOUNTS_PASSWORD`. Ver [authentication.md](../architecture/authentication.md#7-usuarios-de-demostración) |
+| `npm run db:seed:demo` | Crea los cuatro usuarios demo y sus datos ficticios. Solo con `NODE_ENV=development` en un equipo local. Es idempotente y guarda las contraseñas solo en `backend/.local/demo-credentials.txt` (ignorado por Git). Ver [authentication.md](../architecture/authentication.md#7-usuarios-de-demostración) |
 | `npm run db:generate -- --name <nombre>` | Genera una nueva migración SQL a partir de `src/database/schema/` en `database/migrations/` (sin conexión) |
 | `npm run db:migrate` | **Aplica** las migraciones pendientes a Neon con `DATABASE_URL_DIRECT`. Ver precauciones en el documento de diseño antes de ejecutarlo |
 
@@ -90,7 +93,11 @@ Todos los endpoints funcionales usan el prefijo **`/api/v1`**.
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| `GET` | `/api/v1/health` | Liveness: confirma que el proceso de la API responde |
+| `GET` | `/api/v1/health` | Liveness: confirma que el proceso de la API responde. **Público** |
+| `POST` | `/api/v1/auth/login` | Inicio de sesión con correo y contraseña. Devuelve un JWT de 30 minutos. **Público**, máximo 5 intentos por minuto por IP |
+| `GET` | `/api/v1/auth/me` | Usuario autenticado. Requiere `Authorization: Bearer <token>` |
+
+Todas las rutas son **privadas por defecto**: solo las marcadas con `@Public()` aceptan peticiones sin token. No existe registro público. Detalle en [authentication.md](../architecture/authentication.md).
 
 Ejemplo de respuesta (HTTP 200):
 
@@ -123,7 +130,7 @@ En `production` Swagger está deshabilitado y estas rutas responden 404.
 |---|---|
 | `npm run lint` | Análisis estático con oxlint |
 | `npm run format` | Formatea `src/` y `test/` con Prettier |
-| `npm test` | Pruebas unitarias (Vitest, archivos `*.spec.ts`). Incluye las pruebas de integridad del esquema sobre PostgreSQL en memoria (PGlite): no requieren Neon ni red |
+| `npm test` | Pruebas unitarias (Vitest, archivos `*.spec.ts`). Incluye las pruebas de integridad del esquema y del seed sobre PostgreSQL en memoria (PGlite): no requieren Neon ni red |
 | `npm run test:cov` | Pruebas unitarias con cobertura |
 | `npm run test:e2e` | Pruebas end-to-end (archivos `test/*.e2e-spec.ts`) |
 
@@ -136,7 +143,7 @@ src/
 │   ├── schema/     # Definición de tablas (fuente de las migraciones)
 │   └── scripts/    # db-check.ts
 ├── health/         # Endpoint de salud (implementado)
-├── auth/           # Autenticación y autorización (pendiente)
+├── auth/           # Login, JWT, guard global, @Public(), @CurrentUser() (implementado)
 ├── obligations/    # Obligaciones recurrentes (pendiente)
 ├── properties/     # Inmuebles (pendiente)
 ├── rentals/        # Cobros de arriendo (pendiente)
