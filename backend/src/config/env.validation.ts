@@ -1,3 +1,5 @@
+import { normalizeConnectionString } from '../database/connection-string.js';
+
 export const NODE_ENVIRONMENTS = ['development', 'test', 'production'] as const;
 
 export type NodeEnvironment = (typeof NODE_ENVIRONMENTS)[number];
@@ -6,6 +8,8 @@ export interface EnvironmentVariables {
   NODE_ENV: NodeEnvironment;
   PORT: number;
   FRONTEND_URL: string;
+  /** Cadena de Neon con pooling. Opcional solo en `test`. */
+  DATABASE_URL?: string;
 }
 
 const DEFAULTS = {
@@ -47,6 +51,18 @@ export function validateEnv(
     );
   }
 
+  // El mensaje de error nunca incluye el valor, porque contiene credenciales.
+  const databaseUrl = readString(config, 'DATABASE_URL');
+  if (databaseUrl) {
+    try {
+      normalizeConnectionString(databaseUrl, 'DATABASE_URL');
+    } catch (error) {
+      errors.push((error as Error).message);
+    }
+  } else if (nodeEnv !== 'test') {
+    errors.push('DATABASE_URL es obligatoria fuera del entorno de pruebas');
+  }
+
   if (errors.length > 0) {
     throw new Error(
       `Configuración de entorno inválida:\n- ${errors.join('\n- ')}`,
@@ -57,6 +73,7 @@ export function validateEnv(
     NODE_ENV: nodeEnv as NodeEnvironment,
     PORT: port,
     FRONTEND_URL: frontendUrl,
+    DATABASE_URL: databaseUrl,
   };
 }
 

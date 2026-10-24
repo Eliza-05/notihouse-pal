@@ -2,7 +2,7 @@
 
 Guía para que cualquier integrante del equipo ejecute la API de NotiHouse-Pal (`backend/`) en su computador.
 
-> **Estado (Fase 2):** el backend solo expone un endpoint de salud. **La base de datos (PostgreSQL/Neon) y n8n todavía no están conectados**, y no hay autenticación ni endpoints de negocio. Tampoco hay despliegue en Render.
+> **Estado (Fase 3):** el backend expone solo un endpoint de salud. La **persistencia en Neon PostgreSQL** está integrada (Drizzle ORM, esquema y migración inicial aplicada), pero **todavía no hay endpoints CRUD, autenticación ni integración con n8n**. Tampoco hay despliegue en Render. El diseño de la base de datos está en [docs/architecture/database-design.md](../architecture/database-design.md).
 
 ## 1. Requisitos
 
@@ -45,6 +45,10 @@ copy .env.example .env      # Windows (cmd)
 | `NODE_ENV` | No | `development` | `development`, `test` o `production`. En `production` Swagger se deshabilita. |
 | `PORT` | No | `3000` | Puerto HTTP. Debe ser un entero entre 1 y 65535. |
 | `FRONTEND_URL` | No | `http://localhost:5173` | Origen permitido por CORS (servidor de Vite). Debe ser un origen `http(s)` sin ruta. |
+| `DATABASE_URL` | Sí (salvo `NODE_ENV=test`) | — | Cadena de Neon **con** Connection Pooling. La usa la API. |
+| `DATABASE_URL_DIRECT` | Solo para migrar | — | Cadena de Neon **sin** Connection Pooling. La usan `db:migrate` y `db:check`. |
+
+Las dos cadenas se obtienen en Neon > *Connect* (proyecto `notihouse-pal`, rama `production`, base `neondb`), activando o desactivando *Connection pooling*. Pídelas a la persona responsable del proyecto en Neon por un canal privado; **nunca** las compartas en el repositorio, issues o chats del equipo.
 
 - El archivo `backend/.env` está excluido de Git. **Nunca lo subas al repositorio.**
 - Las variables del sistema tienen prioridad sobre las del archivo `.env`.
@@ -68,6 +72,17 @@ Ejecuta los comandos desde `backend/`:
 | `npm run start:prod` | Ejecuta el código compilado (`node dist/main`) |
 
 La API escucha en `0.0.0.0:<PORT>`, por lo que es accesible en `http://localhost:3000`.
+
+### Base de datos
+
+| Comando | Qué hace |
+|---|---|
+| `npm run db:check` | Compila y ejecuta `SELECT 1` por ambas conexiones en modo **solo lectura**; muestra base, rol, versión, tablas y migraciones aplicadas, sin credenciales |
+| `npm run db:check:migrations` | Verifica la consistencia del historial de migraciones (`drizzle-kit check`, sin conexión) |
+| `npm run db:generate -- --name <nombre>` | Genera una nueva migración SQL a partir de `src/database/schema/` en `database/migrations/` (sin conexión) |
+| `npm run db:migrate` | **Aplica** las migraciones pendientes a Neon con `DATABASE_URL_DIRECT`. Ver precauciones en el documento de diseño antes de ejecutarlo |
+
+La API **no** ejecuta migraciones al arrancar. El pool de PostgreSQL se conecta de forma diferida: la API arranca aunque Neon esté suspendido, y `GET /api/v1/health` no consulta la base de datos. No se configuró `drizzle-kit studio`, porque daría acceso de escritura directo a la única rama de Neon.
 
 ## 5. Endpoints disponibles
 
@@ -108,7 +123,7 @@ En `production` Swagger está deshabilitado y estas rutas responden 404.
 |---|---|
 | `npm run lint` | Análisis estático con oxlint |
 | `npm run format` | Formatea `src/` y `test/` con Prettier |
-| `npm test` | Pruebas unitarias (Vitest, archivos `*.spec.ts`) |
+| `npm test` | Pruebas unitarias (Vitest, archivos `*.spec.ts`). Incluye las pruebas de integridad del esquema sobre PostgreSQL en memoria (PGlite): no requieren Neon ni red |
 | `npm run test:cov` | Pruebas unitarias con cobertura |
 | `npm run test:e2e` | Pruebas end-to-end (archivos `test/*.e2e-spec.ts`) |
 
@@ -117,6 +132,9 @@ En `production` Swagger está deshabilitado y estas rutas responden 404.
 ```text
 src/
 ├── config/         # Validación de variables de entorno
+├── database/       # Drizzle + pg: módulo global, esquema, script db-check
+│   ├── schema/     # Definición de tablas (fuente de las migraciones)
+│   └── scripts/    # db-check.ts
 ├── health/         # Endpoint de salud (implementado)
 ├── auth/           # Autenticación y autorización (pendiente)
 ├── obligations/    # Obligaciones recurrentes (pendiente)
@@ -132,6 +150,8 @@ src/
 ```
 
 Los módulos marcados como pendientes existen solo como estructura y todavía no tienen controladores ni lógica.
+
+Fuera de `src/`: `backend/drizzle.config.ts` (configuración de Drizzle Kit) y `database/migrations/` en la raíz del monorepositorio (única ubicación de las migraciones).
 
 ## 9. Seguridad de dependencias
 
@@ -158,6 +178,22 @@ Los módulos marcados como pendientes existen solo como estructura y todavía no
 - Build, lint, 15 pruebas unitarias y 4 e2e correctos; `GET /api/v1/health` responde 200 y Swagger 200.
 
 **Cuándo retirar el override:** cuando una versión de `@nestjs/platform-express` 12.x dependa de `multer >=2.5.0`. En ese momento, actualiza los paquetes `@nestjs/*`, elimina el bloque `overrides`, ejecuta `npm install` y confirma con `npm ls multer` y `npm audit --omit=dev` que no se vuelve a una versión vulnerable.
+
+### esbuild en `@esbuild-kit/core-utils` (Fase 3, solo desarrollo)
+
+Al instalar `drizzle-kit@0.31.11`, `npm audit` reportó 4 hallazgos moderados ([GHSA-67mh-4wv8-2f99](https://github.com/advisories/GHSA-67mh-4wv8-2f99): el servidor de desarrollo de esbuild permite que cualquier sitio web lea sus respuestas). Llegaban por la cadena `drizzle-kit` → `@esbuild-kit/esm-loader` → `@esbuild-kit/core-utils` → `esbuild@0.18.20`.
+
+- Es una dependencia de desarrollo; no llega a producción (`npm audit --omit=dev` daba 0).
+- El código de drizzle-kit **no carga** `@esbuild-kit`. Usa su propio `esbuild@0.25.12` (ya corregido) y `tsx`.
+- La corrección que propone `npm audit fix --force` (bajar a `drizzle-kit@0.18.1`) no es aceptable.
+- **Solución:** un override limitado que alinea ese `esbuild` sin uso con la versión que drizzle-kit ya trae:
+
+  ```json
+  "@esbuild-kit/core-utils": { "esbuild": "0.25.12" }
+  ```
+
+  En `package-lock.json` solo cambió esa rama. Después de `npm ci`, `npm audit` y `npm audit --omit=dev` reportan 0 vulnerabilidades, y `db:generate` y `db:check:migrations` siguen funcionando.
+- **Cuándo retirarlo:** cuando una versión estable de drizzle-kit deje de depender de `@esbuild-kit/esm-loader`. Compruébalo con `npm ls @esbuild-kit/core-utils` después de actualizar.
 
 ### Eliminación de NestJS Mau (Fase 2.2)
 

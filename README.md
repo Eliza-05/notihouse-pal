@@ -2,7 +2,7 @@
 
 Asistente inteligente para la gestión financiera del hogar y de inmuebles en arriendo, basado en hiperautomatización y agentes de inteligencia artificial con supervisión humana.
 
-> **Estado (Fase 2):** la arquitectura está definida y el **backend inicial** (NestJS) ya existe y se ejecuta localmente, pero por ahora solo expone un endpoint de salud. Aún no hay base de datos, n8n, frontend, integraciones externas ni despliegues.
+> **Estado (Fase 3):** el **backend** (NestJS) se ejecuta localmente y ya está conectado a **Neon PostgreSQL** mediante Drizzle ORM: el esquema relacional y la migración inicial están aplicados. Por ahora la API solo expone un endpoint de salud. Aún no hay endpoints CRUD, autenticación, n8n, frontend, integraciones externas ni despliegues.
 
 ## Descripción
 
@@ -50,7 +50,7 @@ Servicios externos previstos (se incorporarán gradualmente; aún no configurado
 
 - **Frontend:** interfaz de usuario para consultar y gestionar obligaciones, inmuebles y contratos, y para revisar y aprobar las solicitudes HITL.
 - **Backend:** autenticación, autorización, acceso a datos, validación de la información interpretada por IA, auditoría y comunicación autenticada con n8n. Es el único componente con acceso directo a la fuente de verdad.
-- **Base de datos:** fuente de verdad del sistema. Esquema y migraciones versionados en `database/migrations`.
+- **Base de datos:** fuente de verdad del sistema. Esquema y migraciones versionados en `database/migrations`. Diseño en [docs/architecture/database-design.md](docs/architecture/database-design.md).
 - **n8n:** orquestación de flujos de automatización (ingesta de facturas, transcripción, invocación del LLM, recordatorios). Se integra con el backend mediante solicitudes HTTP autenticadas. Los workflows se versionan como archivos JSON.
 
 ## Estructura del repositorio
@@ -60,7 +60,7 @@ notihouse-pal/
 ├── frontend/              # Aplicación React + Vite (pendiente)
 ├── backend/               # API REST NestJS (inicializada: endpoint de salud)
 ├── database/
-│   └── migrations/        # Migraciones SQL versionadas
+│   └── migrations/        # Migraciones SQL versionadas (Drizzle Kit)
 ├── n8n/
 │   └── workflows/         # Exportaciones JSON de workflows de n8n
 ├── infra/
@@ -83,19 +83,20 @@ Los archivos `.gitkeep` son marcadores temporales para versionar carpetas vacía
 |---|---|
 | Estructura del monorepositorio | Creada |
 | Frontend | No iniciado |
-| Backend | Inicializado (Fase 2): configuración de entorno, CORS, Swagger, módulos base y `GET /api/v1/health`. Sin base de datos, autenticación ni lógica de negocio. |
-| Esquema y migraciones de base de datos | No iniciado |
+| Backend | Inicializado (Fase 2): configuración de entorno, CORS, Swagger, módulos base y `GET /api/v1/health`. Módulo de base de datos con Drizzle (Fase 3). Sin autenticación, CRUD ni lógica de negocio. |
+| Esquema y migraciones de base de datos | Fase 3: 15 tablas, migración inicial `0000_initial_schema` aplicada en Neon (rama `production`, base `neondb`), sin datos |
 | Workflows de n8n | No iniciado |
 | Infraestructura Docker | No iniciada |
 | Integraciones externas (Gmail, LLM, STT, FCM) | No iniciadas |
-| Despliegues (Vercel, Render, Neon) | No configurados |
+| Despliegues (Vercel, Render) | No configurados |
 
 ## Backend: inicio rápido
 
 ```bash
 cd backend
 npm ci
-cp .env.example .env
+cp .env.example .env      # completar DATABASE_URL y DATABASE_URL_DIRECT
+npm run db:check          # verificar conexión con Neon (solo lectura)
 npm run start:dev
 ```
 
@@ -111,7 +112,7 @@ Las versiones exactas se fijarán al iniciar cada componente.
 - Node.js `^22.22.3`, `^24.15.0` o `>=26` (se recomienda la LTS 24.x) y npm.
 - Git.
 - Docker y Docker Compose (para ejecutar n8n localmente).
-- Acceso a una base de datos PostgreSQL (Neon u otra instancia local).
+- Cadenas de conexión de Neon (`DATABASE_URL` y `DATABASE_URL_DIRECT`), solicitadas a la persona responsable del proyecto.
 - Cuentas en Vercel, Render y Neon para los despliegues.
 
 ## Variables de entorno y credenciales

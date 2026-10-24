@@ -1,17 +1,27 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import type { Server } from 'node:http';
 import request from 'supertest';
-import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/app.setup.js';
+import { PG_POOL } from './../src/database/database.constants.js';
 
 describe('Health (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: INestApplication<Server>;
+  // Pool falso: cualquier consulta falla, lo que demuestra que /health no usa la base de datos.
+  const pool = {
+    query: vi.fn().mockRejectedValue(new Error('database must not be used')),
+    end: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
+  };
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(PG_POOL)
+      .useValue(pool)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     configureApp(app);
@@ -36,6 +46,14 @@ describe('Health (e2e)', () => {
     expect(new Date(response.body.timestamp).toISOString()).toBe(
       response.body.timestamp,
     );
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('closes the database pool on shutdown', async () => {
+    pool.end.mockClear();
+    await app.close();
+    expect(pool.end).toHaveBeenCalledTimes(1);
+    // afterEach vuelve a cerrar; Nest ignora el segundo cierre.
   });
 
   it('GET /health without the API prefix returns 404', () => {
