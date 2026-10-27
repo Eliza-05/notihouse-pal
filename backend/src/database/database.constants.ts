@@ -8,3 +8,8 @@ export const PG_POOL = Symbol('PG_POOL');
 export const DRIZZLE = Symbol('DRIZZLE');
 
 export type Database = NodePgDatabase<typeof schema>;
+
+/** Transacción de Drizzle: las escrituras de negocio y su auditoría la comparten. */
+export type DbTransaction = Parameters<
+  Parameters<Database['transaction']>[0]
+>[0];

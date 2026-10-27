@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { DatabaseExceptionFilter } from './common/database-exception.filter.js';
 import { EnvironmentVariables } from './config/env.validation.js';
 
 export const API_PREFIX = 'api/v1';
@@ -23,6 +24,8 @@ export function configureApp(app: INestApplication): void {
       transform: true,
     }),
   );
+  // Traduce errores conocidos de PostgreSQL a 400/409/503 sin exponer detalles internos.
+  app.useGlobalFilters(new DatabaseExceptionFilter(app.getHttpAdapter()));
 
   // Swagger no se expone en producción hasta contar con protección.
   if (config.get('NODE_ENV', { infer: true }) !== 'production') {

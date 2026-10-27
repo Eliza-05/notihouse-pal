@@ -2,7 +2,7 @@
 
 Guía para que cualquier integrante del equipo ejecute la API de NotiHouse-Pal (`backend/`) en su computador.
 
-> **Estado (Fase 4.1):** el backend tiene salud, **autenticación** (login, JWT, `GET /auth/me`, rutas privadas por defecto) y **persistencia en Neon** (Drizzle, migraciones `0000` y `0001`, cuatro usuarios demo). **Todavía no hay endpoints CRUD de negocio ni integración con n8n**, ni despliegue en Render. Diseño: [base de datos](../architecture/database-design.md) y [autenticación](../architecture/authentication.md).
+> **Estado (Fase 4.2A):** el backend tiene salud, **autenticación** (login, JWT, `GET /auth/me`, rutas privadas por defecto), **persistencia en Neon** (Drizzle, migraciones `0000` y `0001`, cuatro usuarios demo) y la **API de negocio de inmuebles, obligaciones, períodos y confirmación manual** ([business-api.md](business-api.md)). **Todavía no hay endpoints de arriendos ni contratos, ni integración con n8n**, ni despliegue en Render. Diseño: [base de datos](../architecture/database-design.md) y [autenticación](../architecture/authentication.md).
 
 ## 1. Requisitos
 
@@ -96,6 +96,15 @@ Todos los endpoints funcionales usan el prefijo **`/api/v1`**.
 | `GET` | `/api/v1/health` | Liveness: confirma que el proceso de la API responde. **Público** |
 | `POST` | `/api/v1/auth/login` | Inicio de sesión con correo y contraseña. Devuelve un JWT de 30 minutos. **Público**, máximo 5 intentos por minuto por IP |
 | `GET` | `/api/v1/auth/me` | Usuario autenticado. Requiere `Authorization: Bearer <token>` |
+| `GET` `POST` | `/api/v1/properties` | Listar o crear inmuebles propios |
+| `GET` `PATCH` | `/api/v1/properties/:id` | Consultar o editar un inmueble propio |
+| `GET` `POST` | `/api/v1/obligations` | Listar o crear obligaciones propias |
+| `GET` `PATCH` | `/api/v1/obligations/:id` | Consultar o editar la definición de una obligación |
+| `GET` `POST` | `/api/v1/obligations/:id/occurrences` | Listar o crear períodos |
+| `GET` `PATCH` | `/api/v1/obligations/:id/occurrences/:occurrenceId` | Consultar o editar un período pendiente |
+| `POST` | `/api/v1/obligations/:id/occurrences/:occurrenceId/confirm` | Confirmación humana de pago o atención |
+
+Las rutas de negocio requieren JWT y solo operan sobre los datos del usuario autenticado. Formatos, reglas, paginación y errores: [business-api.md](business-api.md).
 
 Todas las rutas son **privadas por defecto**: solo las marcadas con `@Public()` aceptan peticiones sin token. No existe registro público. Detalle en [authentication.md](../architecture/authentication.md).
 
@@ -138,19 +147,20 @@ En `production` Swagger está deshabilitado y estas rutas responden 404.
 
 ```text
 src/
+├── common/         # Paginación, validadores (fecha, dinero), correlation_id, filtro de errores de BD
 ├── config/         # Validación de variables de entorno
 ├── database/       # Drizzle + pg: módulo global, esquema, script db-check
 │   ├── schema/     # Definición de tablas (fuente de las migraciones)
 │   └── scripts/    # db-check.ts
 ├── health/         # Endpoint de salud (implementado)
 ├── auth/           # Login, JWT, guard global, @Public(), @CurrentUser() (implementado)
-├── obligations/    # Obligaciones recurrentes (pendiente)
-├── properties/     # Inmuebles (pendiente)
+├── obligations/    # Obligaciones, períodos y confirmación manual (implementado)
+├── properties/     # Inmuebles (implementado)
 ├── rentals/        # Cobros de arriendo (pendiente)
 ├── contracts/      # Contratos y vencimientos (pendiente)
 ├── cases/          # Casos, estados y HITL (pendiente)
 ├── integrations/   # Comunicación con n8n (pendiente)
-├── audit/          # Trazabilidad (pendiente)
+├── audit/          # AuditService: eventos transaccionales en audit_events (implementado)
 ├── app.module.ts   # Módulo raíz
 ├── app.setup.ts    # Prefijo, CORS y Swagger (compartido con las pruebas e2e)
 └── main.ts         # Punto de entrada

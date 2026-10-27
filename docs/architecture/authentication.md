@@ -2,7 +2,7 @@
 
 Diseño de la autenticación de NotiHouse-Pal, implementada en la Fase 4.1.
 
-> **Alcance actual:** hay inicio de sesión, JWT, un guard global, `GET /auth/me` y cuatro usuarios de demostración. Los endpoints de negocio (obligaciones, inmuebles, arriendos, contratos, casos) **todavía no existen**. La autorización por propietario en esas consultas se implementará y probará en la Fase 4.2.
+> **Alcance actual:** hay inicio de sesión, JWT, un guard global, `GET /auth/me` y cuatro usuarios de demostración. Desde la Fase 4.2A, los endpoints de inmuebles, obligaciones y períodos aplican y prueban la autorización por propietario ([business-api.md](../api/business-api.md)). Los de arriendos, contratos y casos **todavía no existen**.
 
 ## 1. Decisiones
 
@@ -94,7 +94,7 @@ Solo `GET /health` y `POST /auth/login`. Swagger no pasa por el guard porque no 
 
 Si todo es válido, el guard deja en `request.user` un `AuthenticatedUser { profileId, email, displayName }`.
 
-## 6. Uso en los módulos de negocio (Fase 4.2)
+## 6. Uso en los módulos de negocio
 
 ```ts
 @Get()
@@ -105,7 +105,7 @@ list(@CurrentUser() user: AuthenticatedUser) {
 
 - Los DTO de creación y edición **no** deben declarar `ownerId`. El `ValidationPipe` rechaza cualquier propiedad no declarada.
 - Toda consulta de lectura, edición o borrado debe filtrar por `owner_id = user.profileId`. Las FKs compuestas `(id, owner_id)` de PostgreSQL impiden mezclar entidades de distintos propietarios, pero **no sustituyen** este filtro de autorización.
-- Hasta que existan esos endpoints y sus pruebas, no puede afirmarse que los recursos de negocio estén protegidos por propietario.
+- Implementado y probado para inmuebles, obligaciones y períodos (Fase 4.2A). Los módulos futuros (arriendos, contratos, casos) deben seguir el mismo patrón y sus propias pruebas de aislamiento.
 
 ## 7. Usuarios de demostración
 

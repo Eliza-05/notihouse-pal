@@ -331,18 +331,31 @@ describe('Auth (e2e)', () => {
       }
     });
 
-    it('documents login (public) and me (bearer) in Swagger', async () => {
+    it('documents every route as bearer-protected except health and login', async () => {
       const doc = (
         await request(app.getHttpServer()).get('/api/docs-json').expect(200)
-      ).body;
-      expect(Object.keys(doc.paths).sort()).toEqual([
-        '/api/v1/auth/login',
-        '/api/v1/auth/me',
-        '/api/v1/health',
-      ]);
-      expect(doc.paths['/api/v1/auth/me'].get.security).toEqual([
-        { bearer: [] },
-      ]);
+      ).body as {
+        paths: Record<string, Record<string, { security?: unknown }>>;
+        components: { securitySchemes: Record<string, unknown> };
+      };
+      const paths = Object.keys(doc.paths);
+      expect(paths).toEqual(
+        expect.arrayContaining([
+          '/api/v1/auth/login',
+          '/api/v1/auth/me',
+          '/api/v1/health',
+        ]),
+      );
+      expect(paths.filter((p) => /register|signup/.test(p))).toEqual([]);
+
+      const PUBLIC = new Set(['/api/v1/health', '/api/v1/auth/login']);
+      for (const [path, operations] of Object.entries(doc.paths)) {
+        for (const [method, operation] of Object.entries(operations)) {
+          expect(operation.security, `${method.toUpperCase()} ${path}`).toEqual(
+            PUBLIC.has(path) ? undefined : [{ bearer: [] }],
+          );
+        }
+      }
       expect(doc.components.securitySchemes.bearer).toMatchObject({
         type: 'http',
         scheme: 'bearer',
