@@ -14,6 +14,8 @@ export interface TestApp {
   tokenFor: (user: TestUser) => string;
   /** Cliente HTTP autenticado como `user`. */
   as: (user: TestUser) => AuthedClient;
+  /** Cliente HTTP que simula al worker de n8n (token de servicio). */
+  asService: () => AuthedClient;
 }
 
 export interface AuthedClient {
@@ -39,8 +41,7 @@ export async function createTestApp(
 
   const jwt = app.get(JwtService);
   const tokenFor = (user: TestUser) => jwt.sign({ sub: user.profileId });
-  const as = (user: TestUser): AuthedClient => {
-    const auth = `Bearer ${tokenFor(user)}`;
+  const clientWith = (auth: string): AuthedClient => {
     const server = app.getHttpServer();
     return {
       get: (path) =>
@@ -57,5 +58,8 @@ export async function createTestApp(
           .send(body),
     };
   };
-  return { app, tokenFor, as };
+  const as = (user: TestUser) => clientWith(`Bearer ${tokenFor(user)}`);
+  const asService = () =>
+    clientWith(`Bearer ${process.env.N8N_SERVICE_TOKEN!}`);
+  return { app, tokenFor, as, asService };
 }

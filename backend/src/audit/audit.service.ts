@@ -14,6 +14,21 @@ export interface UserAuditEvent {
   details?: Record<string, unknown>;
 }
 
+/** Acción no humana: el servicio de automatización o una regla del sistema. */
+export interface AutomatedAuditEvent {
+  /** Propietario del caso afectado (determinado por PostgreSQL, nunca por el cliente). */
+  ownerId: string;
+  correlationId: string;
+  actorType: 'workflow' | 'system';
+  /** Identificador del componente, p. ej. `n8n:worker-1` o `api`. */
+  actorId: string;
+  component: string;
+  action: string;
+  resource: string;
+  resourceId: string;
+  details?: Record<string, unknown>;
+}
+
 /**
  * Registra eventos en `audit_events` (append-only) dentro de la transacción
  * de la operación de negocio: si la auditoría falla, la operación se revierte.
@@ -29,6 +44,26 @@ export class AuditService {
       ownerId: event.profileId,
       actorType: 'user',
       actorId: event.profileId,
+      component: event.component,
+      action: event.action,
+      result: 'success',
+      metadata: {
+        resource: event.resource,
+        resourceId: event.resourceId,
+        ...event.details,
+      },
+    });
+  }
+
+  async recordAutomatedAction(
+    tx: DbTransaction,
+    event: AutomatedAuditEvent,
+  ): Promise<void> {
+    await tx.insert(auditEvents).values({
+      correlationId: event.correlationId,
+      ownerId: event.ownerId,
+      actorType: event.actorType,
+      actorId: event.actorId,
       component: event.component,
       action: event.action,
       result: 'success',

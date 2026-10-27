@@ -36,6 +36,15 @@ export function configureApp(app: INestApplication): void {
         .setDescription('API REST del backend de NotiHouse-Pal')
         .setVersion('0.1.0')
         .addBearerAuth()
+        .addBearerAuth(
+          {
+            type: 'http',
+            scheme: 'bearer',
+            description:
+              'Token del servicio de automatización (N8N_SERVICE_TOKEN). Solo rutas /internal.',
+          },
+          'service',
+        )
         .build(),
     );
     SwaggerModule.setup(SWAGGER_PATH, app, document);

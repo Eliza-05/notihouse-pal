@@ -12,6 +12,12 @@ export interface EnvironmentVariables {
   DATABASE_URL?: string;
   /** Secreto HS256 de los JWT. Opcional solo en `test`. */
   JWT_SECRET?: string;
+  /**
+   * Token Bearer del servicio de automatización (n8n) para las rutas
+   * internas. Obligatorio en `production`; sin él, las rutas internas
+   * rechazan toda solicitud.
+   */
+  N8N_SERVICE_TOKEN?: string;
 }
 
 /** Equivale a 32 bytes aleatorios codificados en base64url. */
@@ -87,6 +93,25 @@ export function validateEnv(
     errors.push('JWT_SECRET es obligatoria fuera del entorno de pruebas');
   }
 
+  // El mensaje nunca incluye el valor del token.
+  const serviceToken = readString(config, 'N8N_SERVICE_TOKEN');
+  if (serviceToken) {
+    if (
+      serviceToken.length < JWT_SECRET_MIN_LENGTH ||
+      WEAK_JWT_SECRETS.test(serviceToken) ||
+      new Set(serviceToken).size < 16
+    ) {
+      errors.push(
+        `N8N_SERVICE_TOKEN es insegura: usa al menos ${JWT_SECRET_MIN_LENGTH} caracteres aleatorios (32 bytes)`,
+      );
+    }
+    if (serviceToken === jwtSecret) {
+      errors.push('N8N_SERVICE_TOKEN no puede ser igual a JWT_SECRET');
+    }
+  } else if (nodeEnv === 'production') {
+    errors.push('N8N_SERVICE_TOKEN es obligatoria en producción');
+  }
+
   if (errors.length > 0) {
     throw new Error(
       `Configuración de entorno inválida:\n- ${errors.join('\n- ')}`,
@@ -99,6 +124,7 @@ export function validateEnv(
     FRONTEND_URL: frontendUrl,
     DATABASE_URL: databaseUrl,
     JWT_SECRET: jwtSecret,
+    N8N_SERVICE_TOKEN: serviceToken,
   };
 }
 

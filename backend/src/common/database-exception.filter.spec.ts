@@ -35,6 +35,15 @@ describe('toHttpException', () => {
     );
   });
 
+  it.each(['40001', '40P01', '55P03'])(
+    'maps concurrency error %s to a retryable 409',
+    (code) => {
+      expect(toHttpException(wrapped({ code }))).toBeInstanceOf(
+        ConflictException,
+      );
+    },
+  );
+
   it('uses a generic conflict message for other unique constraints', () => {
     expect(
       toHttpException(wrapped({ code: '23505', constraint: 'x' }))!.message,

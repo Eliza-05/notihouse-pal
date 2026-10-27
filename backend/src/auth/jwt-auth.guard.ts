@@ -20,13 +20,22 @@ import type {
   AuthenticatedRequest,
 } from './authenticated-user.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
+import {
+  IS_SERVICE_ROUTE_KEY,
+  type ServiceRequest,
+} from './service-route.decorator.js';
+import { ServiceTokenVerifier } from './service-token.verifier.js';
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Guard global: toda ruta es privada salvo las marcadas con `@Public()`.
- * La identidad sale exclusivamente del JWT verificado y de la base de datos.
+ * Guard global con tres clases de rutas, evaluadas en este orden:
+ * 1. `@ServiceRoute()` (rutas internas): solo el token de servicio; un JWT de
+ *    usuario se rechaza. Prevalece sobre `@Public()`.
+ * 2. `@Public()`: sin autenticación (solo salud y login).
+ * 3. Resto: JWT de usuario; el token de servicio no sirve como usuario.
+ * La identidad de usuario sale exclusivamente del JWT verificado y de la base de datos.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -36,9 +45,16 @@ export class JwtAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly jwt: JwtService,
     private readonly auth: AuthService,
+    private readonly serviceToken: ServiceTokenVerifier,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isServiceRoute = this.reflector.getAllAndOverride<boolean>(
+      IS_SERVICE_ROUTE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (isServiceRoute) return this.authenticateService(context);
+
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -81,6 +97,16 @@ export class JwtAuthGuard implements CanActivate {
     if (!user) throw new UnauthorizedException(UNAUTHENTICATED_MESSAGE);
 
     request.user = user;
+    return true;
+  }
+
+  private authenticateService(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<ServiceRequest>();
+    const token = extractBearerToken(request.headers.authorization);
+    if (!token || !this.serviceToken.matches(token)) {
+      throw new UnauthorizedException(UNAUTHENTICATED_MESSAGE);
+    }
+    request.service = { name: 'n8n' };
     return true;
   }
 }

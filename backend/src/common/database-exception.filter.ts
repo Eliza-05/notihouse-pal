@@ -16,7 +16,18 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
     'Ya existe un período con esa fecha de inicio para esta obligación',
   rent_charges_period_unique:
     'Ya existe un cobro con esa fecha de inicio de período para este arriendo',
+  workflow_jobs_idempotency_key_unique:
+    'Ya existe un trabajo con esa clave de idempotencia',
+  case_proposals_case_version_unique:
+    'Otra propuesta se registró al mismo tiempo; reintenta',
 };
+
+/** Conflictos de concurrencia de PostgreSQL: el cliente puede reintentar. */
+const CONCURRENCY_CODES = new Set([
+  '40001', // serialization_failure
+  '40P01', // deadlock_detected
+  '55P03', // lock_not_available
+]);
 
 const CONNECTION_CODES = new Set([
   'ECONNREFUSED',
@@ -75,6 +86,11 @@ export function toHttpException(error: unknown): HttpException | null {
     return new ConflictException(
       (constraint && CONSTRAINT_MESSAGES[constraint]) ??
         'Conflicto con datos existentes',
+    );
+  }
+  if (CONCURRENCY_CODES.has(code)) {
+    return new ConflictException(
+      'La operación entró en conflicto con otra simultánea; reintenta',
     );
   }
   // not_null, check, foreign_key, valores fuera de rango o con formato inválido.

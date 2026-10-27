@@ -351,8 +351,13 @@ describe('Auth (e2e)', () => {
       const PUBLIC = new Set(['/api/v1/health', '/api/v1/auth/login']);
       for (const [path, operations] of Object.entries(doc.paths)) {
         for (const [method, operation] of Object.entries(operations)) {
+          // Rutas internas: solo el token de servicio; el resto: solo JWT de usuario.
           expect(operation.security, `${method.toUpperCase()} ${path}`).toEqual(
-            PUBLIC.has(path) ? undefined : [{ bearer: [] }],
+            PUBLIC.has(path)
+              ? undefined
+              : path.startsWith('/api/v1/internal/')
+                ? [{ service: [] }]
+                : [{ bearer: [] }],
           );
         }
       }
@@ -360,6 +365,12 @@ describe('Auth (e2e)', () => {
         type: 'http',
         scheme: 'bearer',
       });
+      expect(doc.components.securitySchemes.service).toMatchObject({
+        type: 'http',
+        scheme: 'bearer',
+      });
+      // Swagger documenta el esquema, nunca el valor del token.
+      expect(JSON.stringify(doc)).not.toContain(process.env.N8N_SERVICE_TOKEN!);
     });
   });
 });

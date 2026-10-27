@@ -5,6 +5,7 @@ import { validateEnv } from './env.validation.js';
 const SAMPLE_DATABASE_URL =
   'postgresql://app_user:sample-password@db.example.com/app?sslmode=require';
 const SAMPLE_JWT_SECRET = randomBytes(32).toString('base64url');
+const SAMPLE_SERVICE_TOKEN = randomBytes(32).toString('base64url');
 const REQUIRED = {
   DATABASE_URL: SAMPLE_DATABASE_URL,
   JWT_SECRET: SAMPLE_JWT_SECRET,
@@ -27,12 +28,14 @@ describe('validateEnv', () => {
         NODE_ENV: 'production',
         PORT: '10000',
         FRONTEND_URL: 'https://app.example.com',
+        N8N_SERVICE_TOKEN: SAMPLE_SERVICE_TOKEN,
       }),
     ).toEqual({
       NODE_ENV: 'production',
       PORT: 10000,
       FRONTEND_URL: 'https://app.example.com',
       ...REQUIRED,
+      N8N_SERVICE_TOKEN: SAMPLE_SERVICE_TOKEN,
     });
   });
 
@@ -106,5 +109,36 @@ describe('validateEnv', () => {
     }
     expect(message).toMatch(/JWT_SECRET es insegura/);
     expect(message).not.toContain(secret);
+  });
+
+  it('requires N8N_SERVICE_TOKEN only in production', () => {
+    expect(() => validateEnv({ ...REQUIRED, NODE_ENV: 'production' })).toThrow(
+      /N8N_SERVICE_TOKEN es obligatoria en producción/,
+    );
+    expect(validateEnv(REQUIRED).N8N_SERVICE_TOKEN).toBeUndefined();
+  });
+
+  it.each([
+    ['too short', randomBytes(16).toString('base64url')],
+    ['placeholder', `secret-${randomBytes(32).toString('base64url')}`],
+    ['low entropy', 'b'.repeat(64)],
+  ])(
+    'rejects an insecure N8N_SERVICE_TOKEN (%s) without echoing it',
+    (_c, token) => {
+      let message = '';
+      try {
+        validateEnv({ ...REQUIRED, N8N_SERVICE_TOKEN: token });
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toMatch(/N8N_SERVICE_TOKEN es insegura/);
+      expect(message).not.toContain(token);
+    },
+  );
+
+  it('rejects reusing JWT_SECRET as the service token', () => {
+    expect(() =>
+      validateEnv({ ...REQUIRED, N8N_SERVICE_TOKEN: SAMPLE_JWT_SECRET }),
+    ).toThrow(/no puede ser igual a JWT_SECRET/);
   });
 });

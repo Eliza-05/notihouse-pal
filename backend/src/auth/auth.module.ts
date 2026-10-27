@@ -14,6 +14,7 @@ import {
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
+import { ServiceTokenVerifier } from './service-token.verifier.js';
 
 /**
  * Autenticación local (correo + contraseña Argon2id) con JWT de 30 minutos.
@@ -58,6 +59,10 @@ import { JwtAuthGuard } from './jwt-auth.guard.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, { provide: APP_GUARD, useClass: JwtAuthGuard }],
+  providers: [
+    AuthService,
+    ServiceTokenVerifier,
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+  ],
 })
 export class AuthModule {}

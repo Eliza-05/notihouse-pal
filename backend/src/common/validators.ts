@@ -73,3 +73,35 @@ export function IsPositiveMoneyAmount(options?: ValidationOptions) {
       validator: { validate: isPositiveMoneyAmount },
     });
 }
+
+/** Objeto JSON simple (no `null`, no arreglo). */
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Tamaño en bytes de la serialización JSON (UTF-8) de un valor. */
+export function jsonByteLength(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value) ?? '', 'utf8');
+}
+
+/**
+ * Objeto JSON cuyo tamaño serializado no supera `maxBytes`. Limita la
+ * información que un componente externo puede guardar en columnas jsonb.
+ */
+export function IsJsonObject(maxBytes: number, options?: ValidationOptions) {
+  return (target: object, propertyName: string) =>
+    registerDecorator({
+      name: 'isJsonObject',
+      target: target.constructor,
+      propertyName,
+      constraints: [maxBytes],
+      options: {
+        message: `${propertyName} debe ser un objeto JSON de máximo ${maxBytes} bytes`,
+        ...options,
+      },
+      validator: {
+        validate: (value: unknown) =>
+          isJsonObject(value) && jsonByteLength(value) <= maxBytes,
+      },
+    });
+}
