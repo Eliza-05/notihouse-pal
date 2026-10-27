@@ -1,4 +1,8 @@
-import { isCalendarDate, isMoneyAmount } from './validators.js';
+import {
+  isCalendarDate,
+  isMoneyAmount,
+  isPositiveMoneyAmount,
+} from './validators.js';
 
 describe('isCalendarDate', () => {
   it.each(['2026-01-01', '2024-02-29', '2026-12-31'])('accepts %s', (value) => {
@@ -43,4 +47,20 @@ describe('isMoneyAmount', () => {
   ])('rejects %s', (value) => {
     expect(isMoneyAmount(value)).toBe(false);
   });
+});
+
+describe('isPositiveMoneyAmount', () => {
+  it.each(['0.01', '0.5', '950000', '950000.00', '999999999999.99'])(
+    'accepts %s',
+    (value) => {
+      expect(isPositiveMoneyAmount(value)).toBe(true);
+    },
+  );
+
+  it.each(['0', '0.0', '0.00', '-1', '1.234', '', 950000, null])(
+    'rejects %s',
+    (value) => {
+      expect(isPositiveMoneyAmount(value)).toBe(false);
+    },
+  );
 });

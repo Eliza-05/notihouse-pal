@@ -1,10 +1,19 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { and, asc, count, eq, type SQL } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthenticatedUser } from '../auth/authenticated-user.js';
 import { assertHasChanges, diffPatch } from '../common/dto-helpers.js';
 import { offsetOf, type Page } from '../common/pagination.js';
-import { DRIZZLE, type Database } from '../database/database.constants.js';
+import {
+  DRIZZLE,
+  type Database,
+  type DbTransaction,
+} from '../database/database.constants.js';
 import { properties } from '../database/schema/index.js';
 import type {
   CreatePropertyDto,
@@ -15,6 +24,33 @@ import type {
 
 const COMPONENT = 'api.properties';
 export const PROPERTY_NOT_FOUND = 'Inmueble no encontrado';
+
+/**
+ * El inmueble debe existir, ser del mismo propietario y estar activo para
+ * asociarle obligaciones, arriendos o contratos. Uno ajeno se trata como
+ * inexistente (no se revela su existencia). `FOR SHARE` impide que se
+ * desactive mientras dura la transacción que lo asocia.
+ */
+export async function assertAssignableProperty(
+  tx: DbTransaction,
+  user: AuthenticatedUser,
+  propertyId: string,
+): Promise<void> {
+  const [property] = await tx
+    .select({ status: properties.status })
+    .from(properties)
+    .where(
+      and(
+        eq(properties.id, propertyId),
+        eq(properties.ownerId, user.profileId),
+      ),
+    )
+    .for('share');
+  if (!property) throw new NotFoundException(PROPERTY_NOT_FOUND);
+  if (property.status !== 'active') {
+    throw new ConflictException('El inmueble no está activo');
+  }
+}
 
 const columns = {
   id: properties.id,

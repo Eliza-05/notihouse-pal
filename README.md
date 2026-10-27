@@ -2,7 +2,7 @@
 
 Asistente inteligente para la gestión financiera del hogar y de inmuebles en arriendo, basado en hiperautomatización y agentes de inteligencia artificial con supervisión humana.
 
-> **Estado (Fase 4.2A):** el **backend** (NestJS) está conectado a **Neon PostgreSQL** mediante Drizzle ORM y tiene **autenticación privada**: inicio de sesión con correo y contraseña, JWT de 30 minutos y rutas privadas por defecto. Hay cuatro usuarios de demostración con datos ficticios. No hay registro público. Ya existe la API de negocio de **inmuebles, obligaciones del hogar, períodos y confirmación manual** (Fase 4.2A), con aislamiento por propietario y auditoría transaccional. Aún no hay endpoints de arriendos ni contratos, n8n, frontend, integraciones externas ni despliegues.
+> **Estado (Fase 4.2B):** el **backend** (NestJS) está conectado a **Neon PostgreSQL** mediante Drizzle ORM y tiene **autenticación privada**: inicio de sesión con correo y contraseña, JWT de 30 minutos y rutas privadas por defecto. Hay cuatro usuarios de demostración con datos ficticios. No hay registro público. Ya existe la API de negocio de **inmuebles, obligaciones del hogar, períodos y confirmación manual** (Fase 4.2A) y de **arriendos, cobros con confirmación manual de recepción y contratos** (Fase 4.2B), con aislamiento por propietario y auditoría transaccional. Aún no hay n8n, frontend, integraciones externas ni despliegues.
 
 ## Descripción
 
@@ -83,7 +83,7 @@ Los archivos `.gitkeep` son marcadores temporales para versionar carpetas vacía
 |---|---|
 | Estructura del monorepositorio | Creada |
 | Frontend | No iniciado |
-| Backend | Configuración de entorno, CORS, Swagger y `GET /api/v1/health` (Fase 2). Módulo de base de datos con Drizzle (Fase 3). Autenticación: `POST /auth/login`, `GET /auth/me`, guard global JWT y seed de usuarios demo (Fase 4.1). API de inmuebles, obligaciones, períodos y confirmación manual con auditoría ([business-api.md](docs/api/business-api.md), Fase 4.2A). Sin arriendos ni contratos. |
+| Backend | Configuración de entorno, CORS, Swagger y `GET /api/v1/health` (Fase 2). Módulo de base de datos con Drizzle (Fase 3). Autenticación: `POST /auth/login`, `GET /auth/me`, guard global JWT y seed de usuarios demo (Fase 4.1). API de inmuebles, obligaciones, períodos y confirmación manual con auditoría ([business-api.md](docs/api/business-api.md), Fase 4.2A). API de arriendos, cobros, confirmación manual de recepción y contratos (Fase 4.2B). |
 | Esquema y migraciones de base de datos | 16 tablas; migraciones `0000_initial_schema` (Fase 3) y `0001_auth_accounts` (Fase 4.1) aplicadas en Neon (rama `production`, base `neondb`), con los cuatro usuarios demo y sus datos ficticios |
 | Workflows de n8n | No iniciado |
 | Infraestructura Docker | No iniciada |

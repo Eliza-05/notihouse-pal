@@ -25,6 +25,16 @@ describe('toHttpException', () => {
     );
   });
 
+  it('maps a duplicate rent charge period to 409 with a friendly message', () => {
+    const mapped = toHttpException(
+      wrapped({ code: '23505', constraint: 'rent_charges_period_unique' }),
+    );
+    expect(mapped).toBeInstanceOf(ConflictException);
+    expect(mapped!.message).toBe(
+      'Ya existe un cobro con esa fecha de inicio de período para este arriendo',
+    );
+  });
+
   it('uses a generic conflict message for other unique constraints', () => {
     expect(
       toHttpException(wrapped({ code: '23505', constraint: 'x' }))!.message,

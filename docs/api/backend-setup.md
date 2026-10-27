@@ -2,7 +2,7 @@
 
 Guía para que cualquier integrante del equipo ejecute la API de NotiHouse-Pal (`backend/`) en su computador.
 
-> **Estado (Fase 4.2A):** el backend tiene salud, **autenticación** (login, JWT, `GET /auth/me`, rutas privadas por defecto), **persistencia en Neon** (Drizzle, migraciones `0000` y `0001`, cuatro usuarios demo) y la **API de negocio de inmuebles, obligaciones, períodos y confirmación manual** ([business-api.md](business-api.md)). **Todavía no hay endpoints de arriendos ni contratos, ni integración con n8n**, ni despliegue en Render. Diseño: [base de datos](../architecture/database-design.md) y [autenticación](../architecture/authentication.md).
+> **Estado (Fase 4.2B):** el backend tiene salud, **autenticación** (login, JWT, `GET /auth/me`, rutas privadas por defecto), **persistencia en Neon** (Drizzle, migraciones `0000` y `0001`, cuatro usuarios demo) y la **API de negocio de inmuebles, obligaciones, períodos y confirmación manual**, y de **arriendos, cobros y contratos** ([business-api.md](business-api.md)). **Todavía no hay integración con n8n**, ni despliegue en Render. Diseño: [base de datos](../architecture/database-design.md) y [autenticación](../architecture/authentication.md).
 
 ## 1. Requisitos
 
@@ -156,8 +156,8 @@ src/
 ├── auth/           # Login, JWT, guard global, @Public(), @CurrentUser() (implementado)
 ├── obligations/    # Obligaciones, períodos y confirmación manual (implementado)
 ├── properties/     # Inmuebles (implementado)
-├── rentals/        # Cobros de arriendo (pendiente)
-├── contracts/      # Contratos y vencimientos (pendiente)
+├── rentals/        # Arriendos, cobros y confirmación de recepción
+├── contracts/      # Metadatos de contratos y vencimientos
 ├── cases/          # Casos, estados y HITL (pendiente)
 ├── integrations/   # Comunicación con n8n (pendiente)
 ├── audit/          # AuditService: eventos transaccionales en audit_events (implementado)

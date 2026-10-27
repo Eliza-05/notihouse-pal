@@ -1,8 +1,8 @@
-# API de negocio: inmuebles, obligaciones y períodos (Fase 4.2A)
+# API de negocio: inmuebles, obligaciones, arriendos y contratos (Fases 4.2A y 4.2B)
 
 API REST para que un usuario autenticado administre sus inmuebles, las definiciones de sus obligaciones recurrentes del hogar, los períodos concretos de cada obligación y la confirmación manual de pago o atención.
 
-> **Alcance:** solo el proceso A (obligaciones del hogar) e inmuebles. Arriendos, cobros, contratos, IA, voz, Gmail, FCM y workflows de n8n **no** están implementados. Tampoco existe generación automática de períodos ni confirmación automática.
+> **Alcance:** las secciones 1 a 9 cubren el proceso A (obligaciones del hogar) e inmuebles, de la Fase 4.2A. La sección 10 cubre los procesos B y C (arriendos, cobros y contratos), de la Fase 4.2B. IA, voz, Gmail, FCM y workflows de n8n **no** están implementados. Tampoco existe generación automática de períodos o cobros, confirmación automática ni vencimiento o renovación automática de contratos.
 
 Prefijo: `/api/v1`. Todas las rutas requieren `Authorization: Bearer <token>` (ver [autenticación](../architecture/authentication.md)). Documentación interactiva en Swagger: `/api/docs` (solo fuera de producción).
 
@@ -203,3 +203,107 @@ Las pruebas usan PostgreSQL en memoria (PGlite) con las migraciones versionadas.
 - `providerId` (catálogo de proveedores y enlaces oficiales de pago) no se expone todavía: el catálogo está vacío y su administración no forma parte de esta fase.
 - La concurrencia real entre conexiones solo se garantiza por diseño (`FOR UPDATE` más actualización condicional). Las pruebas automáticas la ejercitan sobre PGlite, que serializa las transacciones.
 - La API sigue conectándose como `neondb_owner`. Antes del despliegue público hay que crear un rol con privilegios limitados y evaluar RLS (ver [autenticación](../architecture/authentication.md#10-limitaciones-y-requisitos-antes-del-despliegue-público)).
+
+## 10. Arriendos, cobros y contratos (Fase 4.2B)
+
+Reutiliza la misma arquitectura: el propietario sale del JWT, la paginación y los validadores son compartidos, cada escritura se audita en la misma transacción y no hay rutas `DELETE`.
+
+### 10.1 Endpoints
+
+| Método | Ruta | Función | Éxito |
+|---|---|---|---|
+| GET | `/rentals` | Listar arriendos propios (filtros `propertyId`, `status`) | 200 |
+| GET | `/rentals/:id` | Consultar un arriendo propio | 200 |
+| POST | `/rentals` | Registrar un arriendo sobre un inmueble propio y activo | 201 |
+| PATCH | `/rentals/:id` | Editar el arriendo (no toca cobros ni contratos) | 200 |
+| GET | `/rentals/:id/charges` | Listar cobros por fecha esperada (filtros `status`, `periodFrom`, `periodTo`) | 200 |
+| GET | `/rentals/:id/charges/:chargeId` | Consultar un cobro | 200 |
+| POST | `/rentals/:id/charges` | Crear un cobro (siempre `expected`) | 201 |
+| PATCH | `/rentals/:id/charges/:chargeId` | Editar un cobro abierto, o anularlo | 200 |
+| POST | `/rentals/:id/charges/:chargeId/confirm` | **Confirmación humana** de recepción | 200 |
+| GET | `/contracts` | Listar contratos por vencimiento (filtros `propertyId`, `rentalId`, `status`, `endsFrom`, `endsTo`) | 200 |
+| GET | `/contracts/:id` | Consultar un contrato propio | 200 |
+| POST | `/contracts` | Registrar metadatos de un contrato (siempre `active`) | 201 |
+| PATCH | `/contracts/:id` | Corregir metadatos de un contrato activo | 200 |
+
+| Recurso | Orden estable |
+|---|---|
+| Arriendos | `created_at`, `id` |
+| Cobros | `due_date`, `period_start`, `id` |
+| Contratos | `ends_on`, `id` |
+
+`periodFrom`/`periodTo` filtran por `period_start`; `endsFrom`/`endsTo` filtran por `ends_on`. Ambos rangos son inclusivos.
+
+### 10.2 Arriendos
+
+- **Campos:** `propertyId`, `tenantAlias` (opcional, un alias para no guardar datos personales), `expectedAmount` (canon, decimal como texto **mayor que cero**), `currency` (por defecto `COP`), `dueDay` (1 a 31), `startsOn`, `endsOn` (opcional) y `status` inicial (`active` o `suspended`).
+- **Inmueble:** debe ser propio (si no, 404) y estar `active` (si no, 409). La FK compuesta `(property_id, owner_id)` lo refuerza.
+- **Solapamiento:** el esquema no restringe arriendos simultáneos sobre un mismo inmueble, así que la API tampoco lo hace.
+- **PATCH:** edita `tenantAlias`, `expectedAmount`, `dueDay`, `startsOn`, `endsOn` y `status`.
+  - No se pueden cambiar `propertyId` ni `currency`: de ellos dependen los cobros y los contratos (FK `contracts_rental_property_owner_fk`). Para corregir un inmueble mal asociado se termina el arriendo y se registra otro.
+  - Cambiar el canon **no** altera los cobros registrados: cada cobro guarda su monto.
+- **Estados:** `active` ↔ `suspended`, y cualquiera de los dos → `ended`. `ended` es final: un arriendo terminado no admite cambios ni cobros nuevos (409), pero sus cobros existentes se pueden seguir confirmando o anulando.
+
+### 10.3 Cobros
+
+- **Creación:** siempre en `expected`. El monto se toma del cuerpo o se copia del canon vigente; la moneda siempre se copia del arriendo.
+- **Validaciones:**
+  - `periodEnd >= periodStart`.
+  - `periodStart` debe caer dentro de la vigencia del arriendo, entre `startsOn` y `endsOn` (400).
+  - No puede repetirse `periodStart` en el mismo arriendo (409, restricción `rent_charges_period_unique`).
+- **PATCH:** solo en `expected`, `pending` u `overdue`, sobre `periodStart`, `periodEnd`, `dueDate` y `expectedAmount`. `status` solo admite `cancelled`.
+- **Campos prohibidos en PATCH:** `received`, `confirmedAt`, `confirmedBy`, `confirmationEvidence`, `rentalId`, `ownerId` y `currency`. El `ValidationPipe` los rechaza con 400.
+- **Inmutabilidad:** un cobro `received` o `cancelled` no se edita (409).
+- **Sin automatismos:** la API nunca cambia un cobro a `pending`, `overdue` ni `received` por fecha. Esos estados quedan para las reglas determinísticas futuras y para la confirmación humana.
+
+### 10.4 Confirmación manual de recepción
+
+`POST /rentals/:id/charges/:chargeId/confirm` con `{"evidence":"…"}` registra que **el propietario declara** haber recibido el cobro. NotiHouse-Pal no consulta bancos ni verifica transferencias.
+
+- `evidence` es **obligatoria**: entre 1 y 500 caracteres, sin contar los espacios iniciales y finales. Es la referencia de transferencia o la nota del propietario que exige el check `rent_charges_confirmation`. No se suben archivos.
+- El servidor asigna `confirmedBy` (perfil del JWT) y `confirmedAt` (`now()` de PostgreSQL). Si el cliente los envía, la respuesta es 400.
+- El cobro debe pertenecer al propietario **y** al arriendo de la URL. Si no, 404.
+
+| Situación | Respuesta |
+|---|---|
+| Primera confirmación | 200, `status: received` |
+| Repetir con **la misma** evidencia (doble clic) | 200 sin cambios: mismo `confirmedAt` y **sin** nuevo evento de auditoría |
+| Repetir con **otra** evidencia | 409: la declaración original no se sobrescribe |
+| Cobro anulado | 409 |
+
+**Concurrencia:** se usa `SELECT … FOR UPDATE` sobre el cobro y un `UPDATE … WHERE status IN ('expected','pending','overdue')`. Si no se actualiza ninguna fila, la respuesta es 409, igual que en la confirmación de obligaciones.
+
+La auditoría registra `humanConfirmation: true` y `hasEvidence: true`, **no** el texto de la evidencia, que queda en el propio cobro.
+
+### 10.5 Contratos
+
+- **Creación:**
+  - El inmueble debe ser propio (404) y estar activo (409).
+  - `rentalId` es opcional. Si se envía, debe ser propio (404) y del **mismo inmueble** (400). La FK `contracts_rental_property_owner_fk` lo refuerza.
+  - `documentId` es opcional. Si se envía, debe ser un documento propio ya registrado (404) de tipo `contract` (400). No hay carga ni generación de archivos.
+- **`endsOn` es obligatoria:** sin ella la respuesta es 400 con el mensaje "endsOn es obligatoria: registra el contrato cuando conozcas su fecha de finalización". Nunca se inventa una fecha. Además, `endsOn >= startsOn`.
+- **PATCH (corrección manual):** edita `startsOn`, `endsOn`, `noticePeriodDays` (0 a 365 o `null`), `documentId` (o `null`) y `status`.
+  - Cambiar fechas actualiza el **mismo** contrato: no crea uno nuevo ni lo "renueva".
+  - La auditoría guarda `dateChanges` con el valor anterior y el nuevo.
+- **Asociaciones:** `propertyId` y `rentalId` **no** se pueden cambiar (400). Es la política más conservadora: si la asociación es incorrecta, se termina el contrato y se registra otro.
+- **Estados:** `active` → `expired` o `terminated`, solo por una edición explícita. Un contrato vencido o terminado ya no admite cambios (409).
+- **Sin automatismos:** ninguna consulta, arranque ni cron marca contratos como vencidos, y no hay renovación, extensión, firma ni generación de documentos. Terminar un arriendo **no** modifica su contrato.
+
+### 10.6 Auditoría
+
+| Acción | Componente |
+|---|---|
+| `rental.create` / `rental.update` | `api.rentals` |
+| `rent_charge.create` / `rent_charge.update` / `rent_charge.confirm` | `api.rent-charges` |
+| `contract.create` / `contract.update` | `api.contracts` |
+
+Se registran los mismos campos que en la sección 6 (actor, propietario, `correlation_id`, resultado y metadatos mínimos). Si la auditoría falla, la escritura se revierte.
+
+### 10.7 Pruebas
+
+| Archivo | Cobertura |
+|---|---|
+| `test/rentals.e2e-spec.ts` (86) | 401 sin JWT o con JWT inválido en las 8 rutas; sin DELETE; creación con auditoría y `correlation_id`; inmueble ajeno, inexistente o inactivo; 17 entradas inválidas; aislamiento; paginación y filtros; edición; 7 PATCH prohibidos; el canon no altera los cobros; transiciones de estado; cobros (copia de monto, duplicado 409, 11 entradas inválidas, vigencia, orden y filtros, par arriendo/cobro exacto, anulación e inmutabilidad, sin recepción automática); confirmación (identidad y hora del servidor, evidencia obligatoria, 7 cuerpos inválidos, ajena 404, idempotencia, contradicción 409, anulado 409, concurrencia idéntica y contradictoria); rollback forzado; auditoría append-only |
+| `test/contracts.e2e-spec.ts` (35) | 401; creación con o sin arriendo y con documento; `endsOn` obligatoria; fechas contradictorias; inmueble, arriendo o documento ajenos (404); arriendo de otro inmueble (400); inmueble inactivo (409); aislamiento; orden por vencimiento y filtros; sin vencimiento automático; corrección de fechas auditada con valores anterior y nuevo; 7 PATCH prohibidos; estados finales; terminar el arriendo no altera el contrato; rollback forzado |
+
+**Limitación:** PGlite serializa las transacciones. Las pruebas de concurrencia verifican la lógica de estado e idempotencia, pero **no** el bloqueo real entre conexiones independientes de Neon. Esa verificación queda pendiente para la revisión final, con datos ficticios controlados.

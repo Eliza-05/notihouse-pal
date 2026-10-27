@@ -41,3 +41,20 @@ export function diffPatch<P extends object>(
   for (const key of changes) values[key] = patch[key];
   return { changes, values };
 }
+
+/**
+ * Exige `end >= start` para fechas `YYYY-MM-DD` ya validadas (su orden
+ * lexicográfico coincide con el cronológico). Un `end` nulo no se compara.
+ */
+export function assertDateOrder(
+  start: string,
+  end: string | null,
+  startName: string,
+  endName: string,
+): void {
+  if (end !== null && end < start) {
+    throw new BadRequestException(
+      `${endName} no puede ser anterior a ${startName}`,
+    );
+  }
+}

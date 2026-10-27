@@ -9,13 +9,9 @@ import { AuditService } from '../audit/audit.service.js';
 import type { AuthenticatedUser } from '../auth/authenticated-user.js';
 import { assertHasChanges, diffPatch } from '../common/dto-helpers.js';
 import { offsetOf, type Page } from '../common/pagination.js';
-import {
-  DRIZZLE,
-  type Database,
-  type DbTransaction,
-} from '../database/database.constants.js';
-import { obligations, properties } from '../database/schema/index.js';
-import { PROPERTY_NOT_FOUND } from '../properties/properties.service.js';
+import { DRIZZLE, type Database } from '../database/database.constants.js';
+import { obligations } from '../database/schema/index.js';
+import { assertAssignableProperty } from '../properties/properties.service.js';
 import type {
   CreateObligationDto,
   ListObligationsQueryDto,
@@ -105,7 +101,7 @@ export class ObligationsService {
   ): Promise<ObligationResponseDto> {
     return this.db.transaction(async (tx) => {
       if (dto.propertyId) {
-        await this.assertAssignableProperty(tx, user, dto.propertyId);
+        await assertAssignableProperty(tx, user, dto.propertyId);
       }
       const [row] = await tx
         .insert(obligations)
@@ -174,7 +170,7 @@ export class ObligationsService {
       const { changes, values } = diffPatch(current, patch);
       if (changes.length === 0) return current;
       if (values.propertyId) {
-        await this.assertAssignableProperty(tx, user, values.propertyId);
+        await assertAssignableProperty(tx, user, values.propertyId);
       }
 
       // Solo se actualiza la definición: los períodos conservan sus valores.
@@ -201,30 +197,5 @@ export class ObligationsService {
       });
       return row!;
     });
-  }
-
-  /**
-   * El inmueble debe existir, ser del mismo propietario y estar activo.
-   * Uno ajeno se trata como inexistente (no se revela su existencia).
-   */
-  private async assertAssignableProperty(
-    tx: DbTransaction,
-    user: AuthenticatedUser,
-    propertyId: string,
-  ): Promise<void> {
-    const [property] = await tx
-      .select({ status: properties.status })
-      .from(properties)
-      .where(
-        and(
-          eq(properties.id, propertyId),
-          eq(properties.ownerId, user.profileId),
-        ),
-      )
-      .for('share');
-    if (!property) throw new NotFoundException(PROPERTY_NOT_FOUND);
-    if (property.status !== 'active') {
-      throw new ConflictException('El inmueble no está activo');
-    }
   }
 }

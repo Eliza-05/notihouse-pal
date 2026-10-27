@@ -54,3 +54,22 @@ export function IsMoneyAmount(options?: ValidationOptions) {
       validator: { validate: isMoneyAmount },
     });
 }
+
+/** Como `isMoneyAmount`, pero mayor que cero (cánones y cobros de arriendo). */
+export function isPositiveMoneyAmount(value: unknown): value is string {
+  return isMoneyAmount(value) && /[1-9]/.test(value);
+}
+
+export function IsPositiveMoneyAmount(options?: ValidationOptions) {
+  return (target: object, propertyName: string) =>
+    registerDecorator({
+      name: 'isPositiveMoneyAmount',
+      target: target.constructor,
+      propertyName,
+      options: {
+        message: `${propertyName} debe ser un monto decimal mayor que cero como texto, con máximo 2 decimales (p. ej. "950000.00")`,
+        ...options,
+      },
+      validator: { validate: isPositiveMoneyAmount },
+    });
+}

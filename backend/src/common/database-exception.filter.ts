@@ -14,6 +14,8 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   properties_owner_name_unique: 'Ya existe un inmueble con ese nombre',
   obligation_occurrences_period_unique:
     'Ya existe un período con esa fecha de inicio para esta obligación',
+  rent_charges_period_unique:
+    'Ya existe un cobro con esa fecha de inicio de período para este arriendo',
 };
 
 const CONNECTION_CODES = new Set([
