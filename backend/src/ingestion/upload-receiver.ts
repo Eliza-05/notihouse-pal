@@ -22,7 +22,7 @@ import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { finalize, type Observable } from 'rxjs';
+import { catchError, concatMap, finalize, type Observable } from 'rxjs';
 import type { AuthenticatedRequest } from '../auth/authenticated-user.js';
 import type { EnvironmentVariables } from '../config/env.validation.js';
 import {
@@ -214,14 +214,20 @@ export function ReceiveUpload(kind: UploadKind): Type<NestInterceptor> {
         limits: { ...MULTIPART_LIMITS, fileSize: maxBytes },
       }).single(UPLOAD_FIELD);
 
+      // Idempotente. Se espera antes de responder: cuando el cliente recibe
+      // la respuesta, el temporal ya no existe (aunque el disco esté lento).
+      let cleaned: Promise<void> | null = null;
       const cleanup = () => {
-        release();
-        const path = (req.file as Partial<ReceivedFile> | undefined)?.path;
-        if (path) {
-          unlink(path).catch(() =>
-            this.logger.warn('No se pudo eliminar un temporal de subida'),
-          );
-        }
+        cleaned ??= (async () => {
+          release();
+          const path = (req.file as Partial<ReceivedFile> | undefined)?.path;
+          if (path) {
+            await unlink(path).catch(() =>
+              this.logger.warn('No se pudo eliminar un temporal de subida'),
+            );
+          }
+        })();
+        return cleaned;
       };
       try {
         await new Promise<void>((resolve, reject) =>
@@ -230,10 +236,21 @@ export function ReceiveUpload(kind: UploadKind): Type<NestInterceptor> {
           ),
         );
       } catch (error) {
-        cleanup();
+        await cleanup();
         throw error;
       }
-      return next.handle().pipe(finalize(cleanup));
+      return next.handle().pipe(
+        concatMap(async (value: unknown) => {
+          await cleanup();
+          return value;
+        }),
+        catchError(async (error: unknown) => {
+          await cleanup();
+          throw error;
+        }),
+        // Respaldo si la solicitud se cancela sin emitir ni fallar.
+        finalize(() => void cleanup()),
+      );
     }
   }
   return mixin(ReceiveUploadInterceptor);

@@ -31,6 +31,11 @@ import {
   ListCasesQueryDto,
 } from './dto/case.dto.js';
 import { ListProposalsQueryDto, ProposalPageDto } from './dto/process.dto.js';
+import {
+  ApplyProposalDto,
+  ProposalApplicationResponseDto,
+} from './dto/proposal-application.dto.js';
+import { ProposalApplicationService } from './proposal-application.service.js';
 
 /** Casos del usuario autenticado. Sin DELETE ni cambios de estado manuales. */
 @ApiTags('cases')
@@ -38,7 +43,10 @@ import { ListProposalsQueryDto, ProposalPageDto } from './dto/process.dto.js';
 @ApiUnauthorizedResponse({ description: 'Token ausente, inválido o expirado' })
 @Controller('cases')
 export class CasesController {
-  constructor(private readonly service: CasesService) {}
+  constructor(
+    private readonly service: CasesService,
+    private readonly applications: ProposalApplicationService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Listar casos propios (más recientes primero)' })
@@ -102,5 +110,41 @@ export class CasesController {
     @Query() query: ListProposalsQueryDto,
   ) {
     return this.service.listProposals(user, id, query);
+  }
+
+  @Post(':caseId/proposals/:proposalId/apply')
+  @ApiOperation({
+    summary: 'Aplicar una propuesta aprobada (acciones permitidas)',
+    description:
+      'Ejecuta solo acciones de la lista permitida (`create_obligation_occurrence`, `create_obligation_with_occurrence`) ' +
+      'con los datos aprobados en la revisión humana; el cuerpo debe ir vacío. El período se crea `pending`: ' +
+      'aplicar nunca registra pagos, cobros recibidos ni renovaciones. Repetir la solicitud devuelve 200 con la aplicación existente.',
+  })
+  @ApiCreatedResponse({ type: ProposalApplicationResponseDto })
+  @ApiOkResponse({
+    type: ProposalApplicationResponseDto,
+    description: 'Ya aplicada (idempotente)',
+  })
+  @ApiBadRequestResponse({
+    description: 'Acción no permitida o datos propuestos inválidos',
+  })
+  @ApiNotFoundResponse({
+    description: 'Caso, propuesta u obligación inexistentes o ajenos',
+  })
+  @ApiConflictResponse({
+    description:
+      'Propuesta no aprobada, reemplazada o rechazada; aprobación inválida o fuera de plazo; período duplicado',
+  })
+  async applyProposal(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('caseId', ParseUUIDPipe) caseId: string,
+    @Param('proposalId', ParseUUIDPipe) proposalId: string,
+    @Body() _body: ApplyProposalDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ProposalApplicationResponseDto> {
+    const result = await this.applications.apply(user, caseId, proposalId);
+    res.status(result.alreadyApplied ? 200 : 201);
+    res.setHeader(CORRELATION_HEADER, result.correlationId);
+    return result;
   }
 }

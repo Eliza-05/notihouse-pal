@@ -118,46 +118,66 @@ export class OccurrencesService {
     obligationId: string,
     dto: CreateOccurrenceDto,
   ): Promise<OccurrenceResponseDto> {
-    assertPeriodOrder(dto.periodStart, dto.periodEnd);
-    return this.db.transaction(async (tx) => {
-      const obligation = await this.findObligation(
-        tx,
-        user,
-        obligationId,
-        true,
-      );
-      if (obligation.status === 'archived') {
-        throw new ConflictException(
-          'La obligación está archivada y no admite nuevos períodos',
-        );
-      }
+    return this.db.transaction((tx) =>
+      this.insertPending(tx, user, correlationId, obligationId, dto),
+    );
+  }
 
-      // El monto y la moneda se copian al período: cambios futuros en la
-      // definición no alteran este valor histórico.
-      const [row] = await tx
-        .insert(occurrences)
-        .values({
-          obligationId,
-          ownerId: user.profileId,
-          periodStart: dto.periodStart,
-          periodEnd: dto.periodEnd,
-          dueDate: dto.dueDate,
-          amount: dto.amount ?? obligation.expectedAmount,
-          currency: obligation.currency,
-          status: 'pending',
-        })
-        .returning(columns);
-      await this.audit.recordUserAction(tx, {
-        profileId: user.profileId,
-        correlationId,
-        component: COMPONENT,
-        action: 'obligation_occurrence.create',
-        resource: 'obligation_occurrence',
-        resourceId: row!.id,
-        details: { obligationId, periodStart: row!.periodStart },
-      });
-      return row!;
+  /**
+   * Crea un período `pending` dentro de `tx` y audita la creación. Única
+   * implementación de las reglas de alta de períodos: la usan `POST` y la
+   * aplicación de propuestas aprobadas (`details` añade su trazabilidad).
+   */
+  async insertPending(
+    tx: DbTransaction,
+    user: AuthenticatedUser,
+    correlationId: string,
+    obligationId: string,
+    dto: CreateOccurrenceDto,
+    details: Record<string, unknown> = {},
+  ): Promise<OccurrenceResponseDto> {
+    assertPeriodOrder(dto.periodStart, dto.periodEnd);
+    const obligation = await this.findObligation(tx, user, obligationId, true);
+    if (obligation.status === 'archived') {
+      throw new ConflictException(
+        'La obligación está archivada y no admite nuevos períodos',
+      );
+    }
+
+    // El monto y la moneda se copian al período: cambios futuros en la
+    // definición no alteran este valor histórico.
+    const [row] = await tx
+      .insert(occurrences)
+      .values({
+        obligationId,
+        ownerId: user.profileId,
+        periodStart: dto.periodStart,
+        periodEnd: dto.periodEnd,
+        dueDate: dto.dueDate,
+        amount: dto.amount ?? obligation.expectedAmount,
+        currency: obligation.currency,
+        status: 'pending',
+      })
+      .returning(columns);
+    await this.audit.recordUserAction(tx, {
+      profileId: user.profileId,
+      correlationId,
+      component: COMPONENT,
+      action: 'obligation_occurrence.create',
+      resource: 'obligation_occurrence',
+      resourceId: row!.id,
+      details: { obligationId, periodStart: row!.periodStart, ...details },
     });
+    return row!;
+  }
+
+  /** Moneda de una obligación propia (404 si no existe o es ajena). */
+  async obligationCurrency(
+    tx: DbTransaction,
+    user: AuthenticatedUser,
+    obligationId: string,
+  ): Promise<string> {
+    return (await this.findObligation(tx, user, obligationId, true)).currency;
   }
 
   async update(

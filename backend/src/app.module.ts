@@ -13,6 +13,9 @@ import { IntegrationsModule } from './integrations/integrations.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { IngestionModule } from './ingestion/ingestion.module.js';
 import { StorageModule } from './storage/storage.module.js';
+import { AlertsModule } from './alerts/alerts.module.js';
+import { AttentionModule } from './attention/attention.module.js';
+import { DashboardModule } from './dashboard/dashboard.module.js';
 
 @Module({
   imports: [
@@ -32,6 +35,9 @@ import { StorageModule } from './storage/storage.module.js';
     CasesModule,
     IntegrationsModule,
     IngestionModule,
+    AlertsModule,
+    AttentionModule,
+    DashboardModule,
     AuditModule,
   ],
 })

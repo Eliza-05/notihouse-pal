@@ -7,6 +7,15 @@ export const Trim = () =>
   Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
 
 /**
+ * Booleano de query string: solo `true` o `false` (texto). Cualquier otro
+ * valor llega intacto para que `@IsBoolean()` lo rechace.
+ */
+export const QueryBoolean = () =>
+  Transform(({ value }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  );
+
+/**
  * Campo opcional que, si se envía, no puede ser `null`
  * (`@IsOptional()` dejaría pasar `null` hacia columnas NOT NULL).
  */

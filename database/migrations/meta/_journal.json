@@ -15,6 +15,13 @@
       "when": 1792877467642,
       "tag": "0001_auth_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793293414570,
+      "tag": "0002_alerts_and_proposal_applications",
+      "breakpoints": true
     }
   ]
 }

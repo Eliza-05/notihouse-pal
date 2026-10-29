@@ -49,6 +49,7 @@ copy .env.example .env      # Windows (cmd)
 | `DATABASE_URL_DIRECT` | Solo para migrar | — | Cadena de Neon **sin** Connection Pooling. La usan `db:migrate`, `db:check` y `db:seed:demo`. |
 | `JWT_SECRET` | Sí (salvo `NODE_ENV=test`) | — | Secreto HS256 de los JWT: mínimo 43 caracteres aleatorios (32 bytes). Se rechazan valores de ejemplo o de baja entropía. Genéralo localmente con `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Cada entorno tiene el suyo y nunca se comparte. |
 | `STORAGE_DRIVER`, `STORAGE_LOCAL_PATH`, `STORAGE_UPLOAD_TMP_PATH`, `STORAGE_MAX_PDF_BYTES`, `STORAGE_MAX_AUDIO_BYTES`, `STORAGE_S3_*` | `STORAGE_DRIVER=s3` obligatorio en `production` | `local`, `backend/.local/storage`, 10 MiB / 25 MiB | Almacenamiento privado de archivos. El driver local se rechaza en producción (disco efímero de Render). Ver [ingestion-api.md](ingestion-api.md#3-variables-de-entorno). |
+| `DUE_DATES_TIME_ZONE`, `DUE_DATES_OBLIGATION_DAYS`, `DUE_DATES_RENT_CHARGE_DAYS`, `DUE_DATES_CONTRACT_DAYS`, `DUE_DATES_HITL_SOON_HOURS` | No | `America/Bogota`, 7, 7, 30, 6 | Zona horaria y umbrales de aviso del motor de vencimientos (parámetros operativos del MVP). Ver [alerts-and-dashboard.md](alerts-and-dashboard.md#15-umbrales-iniciales-parámetros-operativos-del-mvp). |
 | `N8N_SERVICE_TOKEN` | Solo en `production` | — | Token Bearer del servicio de automatización para las rutas `/api/v1/internal/*`. Mismos requisitos que `JWT_SECRET` y distinto de él. Sin él, las rutas internas rechazan toda solicitud. Ver [workflow-integration.md](workflow-integration.md#2-autenticación-del-servicio). |
 
 Las dos cadenas se obtienen en Neon > *Connect* (proyecto `notihouse-pal`, rama `production`, base `neondb`), activando o desactivando *Connection pooling*. Pídelas a la persona responsable del proyecto en Neon por un canal privado; **nunca** las compartas en el repositorio, issues o chats del equipo.
@@ -105,6 +106,11 @@ Todos los endpoints funcionales usan el prefijo **`/api/v1`**.
 | `GET` `POST` | `/api/v1/obligations/:id/occurrences` | Listar o crear períodos |
 | `GET` `PATCH` | `/api/v1/obligations/:id/occurrences/:occurrenceId` | Consultar o editar un período pendiente |
 | `POST` | `/api/v1/obligations/:id/occurrences/:occurrenceId/confirm` | Confirmación humana de pago o atención |
+| `GET` | `/api/v1/dashboard/summary` | Indicadores agregados del usuario ([alerts-and-dashboard.md](alerts-and-dashboard.md#4-dashboard)) |
+| `GET` | `/api/v1/attention` | Bandeja unificada de atención |
+| `GET` | `/api/v1/alerts`, `/api/v1/alerts/:id` | Alertas internas propias |
+| `POST` | `/api/v1/alerts/:id/read`, `/api/v1/alerts/:id/dismiss` | Marcar como leída o descartar |
+| `POST` | `/api/v1/cases/:caseId/proposals/:proposalId/apply` | Aplicar una propuesta aprobada ([proposal-application.md](proposal-application.md)) |
 
 Las rutas de negocio requieren JWT y solo operan sobre los datos del usuario autenticado. Formatos, reglas, paginación y errores: [business-api.md](business-api.md).
 

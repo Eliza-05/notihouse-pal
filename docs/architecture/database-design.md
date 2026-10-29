@@ -33,7 +33,7 @@ erDiagram
     profiles |o--o{ audit_events : ""
 ```
 
-Hay 16 tablas, 20 tipos enumerados, 30 claves foráneas, 20 restricciones `UNIQUE`, 37 restricciones `CHECK` y 66 índices (incluidos los de PK y `UNIQUE`). Todas las tablas viven en el esquema `public`. Drizzle registra el historial de migraciones en `drizzle.__drizzle_migrations`.
+Las migraciones `0000` y `0001` crearon 16 tablas, 20 tipos enumerados, 30 claves foráneas, 20 restricciones `UNIQUE`, 37 restricciones `CHECK` y 66 índices (incluidos los de PK y `UNIQUE`). La migración `0002` (Fase 4.2E) añade 2 tablas (`alerts` y `proposal_applications`), 5 tipos enumerados, 11 claves foráneas, 3 restricciones `UNIQUE`, 5 restricciones `CHECK` y 5 índices propios; en total hay **18 tablas**. Todas las tablas viven en el esquema `public`. Drizzle registra el historial de migraciones en `drizzle.__drizzle_migrations`.
 
 ## 2. Tablas y responsabilidades
 
@@ -55,6 +55,8 @@ Hay 16 tablas, 20 tipos enumerados, 30 claves foráneas, 20 restricciones `UNIQU
 | `hitl_requests` | Solicitudes de intervención humana, con SLA, alternativas y decisión. |
 | `workflow_jobs` | Cola persistente de trabajos que n8n consultará mediante la API. |
 | `audit_events` | Registro de auditoría append-only. |
+| `alerts` | Alertas **internas** (Fase 4.2E) generadas por la evaluación determinística de vencimientos: tipo, severidad, recurso (exactamente uno), fecha relevante, clave de deduplicación y ciclo de vida (`active`, `dismissed`, `resolved`, lectura). Como máximo una alerta activa por recurso. No representa notificaciones push ni correos. Ver [alerts-and-dashboard.md](../api/alerts-and-dashboard.md). |
+| `proposal_applications` | Registro único (`proposal_id` `UNIQUE`) de la aplicación de una propuesta aprobada a los datos de negocio: acción, revisión HITL que la autorizó, obligación y período creados. Ver [proposal-application.md](../api/proposal-application.md). |
 
 ### Decisiones de diseño relevantes
 
@@ -202,6 +204,7 @@ Antes de aplicar cualquier migración en Neon:
 |---|---|---|---|
 | `0000_initial_schema` | 2026-10-24 | 20 `CREATE TYPE`, 15 `CREATE TABLE`, 29 FKs, 30 `CREATE INDEX`, función y 2 triggers de auditoría | Aplicada. 0 operaciones destructivas. Hash registrado igual al SHA-256 del archivo. |
 | `0001_auth_accounts` | 2026-10-24 | 1 `CREATE TABLE` (`auth_accounts`, con 2 `UNIQUE` y 3 `CHECK`), 1 FK a `profiles` | Aplicada. 0 operaciones destructivas. `0000` y su snapshot sin cambios. |
+| `0002_alerts_and_proposal_applications` | 2026-10-29 | 5 `CREATE TYPE`, 2 `CREATE TABLE` (`alerts`, `proposal_applications`), 11 FKs (todas desde las tablas nuevas), 5 `CREATE INDEX` sobre `alerts` (4 únicos parciales) | Aplicada. 0 operaciones destructivas; ninguna tabla existente modificada. Antes: 16 tablas y 2 migraciones; después: 18 tablas y 3 migraciones. Conteos de las 16 tablas previas, cuentas demo y `audit_events` idénticos antes y después. `0000`, `0001` y sus snapshots sin cambios. |
 
 ## 12. Precauciones por usar una sola rama `production`
 

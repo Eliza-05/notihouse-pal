@@ -10,5 +10,6 @@ import { OccurrencesService } from './occurrences.service.js';
   imports: [AuditModule],
   controllers: [ObligationsController, OccurrencesController],
   providers: [ObligationsService, OccurrencesService],
+  exports: [ObligationsService, OccurrencesService],
 })
 export class ObligationsModule {}

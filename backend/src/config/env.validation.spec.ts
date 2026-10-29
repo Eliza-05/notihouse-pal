@@ -16,6 +16,13 @@ const LOCAL_STORAGE_DEFAULTS = {
   STORAGE_MAX_AUDIO_BYTES: 25 * 1024 * 1024,
   STORAGE_S3_FORCE_PATH_STYLE: false,
 };
+const DUE_DATE_SETTINGS = {
+  DUE_DATES_TIME_ZONE: 'America/Bogota',
+  DUE_DATES_OBLIGATION_DAYS: 7,
+  DUE_DATES_RENT_CHARGE_DAYS: 7,
+  DUE_DATES_CONTRACT_DAYS: 30,
+  DUE_DATES_HITL_SOON_HOURS: 6,
+};
 // Configuración S3 ficticia: nunca se usa para conectarse.
 const SAMPLE_S3 = {
   STORAGE_DRIVER: 's3',
@@ -35,6 +42,7 @@ describe('validateEnv', () => {
       FRONTEND_URL: 'http://localhost:5173',
       ...REQUIRED,
       ...LOCAL_STORAGE_DEFAULTS,
+      ...DUE_DATE_SETTINGS,
     });
   });
 
@@ -234,6 +242,36 @@ describe('validateEnv', () => {
         validateEnv({ ...REQUIRED, STORAGE_LOCAL_PATH: 'tmp/files' })
           .STORAGE_LOCAL_PATH,
       ).toBe(resolve('tmp/files'));
+    });
+  });
+  describe('due-date rules', () => {
+    it('accepts explicit thresholds and time zone', () => {
+      expect(
+        validateEnv({
+          ...REQUIRED,
+          DUE_DATES_TIME_ZONE: 'UTC',
+          DUE_DATES_OBLIGATION_DAYS: '10',
+          DUE_DATES_RENT_CHARGE_DAYS: '0',
+          DUE_DATES_CONTRACT_DAYS: '60',
+          DUE_DATES_HITL_SOON_HOURS: '12',
+        }),
+      ).toMatchObject({
+        DUE_DATES_TIME_ZONE: 'UTC',
+        DUE_DATES_OBLIGATION_DAYS: 10,
+        DUE_DATES_RENT_CHARGE_DAYS: 0,
+        DUE_DATES_CONTRACT_DAYS: 60,
+        DUE_DATES_HITL_SOON_HOURS: 12,
+      });
+    });
+
+    it.each([
+      ['DUE_DATES_TIME_ZONE', 'Mars/Olympus'],
+      ['DUE_DATES_OBLIGATION_DAYS', '61'],
+      ['DUE_DATES_RENT_CHARGE_DAYS', '-1'],
+      ['DUE_DATES_CONTRACT_DAYS', '7.5'],
+      ['DUE_DATES_HITL_SOON_HOURS', '0'],
+    ])('rejects %s=%s', (key, value) => {
+      expect(() => validateEnv({ ...REQUIRED, [key]: value })).toThrow(key);
     });
   });
 });

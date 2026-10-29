@@ -34,10 +34,32 @@ export interface EnvironmentVariables {
   STORAGE_S3_ACCESS_KEY_ID?: string;
   STORAGE_S3_SECRET_ACCESS_KEY?: string;
   STORAGE_S3_FORCE_PATH_STYLE: boolean;
+  /** Zona horaria de referencia para fechas de calendario (vencimientos). */
+  DUE_DATES_TIME_ZONE: string;
+  /** Días de aviso previos al vencimiento de un período de obligación. */
+  DUE_DATES_OBLIGATION_DAYS: number;
+  /** Días de aviso previos a la fecha esperada de un cobro de arriendo. */
+  DUE_DATES_RENT_CHARGE_DAYS: number;
+  /** Días de aviso previos a la finalización de un contrato. */
+  DUE_DATES_CONTRACT_DAYS: number;
+  /** Horas antes de su fecha límite en que una revisión HITL se considera urgente. */
+  DUE_DATES_HITL_SOON_HOURS: number;
 }
 
 export const STORAGE_DRIVERS = ['local', 's3'] as const;
 export type StorageDriver = (typeof STORAGE_DRIVERS)[number];
+
+/**
+ * Parámetros operativos iniciales del MVP (no son requisitos legales ni
+ * contractuales): valor por defecto y rango admitido.
+ */
+export const DUE_DATE_DEFAULTS = {
+  timeZone: 'America/Bogota',
+  obligationDays: { default: 7, min: 0, max: 60 },
+  rentChargeDays: { default: 7, min: 0, max: 60 },
+  contractDays: { default: 30, min: 0, max: 365 },
+  hitlSoonHours: { default: 6, min: 1, max: 24 },
+} as const;
 
 const MIB = 1024 * 1024;
 /** Valores iniciales del MVP y techos que no se pueden superar por configuración. */
@@ -139,6 +161,7 @@ export function validateEnv(
   }
 
   const storage = validateStorage(config, nodeEnv, errors);
+  const dueDates = validateDueDates(config, errors);
 
   if (errors.length > 0) {
     throw new Error(
@@ -154,7 +177,73 @@ export function validateEnv(
     JWT_SECRET: jwtSecret,
     N8N_SERVICE_TOKEN: serviceToken,
     ...storage,
+    ...dueDates,
   };
+}
+
+type DueDateSettings = Pick<
+  EnvironmentVariables,
+  | 'DUE_DATES_TIME_ZONE'
+  | 'DUE_DATES_OBLIGATION_DAYS'
+  | 'DUE_DATES_RENT_CHARGE_DAYS'
+  | 'DUE_DATES_CONTRACT_DAYS'
+  | 'DUE_DATES_HITL_SOON_HOURS'
+>;
+
+function validateDueDates(
+  config: Record<string, unknown>,
+  errors: string[],
+): DueDateSettings {
+  const timeZone =
+    readString(config, 'DUE_DATES_TIME_ZONE') ?? DUE_DATE_DEFAULTS.timeZone;
+  if (!isTimeZone(timeZone)) {
+    errors.push(
+      `DUE_DATES_TIME_ZONE debe ser una zona horaria IANA válida (recibido: "${timeZone}")`,
+    );
+  }
+  const int = (
+    key: string,
+    limits: { default: number; min: number; max: number },
+  ) => {
+    const raw = readString(config, key);
+    if (raw === undefined) return limits.default;
+    const value = Number(raw);
+    if (!/^\d+$/.test(raw) || value < limits.min || value > limits.max) {
+      errors.push(
+        `${key} debe ser un entero entre ${limits.min} y ${limits.max}`,
+      );
+      return limits.default;
+    }
+    return value;
+  };
+  return {
+    DUE_DATES_TIME_ZONE: timeZone,
+    DUE_DATES_OBLIGATION_DAYS: int(
+      'DUE_DATES_OBLIGATION_DAYS',
+      DUE_DATE_DEFAULTS.obligationDays,
+    ),
+    DUE_DATES_RENT_CHARGE_DAYS: int(
+      'DUE_DATES_RENT_CHARGE_DAYS',
+      DUE_DATE_DEFAULTS.rentChargeDays,
+    ),
+    DUE_DATES_CONTRACT_DAYS: int(
+      'DUE_DATES_CONTRACT_DAYS',
+      DUE_DATE_DEFAULTS.contractDays,
+    ),
+    DUE_DATES_HITL_SOON_HOURS: int(
+      'DUE_DATES_HITL_SOON_HOURS',
+      DUE_DATE_DEFAULTS.hitlSoonHours,
+    ),
+  };
+}
+
+function isTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 type StorageSettings = Pick<

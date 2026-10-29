@@ -11,6 +11,7 @@ const configs = tables.map((table) => getTableConfig(table));
 const byName = new Map(configs.map((c) => [c.name, c]));
 
 const EXPECTED_TABLES = [
+  'alerts',
   'audit_events',
   'auth_accounts',
   'case_proposals',
@@ -22,6 +23,7 @@ const EXPECTED_TABLES = [
   'obligations',
   'profiles',
   'properties',
+  'proposal_applications',
   'provider_payment_links',
   'providers',
   'rent_charges',
@@ -41,6 +43,8 @@ const OWNER_SCOPED = [
   'documents',
   'case_proposals',
   'hitl_requests',
+  'alerts',
+  'proposal_applications',
 ];
 
 describe('database schema', () => {

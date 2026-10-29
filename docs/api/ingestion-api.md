@@ -278,7 +278,7 @@ El almacenamiento de objetos y PostgreSQL **no comparten una transacción**: no 
 | El proceso se interrumpe entre el guardado y la confirmación | Puede quedar un objeto sin fila en `documents`. Se detecta comparando las claves del almacenamiento con `documents.storage_key`; la limpieza programada está pendiente |
 | Escritura parcial | El adaptador local elimina el archivo truncado; en S3, un `PutObject` fallido no crea el objeto |
 
-Los temporales multipart se eliminan siempre al terminar la solicitud, con éxito o con error, y nunca un objeto existente. Las pruebas comprueban después de cada caso que el directorio temporal queda vacío.
+Los temporales multipart se eliminan siempre al terminar la solicitud, con éxito o con error, y nunca un objeto existente. La eliminación se completa **antes** de enviar la respuesta (Fase 4.2E.1): cuando el cliente recibe el resultado, el temporal ya no existe, aunque el disco esté lento. Las pruebas comprueban después de cada caso que el directorio temporal queda vacío, y `test/upload-cleanup.e2e-spec.ts` lo verifica con un `unlink` retrasado artificialmente.
 
 ## 15. Relación con propuestas de IA y HITL
 

@@ -107,8 +107,9 @@ describe('database integrity (PGlite, migraciones versionadas)', () => {
     const tables = await run(
       `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public'`,
     );
-    // 15 tablas de la migración inicial + auth_accounts (0001).
-    expect(tables[0]!.n).toBe(16);
+    // 15 tablas de la migración inicial + auth_accounts (0001)
+    // + alerts y proposal_applications (0002).
+    expect(tables[0]!.n).toBe(18);
     const triggers = await run(
       `SELECT tgname FROM pg_trigger WHERE tgrelid = 'audit_events'::regclass AND NOT tgisinternal ORDER BY 1`,
     );
@@ -393,6 +394,123 @@ describe('database integrity (PGlite, migraciones versionadas)', () => {
         `INSERT INTO provider_payment_links (provider_id, url, validation_status) VALUES ($1, 'https://pagos.example.com', 'validated')`,
         [provider],
         'provider_payment_links_validated_at',
+      );
+    });
+  });
+  describe('alertas internas (0002)', () => {
+    const insertAlert = `INSERT INTO alerts (owner_id, type, severity, occurrence_id, contract_id, relevant_date, dedup_key, state, resolved_at, resolution_reason)
+      VALUES ($1, 'obligation_due_soon', 'warning', $2, $3, '2026-11-18', $4, $5, $6, $7)`;
+    const occurrence = async () =>
+      (await one(
+        `INSERT INTO obligation_occurrences (obligation_id, owner_id, period_start, period_end, due_date)
+         VALUES ($1, $2, '2026-11-01', '2026-11-30', '2026-11-18') RETURNING id`,
+        [f.obligationA, f.ownerA],
+      ))!.id as string;
+
+    it('references exactly one resource', async () => {
+      await expectRejected(
+        insertAlert,
+        [f.ownerA, null, null, 'k0', 'active', null, null],
+        'alerts_single_resource',
+      );
+    });
+
+    it('deduplicates by owner and key, with one active alert per resource', async () => {
+      const occ = await occurrence();
+      await run(insertAlert, [f.ownerA, occ, null, 'k1', 'active', null, null]);
+      await expectRejected(
+        insertAlert,
+        [f.ownerA, occ, null, 'k1', 'resolved', new Date(), 'superseded'],
+        'alerts_owner_dedup_unique',
+      );
+      await expectRejected(
+        insertAlert,
+        [f.ownerA, occ, null, 'k2', 'active', null, null],
+        'alerts_active_occurrence_unique',
+      );
+      // Una alerta resuelta del mismo recurso sí puede coexistir.
+      await run(insertAlert, [
+        f.ownerA,
+        occ,
+        null,
+        'k2',
+        'resolved',
+        new Date(),
+        'superseded',
+      ]);
+    });
+
+    it('requires resolution data only for resolved alerts', async () => {
+      const occ = await occurrence();
+      await expectRejected(
+        insertAlert,
+        [f.ownerA, occ, null, 'k3', 'resolved', null, null],
+        'alerts_resolved',
+      );
+      await expectRejected(
+        insertAlert,
+        [f.ownerA, occ, null, 'k4', 'active', new Date(), 'superseded'],
+        'alerts_resolved',
+      );
+    });
+  });
+
+  describe('aplicación de propuestas (0002)', () => {
+    it('applies a proposal at most once and only by its owner', async () => {
+      const proposal = (await one(
+        `INSERT INTO case_proposals (case_id, owner_id, source, proposed_data, review_status, reviewed_at, reviewed_by)
+         VALUES ($1, $2, 'llm', '{}', 'accepted', now(), $2) RETURNING id`,
+        [f.caseA, f.ownerA],
+      ))!.id as string;
+      const hitl = (await one(
+        `INSERT INTO hitl_requests (case_id, owner_id, proposal_id, assigned_to, decision_type, status, decision, responded_at)
+         VALUES ($1, $2, $3, $2, 'data_confirmation', 'approved', '{"outcome":"approved"}', now()) RETURNING id`,
+        [f.caseA, f.ownerA, proposal],
+      ))!.id as string;
+      const occ = async (start: string) =>
+        (await one(
+          `INSERT INTO obligation_occurrences (obligation_id, owner_id, period_start, period_end, due_date)
+           VALUES ($1, $2, $3, $3, $3) RETURNING id`,
+          [f.obligationA, f.ownerA, start],
+        ))!.id as string;
+      const insertApplication = `INSERT INTO proposal_applications
+        (proposal_id, case_id, owner_id, hitl_request_id, action, obligation_id, occurrence_id, applied_by)
+        VALUES ($1, $2, $3, $4, 'create_obligation_occurrence', $5, $6, $7)`;
+
+      await expectRejected(
+        insertApplication,
+        [
+          proposal,
+          f.caseA,
+          f.ownerA,
+          hitl,
+          f.obligationA,
+          await occ('2026-01-01'),
+          f.ownerB,
+        ],
+        'proposal_applications_applied_by_owner',
+      );
+      await run(insertApplication, [
+        proposal,
+        f.caseA,
+        f.ownerA,
+        hitl,
+        f.obligationA,
+        await occ('2026-02-01'),
+        f.ownerA,
+      ]);
+      await expectRejected(
+        insertApplication,
+        [
+          proposal,
+          f.caseA,
+          f.ownerA,
+          hitl,
+          f.obligationA,
+          await occ('2026-03-01'),
+          f.ownerA,
+        ],
+        'proposal_applications_proposal_unique',
       );
     });
   });

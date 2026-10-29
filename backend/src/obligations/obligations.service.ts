@@ -9,7 +9,11 @@ import { AuditService } from '../audit/audit.service.js';
 import type { AuthenticatedUser } from '../auth/authenticated-user.js';
 import { assertHasChanges, diffPatch } from '../common/dto-helpers.js';
 import { offsetOf, type Page } from '../common/pagination.js';
-import { DRIZZLE, type Database } from '../database/database.constants.js';
+import {
+  DRIZZLE,
+  type Database,
+  type DbTransaction,
+} from '../database/database.constants.js';
 import { obligations } from '../database/schema/index.js';
 import { assertAssignableProperty } from '../properties/properties.service.js';
 import type {
@@ -99,38 +103,56 @@ export class ObligationsService {
     correlationId: string,
     dto: CreateObligationDto,
   ): Promise<ObligationResponseDto> {
-    return this.db.transaction(async (tx) => {
-      if (dto.propertyId) {
-        await assertAssignableProperty(tx, user, dto.propertyId);
-      }
-      const [row] = await tx
-        .insert(obligations)
-        .values({
-          ownerId: user.profileId,
-          propertyId: dto.propertyId ?? null,
-          providerName: dto.providerName,
-          concept: dto.concept,
-          category: dto.category,
-          expectedAmount: dto.expectedAmount ?? null,
-          currency: dto.currency ?? 'COP',
-          frequency: dto.frequency ?? 'monthly',
-          dueDay: dto.dueDay ?? null,
-          reminderDaysBefore: dto.reminderDaysBefore ?? 3,
-          startsOn: dto.startsOn ?? null,
-          status: dto.status ?? 'active',
-        })
-        .returning(obligationColumns);
-      await this.audit.recordUserAction(tx, {
-        profileId: user.profileId,
-        correlationId,
-        component: COMPONENT,
-        action: 'obligation.create',
-        resource: 'obligation',
-        resourceId: row!.id,
-        details: { propertyId: row!.propertyId, status: row!.status },
-      });
-      return row!;
+    return this.db.transaction((tx) =>
+      this.insertObligation(tx, user, correlationId, dto),
+    );
+  }
+
+  /**
+   * Crea la definición dentro de `tx` y audita la creación. La reutiliza la
+   * aplicación de propuestas aprobadas (`details` añade su trazabilidad).
+   */
+  async insertObligation(
+    tx: DbTransaction,
+    user: AuthenticatedUser,
+    correlationId: string,
+    dto: CreateObligationDto,
+    details: Record<string, unknown> = {},
+  ): Promise<ObligationResponseDto> {
+    if (dto.propertyId) {
+      await assertAssignableProperty(tx, user, dto.propertyId);
+    }
+    const [row] = await tx
+      .insert(obligations)
+      .values({
+        ownerId: user.profileId,
+        propertyId: dto.propertyId ?? null,
+        providerName: dto.providerName,
+        concept: dto.concept,
+        category: dto.category,
+        expectedAmount: dto.expectedAmount ?? null,
+        currency: dto.currency ?? 'COP',
+        frequency: dto.frequency ?? 'monthly',
+        dueDay: dto.dueDay ?? null,
+        reminderDaysBefore: dto.reminderDaysBefore ?? 3,
+        startsOn: dto.startsOn ?? null,
+        status: dto.status ?? 'active',
+      })
+      .returning(obligationColumns);
+    await this.audit.recordUserAction(tx, {
+      profileId: user.profileId,
+      correlationId,
+      component: COMPONENT,
+      action: 'obligation.create',
+      resource: 'obligation',
+      resourceId: row!.id,
+      details: {
+        propertyId: row!.propertyId,
+        status: row!.status,
+        ...details,
+      },
     });
+    return row!;
   }
 
   async update(

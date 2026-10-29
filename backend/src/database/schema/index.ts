@@ -10,3 +10,5 @@ export * from './contracts.js';
 export * from './cases.js';
 export * from './workflow-jobs.js';
 export * from './audit-events.js';
+export * from './alerts.js';
+export * from './proposal-applications.js';

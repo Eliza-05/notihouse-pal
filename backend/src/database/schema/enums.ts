@@ -154,3 +154,44 @@ export const linkValidationStatus = pgEnum('link_validation_status', [
   'rejected',
   'revoked',
 ]);
+
+/** Situaciones que generan una alerta interna (nunca una notificación externa). */
+export const alertType = pgEnum('alert_type', [
+  'obligation_due_soon',
+  'obligation_overdue',
+  'rent_charge_due_soon',
+  'rent_charge_overdue',
+  'contract_ending_soon',
+  'contract_end_passed',
+  'hitl_pending',
+  'hitl_due_soon',
+  'hitl_overdue',
+]);
+
+export const alertSeverity = pgEnum('alert_severity', [
+  'info',
+  'warning',
+  'critical',
+]);
+
+/** `dismissed` lo decide el usuario; `resolved` lo decide la evaluación. */
+export const alertState = pgEnum('alert_state', [
+  'active',
+  'dismissed',
+  'resolved',
+]);
+
+export const alertResolution = pgEnum('alert_resolution', [
+  /** El recurso ya no tiene acción pendiente (confirmado, recibido, anulado, decidido). */
+  'resource_closed',
+  /** Otra alerta la reemplazó (escalamiento o cambio de fecha). */
+  'superseded',
+  /** El recurso sigue abierto pero salió del umbral de aviso. */
+  'no_longer_applicable',
+]);
+
+/** Operaciones que una propuesta aprobada puede ejecutar (lista cerrada). */
+export const proposalApplicationAction = pgEnum('proposal_application_action', [
+  'create_obligation_occurrence',
+  'create_obligation_with_occurrence',
+]);

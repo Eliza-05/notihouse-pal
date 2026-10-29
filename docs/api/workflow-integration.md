@@ -55,6 +55,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 | GET | `/api/v1/hitl-requests` | Revisiones asignadas (filtros `status`, `caseId`) |
 | GET | `/api/v1/hitl-requests/:id` | Revisión con su propuesta vinculada |
 | POST | `/api/v1/hitl-requests/:id/decision` | Aprobar o rechazar |
+| POST | `/api/v1/cases/:caseId/proposals/:proposalId/apply` | Aplicar una propuesta aprobada (acciones permitidas; ver [proposal-application.md](proposal-application.md)) |
 
 ### Internas (token de servicio)
 
@@ -70,6 +71,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 | POST | `/api/v1/internal/cases/:id/complete` | Cerrar el caso como completado |
 | POST | `/api/v1/internal/cases/:id/fail` | Cerrar el caso como fallido |
 | POST | `/api/v1/internal/hitl-requests/expire` | Materializar vencimientos HITL |
+| POST | `/api/v1/internal/alerts/evaluate` | Evaluar vencimientos y sincronizar alertas internas (ver [alerts-and-dashboard.md](alerts-and-dashboard.md#25-evaluación-interna-token-de-servicio)) |
 
 No existe una ruta para crear trabajos libremente ni un PATCH genérico de estados. Las cuatro rutas `/internal/cases/:id/*` exigen `jobId` + `claimToken` de una **reclamación vigente de un trabajo de ese mismo caso**: el servicio solo escribe en casos que está procesando, y el propietario sale del caso en PostgreSQL.
 
@@ -304,7 +306,7 @@ Cada transición y su auditoría se escriben en la misma transacción; si la aud
 
 - **Concurrencia real:** PGlite serializa las transacciones. Las pruebas concurrentes verifican la lógica (`SKIP LOCKED`, actualizaciones condicionadas, idempotencia), pero **no** la contención entre conexiones independientes de Neon. Esa prueba controlada queda pendiente.
 - **`locked_by` con dos funciones:** guarda la huella de la última reclamación también después de completar o fallar. Es seguro y no requiere migración. Una columna dedicada (`claim_token_hash`) sería una mejora opcional de claridad.
-- **Sin ejecución de propuestas aprobadas:** aplicarlas a datos de negocio requiere operaciones específicas con validaciones propias (fase posterior).
+- **Aplicación de propuestas aprobadas (Fase 4.2E):** solo la ejecuta el usuario autenticado con `POST /cases/:caseId/proposals/:proposalId/apply`, para una lista cerrada de acciones y exactamente una vez ([proposal-application.md](proposal-application.md)). El trabajo `hitl.decision` sigue siendo solo informativo: completarlo no aplica datos.
 - **Sin cancelación de casos por el usuario:** existe el estado `cancelled`, pero no tiene endpoint.
 - **Ingesta:** desde la Fase 4.2D existen los casos de origen `document` y `voice`, con los trabajos `document.process` y `voice.transcribe` y la lectura de archivos por el worker ([ingestion-api.md](ingestion-api.md)). El origen `gmail` sigue sin habilitar porque no hay vínculos OAuth verificados.
 - **Sin workflows de n8n:** no hay archivos de workflows, Docker ni conexión con IA o FCM.
