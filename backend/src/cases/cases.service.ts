@@ -32,6 +32,7 @@ import { caseColumns, type CaseRow } from './case-lifecycle.js';
 import {
   CASE_SUBJECT_FIELD,
   type CaseResponseDto,
+  type CaseType,
   type CreateCaseDto,
   type ListCasesQueryDto,
 } from './dto/case.dto.js';
@@ -60,6 +61,13 @@ export const proposalColumns = {
 };
 
 const SUBJECT_FIELDS = ['obligationId', 'rentalId', 'contractId'] as const;
+type SubjectField = (typeof SUBJECT_FIELDS)[number];
+/** Entidad de negocio a la que se refiere un caso (como máximo una). */
+export interface CaseSubject {
+  field: SubjectField;
+  id: string;
+}
+type CaseSource = (typeof cases.$inferInsert)['source'];
 
 /** Respuesta sin `ownerId`: el propietario nunca se expone ni se acepta. */
 export function toCaseResponse(row: CaseRow): CaseResponseDto {
@@ -119,7 +127,7 @@ export class CasesService {
     user: AuthenticatedUser,
     dto: CreateCaseDto,
   ): Promise<{ created: boolean; case: CaseResponseDto }> {
-    const subject = this.assertSubjectMatchesType(dto);
+    const subject = this.assertSubjectMatchesType(dto.type, dto);
     const idempotencyKey = dto.requestId
       ? `case-request:${user.profileId}:${dto.requestId}`
       : null;
@@ -132,47 +140,26 @@ export class CasesService {
     try {
       const row = await this.db.transaction(async (tx) => {
         if (subject) await this.assertOwnedSubject(tx, user, subject);
-        const correlationId = randomUUID();
-        const [created] = await tx
-          .insert(cases)
-          .values({
-            correlationId,
-            ownerId: user.profileId,
-            type: dto.type,
-            source: 'form',
-            status: 'received',
-            obligationId: dto.obligationId ?? null,
-            rentalId: dto.rentalId ?? null,
-            contractId: dto.contractId ?? null,
-          })
-          .returning(caseColumns);
-        const actor = { kind: 'user', profileId: user.profileId } as const;
-        await this.audit.recordUserAction(tx, {
-          profileId: user.profileId,
-          correlationId,
-          component: COMPONENT,
-          action: 'case.create',
-          resource: 'case',
-          resourceId: created!.id,
-          details: {
-            type: created!.type,
-            source: created!.source,
-            ...(subject ? { [subject.field]: subject.id } : {}),
-          },
+        const created = await this.insertCase(tx, user, {
+          type: dto.type,
+          source: 'form',
+          subject,
         });
+        const correlationId = created.correlationId;
+        const actor = { kind: 'user', profileId: user.profileId } as const;
         await this.jobs.enqueue(tx, actor, {
-          caseId: created!.id,
+          caseId: created.id,
           ownerId: user.profileId,
           correlationId,
-          jobType: `case.${created!.type}`,
-          idempotencyKey: idempotencyKey ?? `case-intake:${created!.id}`,
+          jobType: `case.${created.type}`,
+          idempotencyKey: idempotencyKey ?? `case-intake:${created.id}`,
           payload: {
-            caseType: created!.type,
-            source: created!.source,
+            caseType: created.type,
+            source: created.source,
             ...(subject ? { [subject.field]: subject.id } : {}),
           },
         });
-        return created!;
+        return created;
       });
       return { created: true, case: toCaseResponse(row) };
     } catch (error) {
@@ -237,7 +224,49 @@ export class CasesService {
     return row;
   }
 
-  private async findByIdempotencyKey(
+  /**
+   * Inserta un caso `received` del usuario y audita `case.create`, dentro de
+   * `tx`. La entidad referida ya debe estar validada (`assertOwnedSubject`).
+   * Lo reutilizan `POST /cases` y la ingesta de documentos y notas de voz.
+   */
+  async insertCase(
+    tx: DbTransaction,
+    user: AuthenticatedUser,
+    input: { type: CaseType; source: CaseSource; subject: CaseSubject | null },
+  ): Promise<CaseRow> {
+    const correlationId = randomUUID();
+    const [created] = await tx
+      .insert(cases)
+      .values({
+        correlationId,
+        ownerId: user.profileId,
+        type: input.type,
+        source: input.source,
+        status: 'received',
+        obligationId:
+          input.subject?.field === 'obligationId' ? input.subject.id : null,
+        rentalId: input.subject?.field === 'rentalId' ? input.subject.id : null,
+        contractId:
+          input.subject?.field === 'contractId' ? input.subject.id : null,
+      })
+      .returning(caseColumns);
+    await this.audit.recordUserAction(tx, {
+      profileId: user.profileId,
+      correlationId,
+      component: COMPONENT,
+      action: 'case.create',
+      resource: 'case',
+      resourceId: created!.id,
+      details: {
+        type: created!.type,
+        source: created!.source,
+        ...(input.subject ? { [input.subject.field]: input.subject.id } : {}),
+      },
+    });
+    return created!;
+  }
+
+  async findByIdempotencyKey(
     user: AuthenticatedUser,
     key: string,
   ): Promise<CaseRow | null> {
@@ -268,25 +297,26 @@ export class CasesService {
   }
 
   /** Como máximo una entidad, y la que corresponde al tipo de caso. */
-  private assertSubjectMatchesType(
-    dto: CreateCaseDto,
-  ): { field: (typeof SUBJECT_FIELDS)[number]; id: string } | null {
-    const given = SUBJECT_FIELDS.filter((f) => dto[f] !== undefined);
+  assertSubjectMatchesType(
+    type: CaseType,
+    refs: Partial<Record<SubjectField, string>>,
+  ): CaseSubject | null {
+    const given = SUBJECT_FIELDS.filter((f) => refs[f] !== undefined);
     if (given.length === 0) return null;
-    const expected = CASE_SUBJECT_FIELD[dto.type];
+    const expected = CASE_SUBJECT_FIELD[type];
     if (given.length > 1 || given[0] !== expected) {
       throw new BadRequestException(
-        `Un caso ${dto.type} solo puede referirse a ${expected}`,
+        `Un caso ${type} solo puede referirse a ${expected}`,
       );
     }
-    return { field: expected, id: dto[expected]! };
+    return { field: expected, id: refs[expected]! };
   }
 
   /** La entidad referida debe ser del usuario; una ajena responde 404. */
-  private async assertOwnedSubject(
-    tx: DbTransaction,
+  async assertOwnedSubject(
+    tx: Database | DbTransaction,
     user: AuthenticatedUser,
-    subject: { field: (typeof SUBJECT_FIELDS)[number]; id: string },
+    subject: CaseSubject,
   ): Promise<void> {
     const table = {
       obligationId: [obligations, OBLIGATION_NOT_FOUND],

@@ -2,7 +2,7 @@
 
 Guía para que cualquier integrante del equipo ejecute la API de NotiHouse-Pal (`backend/`) en su computador.
 
-> **Estado (Fase 4.2C):** el backend tiene salud, **autenticación** (login, JWT, `GET /auth/me`, rutas privadas por defecto), **persistencia en Neon** (Drizzle, migraciones `0000` y `0001`, cuatro usuarios demo) y la **API de negocio de inmuebles, obligaciones, períodos y confirmación manual**, y de **arriendos, cobros y contratos** ([business-api.md](business-api.md)), y la **infraestructura para n8n**: casos, propuestas, HITL y cola de trabajos con token de servicio ([workflow-integration.md](workflow-integration.md)). **Todavía no hay workflows de n8n ni servicios externos conectados**, ni despliegue en Render. Diseño: [base de datos](../architecture/database-design.md) y [autenticación](../architecture/authentication.md).
+> **Estado (Fase 4.2D):** el backend tiene salud, **autenticación** (login, JWT, `GET /auth/me`, rutas privadas por defecto), **persistencia en Neon** (Drizzle, migraciones `0000` y `0001`, cuatro usuarios demo) y la **API de negocio de inmuebles, obligaciones, períodos y confirmación manual**, y de **arriendos, cobros y contratos** ([business-api.md](business-api.md)), y la **infraestructura para n8n**: casos, propuestas, HITL y cola de trabajos con token de servicio ([workflow-integration.md](workflow-integration.md)), y la **ingesta de PDF y notas de voz** con almacenamiento privado ([ingestion-api.md](ingestion-api.md)). **Todavía no hay workflows de n8n ni servicios externos conectados** (OCR, STT, IA, Gmail OAuth), ni despliegue en Render. Diseño: [base de datos](../architecture/database-design.md) y [autenticación](../architecture/authentication.md).
 
 ## 1. Requisitos
 
@@ -48,6 +48,7 @@ copy .env.example .env      # Windows (cmd)
 | `DATABASE_URL` | Sí (salvo `NODE_ENV=test`) | — | Cadena de Neon **con** Connection Pooling. La usa la API. |
 | `DATABASE_URL_DIRECT` | Solo para migrar | — | Cadena de Neon **sin** Connection Pooling. La usan `db:migrate`, `db:check` y `db:seed:demo`. |
 | `JWT_SECRET` | Sí (salvo `NODE_ENV=test`) | — | Secreto HS256 de los JWT: mínimo 43 caracteres aleatorios (32 bytes). Se rechazan valores de ejemplo o de baja entropía. Genéralo localmente con `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Cada entorno tiene el suyo y nunca se comparte. |
+| `STORAGE_DRIVER`, `STORAGE_LOCAL_PATH`, `STORAGE_UPLOAD_TMP_PATH`, `STORAGE_MAX_PDF_BYTES`, `STORAGE_MAX_AUDIO_BYTES`, `STORAGE_S3_*` | `STORAGE_DRIVER=s3` obligatorio en `production` | `local`, `backend/.local/storage`, 10 MiB / 25 MiB | Almacenamiento privado de archivos. El driver local se rechaza en producción (disco efímero de Render). Ver [ingestion-api.md](ingestion-api.md#3-variables-de-entorno). |
 | `N8N_SERVICE_TOKEN` | Solo en `production` | — | Token Bearer del servicio de automatización para las rutas `/api/v1/internal/*`. Mismos requisitos que `JWT_SECRET` y distinto de él. Sin él, las rutas internas rechazan toda solicitud. Ver [workflow-integration.md](workflow-integration.md#2-autenticación-del-servicio). |
 
 Las dos cadenas se obtienen en Neon > *Connect* (proyecto `notihouse-pal`, rama `production`, base `neondb`), activando o desactivando *Connection pooling*. Pídelas a la persona responsable del proyecto en Neon por un canal privado; **nunca** las compartas en el repositorio, issues o chats del equipo.
@@ -161,6 +162,8 @@ src/
 ├── contracts/      # Metadatos de contratos y vencimientos
 ├── cases/          # Casos, propuestas y revisiones HITL
 ├── integrations/   # Cola de trabajos para n8n (rutas internas)
+├── ingestion/      # Carga de PDF y voz, documentos privados, acceso del worker, contrato Gmail
+├── storage/        # FileStorage: adaptadores local (desarrollo) y S3-compatible (producción)
 ├── audit/          # AuditService: eventos transaccionales en audit_events (implementado)
 ├── app.module.ts   # Módulo raíz
 ├── app.setup.ts    # Prefijo, CORS y Swagger (compartido con las pruebas e2e)

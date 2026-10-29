@@ -12,6 +12,8 @@ export interface UserAuditEvent {
   resourceId: string;
   /** Metadatos mínimos: nombres de campos y transiciones, nunca secretos. */
   details?: Record<string, unknown>;
+  /** `failure` registra un intento fallido (por ejemplo, de almacenamiento). */
+  result?: 'success' | 'failure';
 }
 
 /** Acción no humana: el servicio de automatización o una regla del sistema. */
@@ -46,7 +48,7 @@ export class AuditService {
       actorId: event.profileId,
       component: event.component,
       action: event.action,
-      result: 'success',
+      result: event.result ?? 'success',
       metadata: {
         resource: event.resource,
         resourceId: event.resourceId,

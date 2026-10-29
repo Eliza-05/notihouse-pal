@@ -21,5 +21,6 @@ import {
     InternalHitlController,
   ],
   providers: [CasesService, HitlService, CaseProcessService],
+  exports: [CasesService],
 })
 export class CasesModule {}

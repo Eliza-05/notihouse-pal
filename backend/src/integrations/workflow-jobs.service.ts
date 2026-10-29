@@ -96,6 +96,7 @@ type JobRow = NonNullable<
 export interface ActiveClaim {
   jobId: string;
   caseId: string;
+  jobType: string;
   workerId: string;
   ownerId: string;
   correlationId: string;
@@ -393,6 +394,7 @@ export class WorkflowJobsService {
     return {
       jobId,
       caseId,
+      jobType: job.jobType,
       workerId: workerOf(active.lockedBy)!,
       ownerId: job.caseOwnerId,
       correlationId: job.caseCorrelationId,

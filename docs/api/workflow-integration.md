@@ -306,7 +306,7 @@ Cada transición y su auditoría se escriben en la misma transacción; si la aud
 - **`locked_by` con dos funciones:** guarda la huella de la última reclamación también después de completar o fallar. Es seguro y no requiere migración. Una columna dedicada (`claim_token_hash`) sería una mejora opcional de claridad.
 - **Sin ejecución de propuestas aprobadas:** aplicarlas a datos de negocio requiere operaciones específicas con validaciones propias (fase posterior).
 - **Sin cancelación de casos por el usuario:** existe el estado `cancelled`, pero no tiene endpoint.
-- **Sin flujos de ingesta:** no se crean casos de origen `document`, `gmail` ni `voice` porque no hay almacenamiento documental, Gmail ni STT.
+- **Ingesta:** desde la Fase 4.2D existen los casos de origen `document` y `voice`, con los trabajos `document.process` y `voice.transcribe` y la lectura de archivos por el worker ([ingestion-api.md](ingestion-api.md)). El origen `gmail` sigue sin habilitar porque no hay vínculos OAuth verificados.
 - **Sin workflows de n8n:** no hay archivos de workflows, Docker ni conexión con IA o FCM.
 - **Credencial compartida:** el token de servicio es único. La rotación requiere reiniciar el backend con el nuevo valor.
 - **Rol de base de datos:** la API sigue usando `neondb_owner`. Antes del despliegue público hay que crear un rol restringido.

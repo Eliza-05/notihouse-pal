@@ -11,6 +11,8 @@ import { ContractsModule } from './contracts/contracts.module.js';
 import { CasesModule } from './cases/cases.module.js';
 import { IntegrationsModule } from './integrations/integrations.module.js';
 import { AuditModule } from './audit/audit.module.js';
+import { IngestionModule } from './ingestion/ingestion.module.js';
+import { StorageModule } from './storage/storage.module.js';
 
 @Module({
   imports: [
@@ -20,6 +22,7 @@ import { AuditModule } from './audit/audit.module.js';
       validate: validateEnv,
     }),
     DatabaseModule,
+    StorageModule,
     HealthModule,
     AuthModule,
     ObligationsModule,
@@ -28,6 +31,7 @@ import { AuditModule } from './audit/audit.module.js';
     ContractsModule,
     CasesModule,
     IntegrationsModule,
+    IngestionModule,
     AuditModule,
   ],
 })
