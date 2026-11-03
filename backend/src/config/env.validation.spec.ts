@@ -22,6 +22,7 @@ const DUE_DATE_SETTINGS = {
   DUE_DATES_RENT_CHARGE_DAYS: 7,
   DUE_DATES_CONTRACT_DAYS: 30,
   DUE_DATES_HITL_SOON_HOURS: 6,
+  TRUST_PROXY_HOPS: 0,
 };
 // Configuración S3 ficticia: nunca se usa para conectarse.
 const SAMPLE_S3 = {
@@ -270,8 +271,55 @@ describe('validateEnv', () => {
       ['DUE_DATES_RENT_CHARGE_DAYS', '-1'],
       ['DUE_DATES_CONTRACT_DAYS', '7.5'],
       ['DUE_DATES_HITL_SOON_HOURS', '0'],
+      ['TRUST_PROXY_HOPS', 'true'],
+      ['TRUST_PROXY_HOPS', '4'],
+      ['TRUST_PROXY_HOPS', '-1'],
     ])('rejects %s=%s', (key, value) => {
       expect(() => validateEnv({ ...REQUIRED, [key]: value })).toThrow(key);
     });
+  });
+  it('accepts an explicit number of trusted proxies', () => {
+    expect(validateEnv({ ...REQUIRED, TRUST_PROXY_HOPS: '1' })).toMatchObject({
+      TRUST_PROXY_HOPS: 1,
+    });
+  });
+
+  it.each([
+    ['JWT_SECRET', 'short', /JWT_SECRET es insegura/],
+    ['FRONTEND_URL', 'https://app.example.com/path', /FRONTEND_URL/],
+    ['FRONTEND_URL', '*', /FRONTEND_URL/],
+    ['PORT', '70000', /PORT/],
+  ])(
+    'rejects insecure %s values without echoing secrets',
+    (key, value, message) => {
+      let error: Error | undefined;
+      try {
+        validateEnv({ ...REQUIRED, [key]: value });
+      } catch (e) {
+        error = e as Error;
+      }
+      expect(error?.message).toMatch(message);
+      if (key === 'JWT_SECRET') expect(error?.message).not.toContain(value);
+    },
+  );
+
+  it('requires secrets and object storage in production and never echoes them', () => {
+    let message = '';
+    try {
+      validateEnv({
+        NODE_ENV: 'production',
+        N8N_SERVICE_TOKEN: SAMPLE_JWT_SECRET,
+        JWT_SECRET: SAMPLE_JWT_SECRET,
+        STORAGE_DRIVER: 'local',
+      });
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toMatch(/DATABASE_URL es obligatoria/);
+    expect(message).toMatch(
+      /N8N_SERVICE_TOKEN no puede ser igual a JWT_SECRET/,
+    );
+    expect(message).toMatch(/STORAGE_DRIVER=local no está permitido/);
+    expect(message).not.toContain(SAMPLE_JWT_SECRET);
   });
 });

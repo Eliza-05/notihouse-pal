@@ -64,8 +64,8 @@ export class CaseProcessService {
 
   /**
    * Nueva versión de propuesta (`pending_review`). Si coincide exactamente
-   * con la última versión (reintento de la misma llamada) se devuelve esa
-   * sin crear otra. Las versiones anteriores pendientes pasan a `superseded`
+   * con cualquier versión anterior del caso (reintento, aunque llegue tarde o
+   * fuera de orden) se devuelve esa versión sin crear otra ni reactivarla. Las versiones anteriores pendientes pasan a `superseded`
    * y sus revisiones HITL pendientes se anulan.
    */
   async createProposal(
@@ -94,19 +94,24 @@ export class CaseProcessService {
         .orderBy(desc(caseProposals.version))
         .limit(1);
       if (latest) {
+        // Se compara con TODAS las versiones del caso, no solo con la última:
+        // un reintento tardío de una versión ya reemplazada devuelve esa
+        // versión (con su estado) y nunca la recrea ni reemplaza a la vigente.
         const [same] = await tx
           .select(proposalColumns)
           .from(caseProposals)
           .where(
             and(
-              eq(caseProposals.id, latest.id),
+              eq(caseProposals.caseId, caseId),
               eq(caseProposals.source, dto.source),
               sql`${caseProposals.proposedData} = ${JSON.stringify(dto.proposedData)}::jsonb`,
               sql`${caseProposals.evidence} IS NOT DISTINCT FROM ${dto.evidence === undefined ? null : JSON.stringify(dto.evidence)}::jsonb`,
               sql`${caseProposals.confidence} IS NOT DISTINCT FROM ${dto.confidence ?? null}::numeric`,
               sql`${caseProposals.documentId} IS NOT DISTINCT FROM ${dto.documentId ?? null}::uuid`,
             ),
-          );
+          )
+          .orderBy(desc(caseProposals.version))
+          .limit(1);
         if (same) return { created: false, proposal: same };
       }
 

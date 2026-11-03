@@ -26,6 +26,8 @@ export interface TestUser {
   profileId: string;
   email: string;
   password: string;
+  /** `password_changed_at` al crear la cuenta (versión de sesión de sus JWT). */
+  passwordChangedAt: Date;
 }
 
 export async function createTestUser(
@@ -41,15 +43,19 @@ export async function createTestUser(
     .insert(schema.profiles)
     .values({ displayName: options.displayName })
     .returning({ id: schema.profiles.id });
-  await db.insert(schema.authAccounts).values({
-    profileId: profile!.id,
-    email: options.email,
-    passwordHash: await hashPassword(options.password),
-    isActive: options.isActive ?? true,
-  });
+  const [account] = await db
+    .insert(schema.authAccounts)
+    .values({
+      profileId: profile!.id,
+      email: options.email,
+      passwordHash: await hashPassword(options.password),
+      isActive: options.isActive ?? true,
+    })
+    .returning({ passwordChangedAt: schema.authAccounts.passwordChangedAt });
   return {
     profileId: profile!.id,
     email: options.email,
     password: options.password,
+    passwordChangedAt: account!.passwordChangedAt,
   };
 }

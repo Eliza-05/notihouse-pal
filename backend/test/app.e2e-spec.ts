@@ -76,6 +76,69 @@ describe('Health (e2e)', () => {
     );
   });
 
+  it('answers CORS preflights only with the methods and headers in use', async () => {
+    const preflight = await request(app.getHttpServer())
+      .options('/api/v1/alerts')
+      .set('Origin', 'http://localhost:5173')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'authorization,content-type')
+      .expect(204);
+    expect(preflight.headers['access-control-allow-origin']).toBe(
+      'http://localhost:5173',
+    );
+    expect(preflight.headers['access-control-allow-methods']).toBe(
+      'GET,POST,PATCH',
+    );
+    expect(preflight.headers['access-control-allow-headers']).toBe(
+      'Authorization,Content-Type,x-correlation-id',
+    );
+    expect(
+      preflight.headers['access-control-allow-credentials'],
+    ).toBeUndefined();
+
+    const foreign = await request(app.getHttpServer())
+      .options('/api/v1/alerts')
+      .set('Origin', 'https://evil.example.com')
+      .set('Access-Control-Request-Method', 'POST');
+    expect(foreign.headers['access-control-allow-origin']).not.toBe(
+      'https://evil.example.com',
+    );
+
+    const simple = await request(app.getHttpServer())
+      .get('/api/v1/health')
+      .set('Origin', 'http://localhost:5173');
+    expect(simple.headers['access-control-expose-headers']).toBe(
+      'x-correlation-id',
+    );
+  });
+
+  it('GET /api/v1/health/ready reports PostgreSQL without leaking details', async () => {
+    pool.query.mockRejectedValueOnce(
+      new Error('connect ECONNREFUSED db.internal:5432 password=secret'),
+    );
+    const down = await request(app.getHttpServer())
+      .get('/api/v1/health/ready')
+      .expect(503);
+    expect(down.body).toMatchObject({
+      status: 'unavailable',
+      checks: { database: 'unavailable' },
+    });
+    expect(JSON.stringify(down.body)).not.toMatch(
+      /ECONNREFUSED|db\.internal|secret/,
+    );
+
+    pool.query.mockResolvedValueOnce({ rows: [{ ok: 1 }] });
+    const up = await request(app.getHttpServer())
+      .get('/api/v1/health/ready')
+      .expect(200);
+    expect(up.body).toMatchObject({
+      status: 'ready',
+      checks: { database: 'ok' },
+    });
+    // El liveness sigue sin depender de la base de datos.
+    await request(app.getHttpServer()).get('/api/v1/health').expect(200);
+  });
+
   it('serves the Swagger document including the health endpoint', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/docs-json')

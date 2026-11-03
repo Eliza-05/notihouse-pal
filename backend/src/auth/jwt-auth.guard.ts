@@ -24,6 +24,7 @@ import {
   IS_SERVICE_ROUTE_KEY,
   type ServiceRequest,
 } from './service-route.decorator.js';
+import { SESSION_VERSION_PATTERN } from './session-version.js';
 import { ServiceTokenVerifier } from './service-token.verifier.js';
 
 const UUID_PATTERN =
@@ -79,14 +80,20 @@ export class JwtAuthGuard implements CanActivate {
     if (
       typeof payload.sub !== 'string' ||
       !UUID_PATTERN.test(payload.sub) ||
-      typeof payload.iat !== 'number'
+      typeof payload.iat !== 'number' ||
+      typeof payload.sv !== 'string' ||
+      !SESSION_VERSION_PATTERN.test(payload.sv)
     ) {
       throw new UnauthorizedException(UNAUTHENTICATED_MESSAGE);
     }
 
     let user;
     try {
-      user = await this.auth.findActiveUser(payload.sub, payload.iat);
+      user = await this.auth.findActiveUser(
+        payload.sub,
+        payload.iat,
+        payload.sv,
+      );
     } catch (error) {
       // Si no se puede validar la cuenta, se deniega el acceso (nunca se permite por omisión).
       this.logger.error(

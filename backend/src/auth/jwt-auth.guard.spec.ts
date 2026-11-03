@@ -71,7 +71,7 @@ describe('JwtAuthGuard', () => {
   });
 
   it('denies access (503) when the database cannot validate the session', async () => {
-    const token = jwt.sign({ sub: randomUUID() });
+    const token = jwt.sign({ sub: randomUUID(), sv: 'A'.repeat(22) });
     const { reflector, context, request } = contextFor({
       authorization: `Bearer ${token}`,
     });

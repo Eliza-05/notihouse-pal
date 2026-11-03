@@ -1,0 +1,46 @@
+# NotiHouse-Pal — Blueprint de Render para el backend (Fase 4.2F.1).
+# PREPARADO, NO DESPLEGADO. Está fuera de la raíz del repositorio a propósito:
+# Render solo lo usará si se crea un Blueprint indicando esta ruta.
+# Ningún secreto vive aquí: los valores con `sync: false` se cargan a mano en
+# el panel de Render. Procedimiento: docs/deployment/render-readiness.md.
+services:
+  - type: web
+    name: notihouse-pal-api
+    runtime: node
+    rootDir: backend
+    # devDependencies son necesarias para compilar (nest CLI, TypeScript).
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start:prod
+    # Liveness (no depende de PostgreSQL): un arranque en frío de Neon no
+    # debe reiniciar la instancia. /api/v1/health/ready es para monitoreo.
+    healthCheckPath: /api/v1/health
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        sync: false # origen exacto del frontend en Vercel (sin ruta)
+      - key: DATABASE_URL
+        sync: false # Neon con pooling, rol notihouse_app (no neondb_owner)
+      - key: JWT_SECRET
+        sync: false
+      - key: N8N_SERVICE_TOKEN
+        sync: false
+      - key: TRUST_PROXY_HOPS
+        sync: false # verificar la topología antes de fijarlo (ver documentación)
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: STORAGE_S3_BUCKET
+        sync: false
+      - key: STORAGE_S3_REGION
+        sync: false
+      - key: STORAGE_S3_ENDPOINT
+        sync: false
+      - key: STORAGE_S3_ACCESS_KEY_ID
+        sync: false
+      - key: STORAGE_S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: STORAGE_S3_FORCE_PATH_STYLE
+        value: "false"
+      - key: DUE_DATES_TIME_ZONE
+        value: America/Bogota

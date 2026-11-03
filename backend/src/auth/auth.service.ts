@@ -10,6 +10,7 @@ import {
 import type { AuthenticatedUser } from './authenticated-user.js';
 import type { LoginResponseDto } from './dto/auth-responses.dto.js';
 import { verifyAgainstDummyHash, verifyPassword } from './password.js';
+import { sessionVersion } from './session-version.js';
 
 @Injectable()
 export class AuthService {
@@ -26,6 +27,7 @@ export class AuthService {
         email: authAccounts.email,
         passwordHash: authAccounts.passwordHash,
         isActive: authAccounts.isActive,
+        passwordChangedAt: authAccounts.passwordChangedAt,
         displayName: profiles.displayName,
       })
       .from(authAccounts)
@@ -43,7 +45,10 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
-    const accessToken = await this.jwt.signAsync({ sub: account.profileId });
+    const accessToken = await this.jwt.signAsync({
+      sub: account.profileId,
+      sv: sessionVersion(account.profileId, account.passwordChangedAt),
+    });
     return {
       accessToken,
       tokenType: 'Bearer',
@@ -57,12 +62,15 @@ export class AuthService {
   }
 
   /**
-   * Devuelve el usuario si su cuenta sigue activa y el token se emitió después
-   * del último cambio de contraseña; en otro caso, `null`.
+   * Devuelve el usuario si su cuenta sigue activa y el token corresponde a la
+   * contraseña vigente; en otro caso, `null`. La versión de sesión (`sv`)
+   * distingue cambios dentro del mismo segundo; `iat` se sigue comprobando
+   * como defensa adicional.
    */
   async findActiveUser(
     profileId: string,
     tokenIssuedAtSeconds: number,
+    tokenSessionVersion: string,
   ): Promise<AuthenticatedUser | null> {
     const [row] = await this.db
       .select({
@@ -84,6 +92,12 @@ export class AuthService {
     if (!row) return null;
     const changedAtSeconds = Math.floor(row.passwordChangedAt.getTime() / 1000);
     if (tokenIssuedAtSeconds < changedAtSeconds) return null;
+    if (
+      tokenSessionVersion !==
+      sessionVersion(row.profileId, row.passwordChangedAt)
+    ) {
+      return null;
+    }
 
     return {
       profileId: row.profileId,

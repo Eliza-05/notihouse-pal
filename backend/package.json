@@ -24,7 +24,8 @@
     "db:check": "nest build && node --env-file-if-exists=.env dist/database/scripts/db-check.js",
     "db:check:migrations": "drizzle-kit check",
     "db:seed:demo": "nest build && node --env-file-if-exists=.env dist/database/scripts/seed-demo.js",
-    "db:demo:update-identities": "nest build && node --env-file-if-exists=.env dist/database/scripts/update-demo-identities.js"
+    "db:demo:update-identities": "nest build && node --env-file-if-exists=.env dist/database/scripts/update-demo-identities.js",
+    "db:demo:rotate-passwords": "nest build && node --env-file-if-exists=.env dist/database/scripts/rotate-demo-passwords.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1158.0",

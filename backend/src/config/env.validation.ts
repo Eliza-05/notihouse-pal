@@ -44,6 +44,12 @@ export interface EnvironmentVariables {
   DUE_DATES_CONTRACT_DAYS: number;
   /** Horas antes de su fecha límite en que una revisión HITL se considera urgente. */
   DUE_DATES_HITL_SOON_HOURS: number;
+  /**
+   * Proxies inversos de confianza delante de la API (0 = ninguno). Con N > 0,
+   * Express toma la IP del cliente de `X-Forwarded-For` saltando N proxies.
+   * Nunca `true`: confiar en todos permitiría falsificar la IP.
+   */
+  TRUST_PROXY_HOPS: number;
 }
 
 export const STORAGE_DRIVERS = ['local', 's3'] as const;
@@ -60,6 +66,9 @@ export const DUE_DATE_DEFAULTS = {
   contractDays: { default: 30, min: 0, max: 365 },
   hitlSoonHours: { default: 6, min: 1, max: 24 },
 } as const;
+
+/** Máximo de proxies de confianza admitido por configuración. */
+export const MAX_TRUST_PROXY_HOPS = 3;
 
 const MIB = 1024 * 1024;
 /** Valores iniciales del MVP y techos que no se pueden superar por configuración. */
@@ -160,6 +169,14 @@ export function validateEnv(
     errors.push('N8N_SERVICE_TOKEN es obligatoria en producción');
   }
 
+  const rawHops = readString(config, 'TRUST_PROXY_HOPS') ?? '0';
+  const trustProxyHops = Number(rawHops);
+  if (!/^\d$/.test(rawHops) || trustProxyHops > MAX_TRUST_PROXY_HOPS) {
+    errors.push(
+      `TRUST_PROXY_HOPS debe ser un entero entre 0 y ${MAX_TRUST_PROXY_HOPS} (recibido: "${rawHops}")`,
+    );
+  }
+
   const storage = validateStorage(config, nodeEnv, errors);
   const dueDates = validateDueDates(config, errors);
 
@@ -176,6 +193,7 @@ export function validateEnv(
     DATABASE_URL: databaseUrl,
     JWT_SECRET: jwtSecret,
     N8N_SERVICE_TOKEN: serviceToken,
+    TRUST_PROXY_HOPS: Number.isInteger(trustProxyHops) ? trustProxyHops : 0,
     ...storage,
     ...dueDates,
   };

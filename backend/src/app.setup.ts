@@ -1,11 +1,19 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { CORRELATION_HEADER } from './common/correlation-id.decorator.js';
 import { DatabaseExceptionFilter } from './common/database-exception.filter.js';
 import { EnvironmentVariables } from './config/env.validation.js';
 
 export const API_PREFIX = 'api/v1';
 export const SWAGGER_PATH = 'api/docs';
+/** Métodos y cabeceras que usa realmente el frontend. */
+export const CORS_METHODS = ['GET', 'POST', 'PATCH'];
+export const CORS_ALLOWED_HEADERS = [
+  'Authorization',
+  'Content-Type',
+  CORRELATION_HEADER,
+];
 
 /**
  * Configuración HTTP compartida por main.ts y las pruebas e2e,
@@ -15,7 +23,24 @@ export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService<EnvironmentVariables, true>);
 
   app.setGlobalPrefix(API_PREFIX);
-  app.enableCors({ origin: config.get('FRONTEND_URL', { infer: true }) });
+  // IP del cliente detrás de un proxy inverso: solo se confía en el número
+  // exacto de saltos configurado (0 por defecto: se ignora X-Forwarded-For).
+  const trustProxyHops = config.get('TRUST_PROXY_HOPS', { infer: true });
+  if (trustProxyHops > 0) {
+    (
+      app.getHttpAdapter().getInstance() as { set(k: string, v: unknown): void }
+    ).set('trust proxy', trustProxyHops);
+  }
+  // Un único origen permitido (el frontend). Sin cookies: la sesión viaja en
+  // la cabecera Authorization, por lo que no se habilitan credenciales.
+  app.enableCors({
+    origin: config.get('FRONTEND_URL', { infer: true }),
+    methods: CORS_METHODS,
+    allowedHeaders: CORS_ALLOWED_HEADERS,
+    exposedHeaders: [CORRELATION_HEADER],
+    credentials: false,
+    maxAge: 600,
+  });
   // Rechaza propiedades no declaradas en los DTO (p. ej. un ownerId enviado por el cliente).
   app.useGlobalPipes(
     new ValidationPipe({

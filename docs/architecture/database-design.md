@@ -216,3 +216,7 @@ Durante la etapa académica, la rama `production` de Neon es también el **únic
 - No se cargan datos personales reales. El único seed es `npm run db:seed:demo` (cuatro usuarios ficticios): se ejecuta de forma explícita, solo en desarrollo local, verifica la base antes de escribir y es idempotente (ver [authentication.md](authentication.md)).
 - Antes de un cambio de riesgo, crea un punto de restauración o una rama temporal de Neon. Requiere autorización: en esta etapa se decidió no crear ramas adicionales.
 - Cuando el proyecto tenga usuarios reales, conviene separar los entornos (rama `development` en Neon o una instancia local).
+
+## Rol de aplicación restringido (Fase 4.2F.1, preparado)
+
+La API usa hoy `neondb_owner`. El SQL para crear el rol de aplicación `notihouse_app` con privilegios mínimos está en `database/admin/`. No es una migración de Drizzle y **no se ha ejecutado en Neon**. Tras cada migración que agregue tablas hay que volver a ejecutar `02-grant-app-privileges.sql` y `03-verify-app-privileges.sql`. Inventario, pruebas y procedimiento: [backend-security-review.md](../security/backend-security-review.md#6-rol-postgresql-restringido).

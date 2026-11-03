@@ -49,6 +49,7 @@ copy .env.example .env      # Windows (cmd)
 | `DATABASE_URL_DIRECT` | Solo para migrar | — | Cadena de Neon **sin** Connection Pooling. La usan `db:migrate`, `db:check` y `db:seed:demo`. |
 | `JWT_SECRET` | Sí (salvo `NODE_ENV=test`) | — | Secreto HS256 de los JWT: mínimo 43 caracteres aleatorios (32 bytes). Se rechazan valores de ejemplo o de baja entropía. Genéralo localmente con `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Cada entorno tiene el suyo y nunca se comparte. |
 | `STORAGE_DRIVER`, `STORAGE_LOCAL_PATH`, `STORAGE_UPLOAD_TMP_PATH`, `STORAGE_MAX_PDF_BYTES`, `STORAGE_MAX_AUDIO_BYTES`, `STORAGE_S3_*` | `STORAGE_DRIVER=s3` obligatorio en `production` | `local`, `backend/.local/storage`, 10 MiB / 25 MiB | Almacenamiento privado de archivos. El driver local se rechaza en producción (disco efímero de Render). Ver [ingestion-api.md](ingestion-api.md#3-variables-de-entorno). |
+| `TRUST_PROXY_HOPS` | No | `0` | Proxies inversos de confianza (0 a 3). Con 0 se ignora `X-Forwarded-For`. Ver [render-readiness.md](../deployment/render-readiness.md). |
 | `DUE_DATES_TIME_ZONE`, `DUE_DATES_OBLIGATION_DAYS`, `DUE_DATES_RENT_CHARGE_DAYS`, `DUE_DATES_CONTRACT_DAYS`, `DUE_DATES_HITL_SOON_HOURS` | No | `America/Bogota`, 7, 7, 30, 6 | Zona horaria y umbrales de aviso del motor de vencimientos (parámetros operativos del MVP). Ver [alerts-and-dashboard.md](alerts-and-dashboard.md#15-umbrales-iniciales-parámetros-operativos-del-mvp). |
 | `N8N_SERVICE_TOKEN` | Solo en `production` | — | Token Bearer del servicio de automatización para las rutas `/api/v1/internal/*`. Mismos requisitos que `JWT_SECRET` y distinto de él. Sin él, las rutas internas rechazan toda solicitud. Ver [workflow-integration.md](workflow-integration.md#2-autenticación-del-servicio). |
 
@@ -97,6 +98,7 @@ Todos los endpoints funcionales usan el prefijo **`/api/v1`**.
 | Método | Ruta | Descripción |
 |---|---|---|
 | `GET` | `/api/v1/health` | Liveness: confirma que el proceso de la API responde. **Público** |
+| `GET` | `/api/v1/health/ready` | Readiness: `SELECT 1` a PostgreSQL con 3 s de límite; 503 si no responde. Sin detalles internos. **Público** |
 | `POST` | `/api/v1/auth/login` | Inicio de sesión con correo y contraseña. Devuelve un JWT de 30 minutos. **Público**, máximo 5 intentos por minuto por IP |
 | `GET` | `/api/v1/auth/me` | Usuario autenticado. Requiere `Authorization: Bearer <token>` |
 | `GET` `POST` | `/api/v1/properties` | Listar o crear inmuebles propios |

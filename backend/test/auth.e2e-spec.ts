@@ -8,6 +8,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { INVALID_CREDENTIALS_MESSAGE } from '../src/auth/auth.constants.js';
+import { sessionVersion } from '../src/auth/session-version.js';
 import { DRIZZLE, PG_POOL } from '../src/database/database.constants.js';
 import { authAccounts } from '../src/database/schema/index.js';
 import {
@@ -81,6 +82,10 @@ describe('Auth (e2e)', () => {
     const req = request(app.getHttpServer()).get('/api/v1/auth/me');
     return token ? req.set('Authorization', `Bearer ${token}`) : req;
   };
+  /** Versión de sesión vigente: las pruebas de rechazo la incluyen para que
+   *  el token falle por el motivo que cada prueba describe. */
+  const svOf = (user: TestUser) =>
+    sessionVersion(user.profileId, user.passwordChangedAt);
   const tokenFor = async (user: TestUser) =>
     (await login({ email: user.email, password: user.password }).expect(200))
       .body.accessToken as string;
@@ -121,6 +126,7 @@ describe('Auth (e2e)', () => {
         'iat',
         'iss',
         'sub',
+        'sv',
       ]);
       expect(payload).toMatchObject({
         sub: userA.profileId,
@@ -187,6 +193,17 @@ describe('Auth (e2e)', () => {
       expect(res.body.accessToken).toBeUndefined();
     });
 
+    it('ignores spoofed X-Forwarded-For headers by default (no proxy trusted)', async () => {
+      for (let i = 0; i < 5; i++) {
+        await login({ email: userA.email, password: 'wrong-password' })
+          .set('X-Forwarded-For', `203.0.113.${i}`)
+          .expect(401);
+      }
+      await login({ email: userA.email, password: userA.password })
+        .set('X-Forwarded-For', '198.51.100.77')
+        .expect(429);
+    });
+
     it('blocks repeated attempts after 5 per minute (429)', async () => {
       for (let i = 0; i < 5; i++) {
         await login({ email: userA.email, password: `wrong-${i}` }).expect(401);
@@ -250,7 +267,7 @@ describe('Auth (e2e)', () => {
       });
       await me(
         other.sign(
-          { sub: userA.profileId },
+          { sub: userA.profileId, sv: svOf(userA) },
           {
             issuer: 'notihouse-pal-api',
             audience: 'notihouse-pal-web',
@@ -262,14 +279,18 @@ describe('Auth (e2e)', () => {
 
     it('rejects an expired token', async () => {
       const issuedAt = Math.floor(Date.now() / 1000) - 3600;
-      await me(jwt.sign({ sub: userA.profileId, iat: issuedAt })).expect(401);
+      await me(
+        jwt.sign({ sub: userA.profileId, sv: svOf(userA), iat: issuedAt }),
+      ).expect(401);
     });
 
     it.each([
       ['issuer', { issuer: 'someone-else' }],
       ['audience', { audience: 'another-app' }],
     ])('rejects a token with the wrong %s', async (_claim, options) => {
-      await me(jwt.sign({ sub: userA.profileId }, options)).expect(401);
+      await me(
+        jwt.sign({ sub: userA.profileId, sv: svOf(userA) }, options),
+      ).expect(401);
     });
 
     it('rejects an unsigned token (alg: none)', async () => {
@@ -282,7 +303,16 @@ describe('Auth (e2e)', () => {
     });
 
     it('rejects a valid token for a profile that does not exist', async () => {
-      await me(jwt.sign({ sub: randomUUID() })).expect(401);
+      await me(jwt.sign({ sub: randomUUID(), sv: svOf(userA) })).expect(401);
+    });
+
+    it('accepts a server-signed token only with the current session version', async () => {
+      await me(jwt.sign({ sub: userA.profileId, sv: svOf(userA) })).expect(200);
+      await me(jwt.sign({ sub: userA.profileId })).expect(401);
+      await me(jwt.sign({ sub: userA.profileId, sv: svOf(userB) })).expect(401);
+      await me(jwt.sign({ sub: userA.profileId, sv: 'x'.repeat(22) })).expect(
+        401,
+      );
     });
 
     it('rejects tokens of an account deactivated after login', async () => {
@@ -309,6 +339,35 @@ describe('Auth (e2e)', () => {
         .where(eq(authAccounts.profileId, userB.profileId));
       try {
         await me(token).expect(401);
+      } finally {
+        await t.db
+          .update(authAccounts)
+          .set({ passwordChangedAt: sql`now() - interval '1 hour'` })
+          .where(eq(authAccounts.profileId, userB.profileId));
+      }
+    });
+  });
+
+  describe('password change within the same second (Fase 4.2F.1)', () => {
+    const iatOf = (token: string) =>
+      (
+        JSON.parse(
+          Buffer.from(token.split('.')[1]!, 'base64url').toString(),
+        ) as { iat: number }
+      ).iat;
+
+    it('rejects a token issued in the same second but before the change', async () => {
+      const token = await tokenFor(userB);
+      // El cambio ocurre al final del mismo segundo en que se emitió el
+      // token: `iat` (segundos) no distingue el orden de ambos eventos.
+      await t.db
+        .update(authAccounts)
+        .set({ passwordChangedAt: new Date(iatOf(token) * 1000 + 999) })
+        .where(eq(authAccounts.profileId, userB.profileId));
+      try {
+        await me(token).expect(401);
+        // Un inicio de sesión posterior al cambio sigue funcionando.
+        await me(await tokenFor(userB)).expect(200);
       } finally {
         await t.db
           .update(authAccounts)
@@ -348,7 +407,11 @@ describe('Auth (e2e)', () => {
       );
       expect(paths.filter((p) => /register|signup/.test(p))).toEqual([]);
 
-      const PUBLIC = new Set(['/api/v1/health', '/api/v1/auth/login']);
+      const PUBLIC = new Set([
+        '/api/v1/health',
+        '/api/v1/health/ready',
+        '/api/v1/auth/login',
+      ]);
       for (const [path, operations] of Object.entries(doc.paths)) {
         for (const [method, operation] of Object.entries(operations)) {
           // Rutas internas: solo el token de servicio; el resto: solo JWT de usuario.

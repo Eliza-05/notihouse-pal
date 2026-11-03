@@ -29,7 +29,7 @@ profiles (1) ──── (0..1) auth_accounts
 | `email` | `UNIQUE`. El check `auth_accounts_email_normalized` exige `email = lower(btrim(email))`, así que dos cuentas no pueden diferir solo en mayúsculas o espacios. El check `auth_accounts_email_format` valida la forma básica. |
 | `password_hash` | El check `auth_accounts_password_hash_argon2id` exige el prefijo `$argon2id$`. La base de datos rechaza contraseñas en claro u otros algoritmos. |
 | `is_active` | Las cuentas no se borran: se desactivan. Una cuenta inactiva no puede iniciar sesión y sus tokens dejan de funcionar al instante. |
-| `password_changed_at` | Se rechazan los tokens emitidos antes de esta fecha. Así, cambiar una contraseña invalida las sesiones anteriores. |
+| `password_changed_at` | Se rechazan los tokens emitidos antes de esta fecha. Desde la Fase 4.2F.1, cada JWT lleva además la versión de sesión `sv` (huella de `password_changed_at` con precisión de milisegundos) y solo se acepta si coincide con la vigente: cualquier cambio de contraseña invalida las sesiones anteriores, incluso las emitidas en el mismo segundo. |
 
 - **Datos duplicados:** el correo vive solo en `auth_accounts` y el nombre visible en `profiles`.
 - **`profiles.external_auth_id`:** queda reservado para un proveedor de identidad externo futuro. La autenticación local no lo usa y no existe ningún proveedor externo configurado.
@@ -80,7 +80,7 @@ Solo `GET /health` y `POST /auth/login`. Swagger no pasa por el guard porque no 
 | `sub` | UUID del perfil (`profiles.id`) |
 | `iss` | `notihouse-pal-api` |
 | `aud` | `notihouse-pal-web` |
-| Contenido | Solo `sub`, `iat`, `exp`, `iss`, `aud`. Sin correo, contraseña ni datos financieros. |
+| Contenido | Solo `sub`, `sv`, `iat`, `exp`, `iss`, `aud`. `sv` es una huella opaca (SHA-256 truncado) de `password_changed_at`. Sin correo, contraseña ni datos financieros. |
 
 ### Validación en cada petición (`JwtAuthGuard`)
 
@@ -89,7 +89,7 @@ Solo `GET /health` y `POST /auth/login`. Swagger no pasa por el guard porque no 
 | Sin cabecera `Authorization`, o con un esquema distinto de `Bearer` | 401 |
 | Firma inválida, token modificado, expirado, emisor o audiencia incorrectos | 401 |
 | `sub` que no es un UUID | 401 |
-| Perfil inexistente, cuenta inactiva o token anterior a `password_changed_at` | 401 |
+| Perfil inexistente, cuenta inactiva, token sin `sv` o con un `sv` distinto del vigente (contraseña cambiada) | 401 |
 | La base de datos no responde | **503**. El acceso se deniega: nunca se permite por omisión. |
 
 Si todo es válido, el guard deja en `request.user` un `AuthenticatedUser { profileId, email, displayName }`.
@@ -174,7 +174,7 @@ Se ejecutó una vez sobre Neon el 2026-10-24.
 
 - Usa `@nestjs/throttler` solo en `POST /auth/login`: 5 intentos por minuto por IP. A partir del sexto responde 429.
 - El almacenamiento es **en memoria**: funciona para **una instancia** y se reinicia al reiniciar el proceso. Con varias instancias, habrá que usar un almacenamiento compartido (por ejemplo, Redis) o un limitador en el borde.
-- Detrás del proxy de Render, `req.ip` será la IP del proxy salvo que se configure `trust proxy`. Es un ajuste pendiente para el despliegue.
+- Detrás de un proxy, `req.ip` sería la IP del proxy. Desde la Fase 4.2F.1, `TRUST_PROXY_HOPS` (0 por defecto) indica cuántos proxies son de confianza; nunca se usa `trust proxy = true`. El valor correcto para Render debe verificarse en la Fase 4.2F.3 (ver [render-readiness.md](../deployment/render-readiness.md)).
 
 ## 9. Pruebas
 
@@ -197,8 +197,8 @@ Se ejecutó una vez sobre Neon el 2026-10-24.
 2. **Row-Level Security:** evaluarla como defensa adicional sobre `owner_id`. No está activada.
 3. **Autorización por propietario** en todos los endpoints de negocio, con pruebas (Fase 4.2).
 4. **Revocación:** no hay lista de revocación. La desactivación de cuentas y `password_changed_at` invalidan tokens, y la duración máxima de una sesión es de 30 minutos.
-5. **Rate limiting** en memoria: ver la sección 8. Falta configurar `trust proxy` en Render.
+5. **Rate limiting** en memoria: ver la sección 8. Con varias instancias, cada una cuenta por separado. `TRUST_PROXY_HOPS` debe fijarse en Render tras verificar la topología.
 6. **Rotación de `JWT_SECRET`:** cambiarlo invalida todos los tokens. En Render se definirá como variable secreta de la plataforma.
-7. **Cambio de contraseña:** no hay endpoint. Si hace falta, se hará con un script administrativo que actualice el hash y `password_changed_at`.
+7. **Cambio de contraseña:** no hay endpoint. La rotación se hace con `npm run db:demo:rotate-passwords` (Fase 4.2F.1, preparado y no ejecutado), que actualiza hash y `password_changed_at` en una transacción. Ver [backend-security-review.md](../security/backend-security-review.md).
 8. **Contraseña demo compartida:** las cuatro cuentas actuales comparten una contraseña temporal (ver sección 7). Hay que reemplazarla por contraseñas individuales antes de publicar el backend.
 9. **Granularidad de la invalidación:** `iat` se expresa en segundos. Un token emitido en el mismo segundo en que se cambia la contraseña, pero antes del cambio, seguiría siendo válido hasta expirar (máximo 30 minutos). Los tokens de segundos anteriores se rechazan, como se comprobó contra Neon. Es una limitación aceptada para el MVP.

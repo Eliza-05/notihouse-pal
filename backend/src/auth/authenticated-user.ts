@@ -13,6 +13,8 @@ export interface AuthenticatedUser {
 
 export interface AccessTokenPayload {
   sub: string;
+  /** Versión de sesión (ver `session-version.ts`). */
+  sv: string;
   iat: number;
   exp: number;
   iss: string;

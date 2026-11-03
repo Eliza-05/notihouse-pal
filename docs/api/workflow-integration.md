@@ -152,7 +152,7 @@ Las respuestas nunca incluyen `ownerId`. Las internas tampoco exponen datos pers
 ## 7. Flujo de una propuesta
 
 - Cada propuesta es una **nueva versión** (`max + 1`, con el caso bloqueado) en `pending_review`.
-- Un reintento con el mismo contenido que la última versión (`jsonb` igual, aunque cambie el orden de claves) devuelve esa versión con 200.
+- Un reintento con el mismo contenido que **cualquier** versión anterior del caso (`jsonb` igual, aunque cambie el orden de claves) devuelve esa versión con 200, con su estado actual (p. ej. `superseded`). Una respuesta tardía o fuera de orden nunca recrea ni reactiva una versión reemplazada (Fase 4.2F.1).
 - Una versión nueva marca las anteriores pendientes como `superseded`. Las revisiones HITL pendientes ligadas a ellas se anulan (`cancelled`); si el caso queda sin revisiones pendientes, vuelve a `processing`.
 - **Guardar una propuesta no la aprueba ni modifica datos de negocio.** La auditoría registra `appliedToBusinessData: false` y el tamaño, nunca el contenido.
 

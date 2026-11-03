@@ -5,6 +5,7 @@ import type { Server } from 'node:http';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module.js';
 import { configureApp } from '../../src/app.setup.js';
+import { sessionVersion } from '../../src/auth/session-version.js';
 import { DRIZZLE, PG_POOL } from '../../src/database/database.constants.js';
 import type { TestDatabase, TestUser } from './pglite.js';
 
@@ -40,7 +41,11 @@ export async function createTestApp(
   await app.init();
 
   const jwt = app.get(JwtService);
-  const tokenFor = (user: TestUser) => jwt.sign({ sub: user.profileId });
+  const tokenFor = (user: TestUser) =>
+    jwt.sign({
+      sub: user.profileId,
+      sv: sessionVersion(user.profileId, user.passwordChangedAt),
+    });
   const clientWith = (auth: string): AuthedClient => {
     const server = app.getHttpServer();
     return {
