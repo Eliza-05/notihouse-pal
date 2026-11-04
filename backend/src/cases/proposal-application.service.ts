@@ -119,6 +119,7 @@ export class ProposalApplicationService {
         version: caseProposals.version,
         reviewStatus: caseProposals.reviewStatus,
         proposedData: caseProposals.proposedData,
+        source: caseProposals.source,
       })
       .from(caseProposals)
       .where(
@@ -172,6 +173,14 @@ export class ProposalApplicationService {
     if (caseRow.type !== 'household_obligation') {
       throw new ConflictException(
         'Las acciones permitidas solo aplican a casos de obligaciones del hogar',
+      );
+    }
+
+    // Una transcripción es solo texto de entrada: la operación aplicable debe
+    // venir de una propuesta posterior de interpretación con su propia revisión.
+    if (proposal.source === 'stt') {
+      throw new BadRequestException(
+        'Una transcripción (stt) no se aplica; registra una propuesta de interpretación',
       );
     }
 

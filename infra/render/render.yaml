@@ -1,33 +1,43 @@
-# NotiHouse-Pal — Blueprint de Render para el backend (Fase 4.2F.1).
+# NotiHouse-Pal — Blueprint de Render para el backend (Fase 4.2F.3).
 # PREPARADO, NO DESPLEGADO. Está fuera de la raíz del repositorio a propósito:
 # Render solo lo usará si se crea un Blueprint indicando esta ruta.
 # Ningún secreto vive aquí: los valores con `sync: false` se cargan a mano en
-# el panel de Render. Procedimiento: docs/deployment/render-readiness.md.
+# el panel de Render, y Render solo los pide al crear el Blueprint.
+# Procedimiento: docs/deployment/mvp-demo-setup.md.
 services:
   - type: web
     name: notihouse-pal-api
     runtime: node
+    # Sin `plan`, Render crearía una instancia de pago. La región no se puede
+    # cambiar después: Ohio es la más próxima a Neon (aws-us-east-2).
+    plan: free
+    region: ohio
+    branch: develop
     rootDir: backend
     # devDependencies son necesarias para compilar (nest CLI, TypeScript).
     buildCommand: npm ci --include=dev && npm run build
-    startCommand: npm run start:prod
+    # Node directo: con `npm run`, SIGTERM no deja cerrar el pool limpiamente.
+    startCommand: node dist/main
     # Liveness (no depende de PostgreSQL): un arranque en frío de Neon no
-    # debe reiniciar la instancia. /api/v1/health/ready es para monitoreo.
+    # debe reiniciar la instancia. /api/v1/health/ready es para comprobar Neon.
     healthCheckPath: /api/v1/health
-    autoDeploy: false
+    autoDeployTrigger: "off"
     envVars:
       - key: NODE_ENV
         value: production
+      # Render lee .node-version solo de la raíz del repositorio.
+      - key: NODE_VERSION
+        value: "24"
       - key: FRONTEND_URL
-        sync: false # origen exacto del frontend en Vercel (sin ruta)
+        sync: false # origen exacto del frontend en Vercel (sin ruta ni barra final)
       - key: DATABASE_URL
-        sync: false # Neon con pooling, rol notihouse_app (no neondb_owner)
+        sync: false # Neon con pooling (host -pooler), sin comillas
       - key: JWT_SECRET
         sync: false
       - key: N8N_SERVICE_TOKEN
         sync: false
       - key: TRUST_PROXY_HOPS
-        sync: false # verificar la topología antes de fijarlo (ver documentación)
+        sync: false # 1 para empezar; medir según mvp-demo-setup.md
       - key: STORAGE_DRIVER
         value: s3
       - key: STORAGE_S3_BUCKET

@@ -14,6 +14,7 @@ interface ReviewOptions {
   decisionType?: string;
   choices?: boolean;
   decision?: 'approved' | 'rejected' | null;
+  source?: 'llm' | 'ocr' | 'stt';
 }
 
 /**
@@ -79,7 +80,7 @@ describe('Proposal application (e2e)', () => {
       await svc()
         .post(`/internal/cases/${c.id}/proposals`, {
           ...ref(job!),
-          source: 'llm',
+          source: options.source ?? 'llm',
           proposedData,
           confidence: '0.910',
         })
@@ -487,6 +488,15 @@ describe('Proposal application (e2e)', () => {
           `SELECT (SELECT count(*) FROM obligation_occurrences) AS o, (SELECT count(*) FROM proposal_applications) AS a`,
         ),
       ).toEqual(before);
+      expect(await failures(p.id)).toBe(1);
+    });
+
+    it('never applies a transcription (stt), even shaped as an allowed action', async () => {
+      const proposedData = occurrenceAction();
+      const { c, p } = await reviewed(proposedData, { source: 'stt' });
+      const periods = await occurrencesOf(w.lauraObligation);
+      await apply(w.laura, c.id, p.id).expect(400);
+      expect(await occurrencesOf(w.lauraObligation)).toBe(periods);
       expect(await failures(p.id)).toBe(1);
     });
 

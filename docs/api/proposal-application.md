@@ -12,7 +12,7 @@ Aprobar una propuesta en una revisión humana (HITL) **no** autoriza ejecutar cu
 |---|---|
 | 201 | Aplicada ahora |
 | 200 | Ya estaba aplicada (`alreadyApplied: true`, misma respuesta) |
-| 400 | Acción no permitida, formato inválido, datos inválidos, moneda distinta, obligación distinta de la del caso |
+| 400 | Transcripción `stt`, acción no permitida, formato inválido, datos inválidos, moneda distinta, obligación distinta de la del caso |
 | 404 | Caso, propuesta u obligación inexistentes o ajenos |
 | 409 | Propuesta no aprobada, rechazada, reemplazada o no es la última versión; revisión inválida o fuera de plazo; caso `failed`/`cancelled`; tipo de caso no aplicable; período duplicado; obligación duplicada |
 
@@ -95,8 +95,9 @@ Los DTO rechazan campos no declarados también dentro de `data` (p. ej. `status:
 6. Es la última versión del caso (409 si existe una más reciente).
 7. Existe una revisión HITL del mismo caso, vinculada a esta propuesta, asignada al usuario, en estado `approved`, con decisión `approved`, **respondida antes de su `due_at`**, de tipo `data_confirmation` y **sin alternativas** (409 en otro caso). Una revisión con alternativas no autoriza la aplicación automática porque la alternativa elegida no forma parte de la propuesta aprobada.
 8. El caso es de tipo `household_obligation` (409).
-9. `proposed_data` cumple el formato, la acción permitida y su DTO (400).
-10. Reglas de negocio de la acción (recursos propios, moneda, duplicados).
+9. La propuesta no es una transcripción, `source = stt` (400): el texto debe interpretarse en una propuesta posterior con su propia revisión.
+10. `proposed_data` cumple el formato, la acción permitida y su DTO (400).
+11. Reglas de negocio de la acción (recursos propios, moneda, duplicados).
 
 ## 4. Procedimiento, idempotencia y concurrencia
 

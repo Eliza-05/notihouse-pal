@@ -116,6 +116,12 @@ describe('S3FileStorage (contract, no network)', () => {
       forcePathStyle: false,
     });
     expect(await client.config.region()).toBe('us-east-2');
+    expect(await client.config.requestChecksumCalculation()).toBe(
+      'WHEN_REQUIRED',
+    );
+    expect(await client.config.responseChecksumValidation()).toBe(
+      'WHEN_REQUIRED',
+    );
     client.destroy();
   });
 });

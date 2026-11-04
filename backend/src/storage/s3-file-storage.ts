@@ -34,12 +34,19 @@ export interface S3StorageSettings {
  * Crea el cliente oficial sin conectarse: el SDK solo abre conexiones al
  * ejecutar un comando. Sin claves explícitas usa la cadena de credenciales
  * estándar de AWS (variables, rol de la instancia…).
+ *
+ * Los checksums automáticos del SDK se limitan a las operaciones que los exigen:
+ * con streams añaden trailers `aws-chunked` que no todos los proveedores
+ * compatibles documentan. La integridad ya se controla con el SHA-256 y el
+ * tamaño calculados al recibir el archivo.
  */
 export function createS3Client(settings: S3StorageSettings): S3Client {
   return new S3Client({
     region: settings.region,
     ...(settings.endpoint ? { endpoint: settings.endpoint } : {}),
     forcePathStyle: settings.forcePathStyle,
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
     ...(settings.accessKeyId && settings.secretAccessKey
       ? {
           credentials: {

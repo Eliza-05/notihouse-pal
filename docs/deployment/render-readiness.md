@@ -1,63 +1,61 @@
-# Preparación del backend para Render (Fase 4.2F.1)
+# Preparación del backend para Render (Fase 4.2F.3)
 
-Estado: **preparado, no desplegado.** No se conectó GitHub a Render ni se creó ningún servicio. Este documento lista lo que el backend ya soporta, la configuración exacta y lo que falta para publicarlo de forma segura.
+Estado: **código preparado, no desplegado.** No se conectó GitHub a Render ni se creó ningún servicio. Los pasos están en [mvp-demo-setup.md](mvp-demo-setup.md); este documento recoge qué se comprobó y qué falta.
 
-Clasificación: **VERIFICADO**, **PENDIENTE DE VALIDACIÓN REAL**, **REQUIERE DECISIÓN** y **BLOQUEANTE** (ver [backend-security-review.md](../security/backend-security-review.md)).
+Alcance: demostración del MVP con **una sola instancia**, usada solo por el equipo.
+
+**Clasificación:**
+
+- **VERIFICADO:** comprobado con pruebas o ejecución.
+- **PENDIENTE EN RENDER:** solo se puede comprobar con el servicio real.
+- **DECISIÓN DEL EQUIPO:** depende de una elección del equipo.
 
 ## 1. Servicio
 
 | Parámetro | Valor | Estado |
 |---|---|---|
-| Tipo | Web Service, runtime Node | — |
-| Root Directory | `backend` | VERIFICADO (monorepositorio) |
-| Node | 24 (`backend/.node-version`; también `NODE_VERSION=24`) | VERIFICADO localmente con Node 24.22 |
-| Build Command | `npm ci --include=dev && npm run build` | VERIFICADO localmente (`nest build`) |
-| Start Command | `npm run start:prod` (`node dist/main`) | VERIFICADO localmente |
+| Tipo | Web Service, runtime Node, rama `develop` | — |
+| Root Directory | `backend` | VERIFICADO |
+| Node | `NODE_VERSION=24`. Render documenta la lectura de `.node-version` solo en la raíz del repositorio, y este está en `backend/` | VERIFICADO con Node 24.22 en Linux |
+| Build Command | `npm ci --include=dev && npm run build` | VERIFICADO en Linux limpio con `NODE_ENV=production`, sin `.env` |
+| Start Command | `node dist/main` | VERIFICADO |
 | Health Check Path | `/api/v1/health` | VERIFICADO |
-| Auto-Deploy | Desactivado hasta cerrar los bloqueantes | REQUIERE DECISIÓN |
-| Instancias | 1 (ver rate limiting) | REQUIERE DECISIÓN |
+| Región | Ohio (Neon está en `aws-us-east-2`; no se puede cambiar después) | DECISIÓN DEL EQUIPO |
+| Plan | Free en el Blueprint. Sin `plan`, Render crea una instancia de pago | DECISIÓN DEL EQUIPO |
+| Auto-Deploy | Desactivado | — |
 
-- `--include=dev` es necesario: si Render define `NODE_ENV=production` durante la compilación, `npm ci` omitiría las devDependencies (nest CLI y TypeScript) y fallaría el build.
-- Blueprint opcional en `infra/render/render.yaml`. Está fuera de la raíz a propósito: solo se usa si se crea un Blueprint indicando esa ruta. No contiene secretos (`sync: false`).
-- No se ejecutan migraciones al arrancar, y no deben añadirse al build ni al start. Las migraciones se aplican con el procedimiento versionado y el rol propietario.
+- `--include=dev` es necesario: con `NODE_ENV=production` durante la compilación, `npm ci` omitiría el CLI de Nest y TypeScript.
+- **`node dist/main`, no `npm run start:prod`.** Con `docker stop`, Node directo termina con `exit 0` y cierra el pool. Con npm como proceso principal termina con `exit 1` sin ese cierre, y envuelto en un shell no llega a terminar hasta el `SIGKILL`.
+- Las migraciones no se ejecutan al arrancar y no deben añadirse al build ni al start.
+- El Blueprint opcional es `infra/render/render.yaml`. No contiene secretos.
 
-## 2. Puerto y host
+## 2. Arranque
 
-`main.ts` escucha en `PORT` (validado entre 1 y 65535) y en `0.0.0.0`. Render inyecta `PORT`, y localmente el valor por defecto es 3000. `enableShutdownHooks()` cierra el pool de PostgreSQL ante `SIGTERM`. **VERIFICADO.**
+| Comprobación | Resultado |
+|---|---|
+| `PORT` y `0.0.0.0` | VERIFICADO: responde en el puerto inyectado (`10000`) |
+| Tiempo hasta `/health` → 200 | VERIFICADO: unos 2 s en contenedor local |
+| `argon2` nativo en Linux | VERIFICADO: login real tras `npm ci` limpio |
+| SIGTERM | VERIFICADO: cierre limpio con Node directo |
+| Independencia del disco | VERIFICADO: el driver `s3` no usa disco persistente y `local` se rechaza |
+| Swagger | VERIFICADO: `/api/docs` y `/api/docs-json` → 404 |
 
 ## 3. Variables de entorno
 
-| Variable | Tipo | Producción | Notas |
-|---|---|---|---|
-| `NODE_ENV` | config | `production` | Desactiva Swagger y exige secretos y S3 |
-| `PORT` | config | La define Render | — |
-| `FRONTEND_URL` | config | Origen exacto del frontend en Vercel | Un solo origen, sin ruta ni comodín. El dominio aún no existe: **REQUIERE DECISIÓN** |
-| `DATABASE_URL` | **secreto** | Neon con pooling, rol `notihouse_app` | **BLOQUEANTE** mientras use `neondb_owner` |
-| `DATABASE_URL_DIRECT` | **secreto** | **No** se carga en Render | Solo para migraciones y scripts administrativos |
-| `JWT_SECRET` | **secreto** | ≥ 43 caracteres aleatorios, nuevo para producción | Rotarlo (estuvo en una carpeta sincronizada) |
-| `N8N_SERVICE_TOKEN` | **secreto** | ≥ 43 caracteres aleatorios, ≠ `JWT_SECRET` | Obligatorio en producción |
-| `TRUST_PROXY_HOPS` | config | Ver sección 5 | 0 por defecto |
-| `STORAGE_DRIVER` | config | `s3` (`local` rechazado en producción) | — |
-| `STORAGE_S3_BUCKET`, `STORAGE_S3_REGION` | config | Bucket privado | **BLOQUEANTE**: no existe |
-| `STORAGE_S3_ENDPOINT` | config | Solo para proveedores compatibles (https) | — |
-| `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY` | **secreto** | Credenciales de permisos mínimos | Van juntas |
-| `STORAGE_S3_FORCE_PATH_STYLE` | config | Según el proveedor | — |
-| `STORAGE_MAX_PDF_BYTES`, `STORAGE_MAX_AUDIO_BYTES` | config | 10 MiB / 25 MiB | Techos: 50 / 100 MiB |
-| `STORAGE_UPLOAD_TMP_PATH` | config | Por defecto, el tmp del sistema | Disco efímero: solo temporales |
-| `DUE_DATES_TIME_ZONE`, `DUE_DATES_*` | config | `America/Bogota`, 7, 7, 30, 6 | Parámetros operativos del MVP |
+La tabla completa está en [mvp-demo-setup.md](mvp-demo-setup.md#4-variables-de-render).
 
-La validación de entorno impide arrancar con:
+**VERIFICADO:** en un contenedor de producción, la API se niega a arrancar, sin mostrar valores secretos, con:
 
-- variables obligatorias ausentes;
-- secretos cortos o de ejemplo;
-- `N8N_SERVICE_TOKEN = JWT_SECRET`;
-- almacenamiento local en producción;
-- un endpoint S3 sin https;
-- `FRONTEND_URL` inválido;
-- un puerto fuera de rango;
-- `TRUST_PROXY_HOPS` fuera de 0 a 3.
+- `STORAGE_DRIVER` ausente o `local`;
+- bucket ausente, endpoint S3 `http`, o una sola clave S3;
+- `JWT_SECRET` vacía o débil;
+- `N8N_SERVICE_TOKEN` ausente o igual a `JWT_SECRET`;
+- `DATABASE_URL` vacía o con comillas;
+- `FRONTEND_URL` con barra final;
+- `TRUST_PROXY_HOPS=true`;
+- `PORT` inválido.
 
-Los mensajes nunca incluyen valores secretos. **VERIFICADO** (`env.validation.spec.ts`, `production-config.e2e-spec.ts`).
+`FRONTEND_URL` es la única variable importante con un valor por defecto en producción (`http://localhost:5173`). Es intencional: permite desplegar antes de tener el dominio de Vercel sin abrir CORS.
 
 ## 4. CORS
 
@@ -65,108 +63,96 @@ Los mensajes nunca incluyen valores secretos. **VERIFICADO** (`env.validation.sp
 
 | Parámetro | Valor |
 |---|---|
-| Métodos | `GET`, `POST`, `PATCH` (los únicos que usa la API) |
+| Métodos | `GET`, `POST`, `PATCH` (no hay rutas `PUT` ni `DELETE`) |
 | Cabeceras | `Authorization`, `Content-Type`, `X-Correlation-Id` |
 | Cabecera expuesta | `X-Correlation-Id` |
-| Credenciales | No: la sesión viaja en `Authorization`, no en cookies |
+| Credenciales | No: la sesión viaja en `Authorization` |
 | Caché de preflight | 10 min |
 
-**VERIFICADO** (`app.e2e-spec.ts`, `production-config.e2e-spec.ts`). Las URLs de *preview* de Vercel no están permitidas. Si se necesitan, hay que decidir entre una lista explícita de orígenes y un entorno de *preview* con su propio backend (**REQUIERE DECISIÓN**).
+- Las subidas multipart solo necesitan `Content-Type`. La idempotencia usa el campo `requestId`, sin cabecera propia. `X-Job-Id` y `X-Claim-Token` son solo de n8n, que no pasa por CORS.
+- **Cómo rechaza a otros orígenes:** con un origen fijo, la API responde siempre `Access-Control-Allow-Origin: <FRONTEND_URL>`, también a los demás. Es el navegador el que bloquea por no coincidir. Por eso la comprobación correcta es que la cabecera no contenga el origen ajeno, no que falte.
+
+**VERIFICADO** (`app.e2e-spec.ts`, `production-config.e2e-spec.ts`, `npm run smoke:api` en contenedor). Los dominios reales de Vercel siguen PENDIENTES.
 
 ## 5. Proxy inverso y rate limiting
 
-- **Sin configuración** (`TRUST_PROXY_HOPS=0`), Express ignora `X-Forwarded-For` y `req.ip` es la IP del proxy de Render. Todos los usuarios comparten así el límite de login (5/min): un cliente podría bloquear el acceso de todos.
-- **Con `TRUST_PROXY_HOPS=N`**, Express toma la IP del cliente saltando exactamente N proxies desde la derecha de `X-Forwarded-For`. Lo que un cliente anteponga en la cabecera queda a la izquierda y no se usa. Nunca se usa `true`.
+- Con `TRUST_PROXY_HOPS=0`, Express ignora `X-Forwarded-For` y `req.ip` es la IP del proxy. Todos los usuarios compartirían el límite de login (5/min): cuatro personas entrando a la vez lo agotan casi por completo.
+- Con `TRUST_PROXY_HOPS=N`, Express toma la IP saltando N proxies desde la derecha, de modo que lo que anteponga el cliente no se usa. Nunca se usa `true`.
 
-**VERIFICADO:**
+**VERIFICADO** con un proxy simulado (`production-config.e2e-spec.ts`).
 
-- Con 0, una cabecera falsificada no evade el límite.
-- Con 1, dos clientes distintos detrás del mismo proxy tienen límites independientes y anteponer una IP falsa no evade el límite.
+**PENDIENTE EN RENDER.** El número de saltos no se asume. Se mide desde fuera, sin cambiar código, con dos redes: [mvp-demo-setup.md, sección 6](mvp-demo-setup.md#6-verificar-el-backend-por-https).
 
-**PENDIENTE DE VALIDACIÓN REAL.** Render ubica la API detrás de su balanceador; la documentación de Render indica que la IP del cliente llega en `X-Forwarded-For`. El número de saltos debe **medirse** antes de fijarlo:
-
-1. Desplegar con `TRUST_PROXY_HOPS=0`.
-2. Agregar temporalmente un log de diagnóstico, o una ruta privada, que muestre `X-Forwarded-For` y `req.ip` para una solicitud de prueba propia.
-3. Contar las entradas que añade la infraestructura: normalmente 1, o más si hay CDN.
-4. Fijar `TRUST_PROXY_HOPS` a ese número, retirar el diagnóstico y repetir la prueba de 6 intentos de login desde dos redes distintas.
-
-Si se pone delante otro proxy o CDN (p. ej. Cloudflare), el número cambia.
-
-**Limitaciones del rate limit:**
-
-- El contador está **en memoria**: con varias instancias, cada una cuenta por separado y el límite efectivo es N × 5. Se reinicia con cada despliegue.
-- Para el MVP basta **una instancia**. Con varias, el almacenamiento debe ser compartido (Redis o PostgreSQL): **REQUIERE DECISIÓN**.
-- **Límites recomendados** (REQUIERE DECISIÓN; no implementados salvo el login):
-  - login 5/min por IP (implementado);
-  - subidas 20/h por usuario (hoy: 2 simultáneas por usuario y 10 por proceso);
-  - rutas internas sin límite por IP (token de servicio, operaciones idempotentes);
-  - evaluación de alertas: la programa n8n, una vez por hora como máximo.
+**Aceptado para el MVP:** el contador está en memoria, se reinicia con cada despliegue y es por instancia. Con una sola instancia es suficiente. Siguen activos el límite de login, los límites de tamaño y las 2 subidas simultáneas por usuario y 10 por proceso.
 
 ## 6. Health checks
 
 | Ruta | Uso | Comportamiento |
 |---|---|---|
-| `GET /api/v1/health` | **Health check de Render** (liveness) | No consulta dependencias. Siempre 200 si el proceso responde |
-| `GET /api/v1/health/ready` | Monitoreo externo (readiness) | `SELECT 1` con 3 s de límite: 200 `ready` o 503 `unavailable`. Sin host, errores ni credenciales |
+| `GET /api/v1/health` | Health check de Render | No consulta dependencias: un arranque en frío de Neon no reinicia la instancia |
+| `GET /api/v1/health/ready` | Comprobación manual | `SELECT 1` con 3 s de límite: 200 `ready` o 503 `unavailable`, sin host, errores ni credenciales |
 
-No se usa readiness como health check de Render: un arranque en frío de Neon, que suspende el cómputo inactivo, haría reiniciar la instancia sin motivo. **VERIFICADO** (`app.e2e-spec.ts`; Neon: `/health/ready` → 200).
+**VERIFICADO.** No revisa el almacenamiento; para eso está `npm run storage:check`.
 
-## 7. Swagger
+## 7. Base de datos
 
-Se publica en `/api/docs` solo si `NODE_ENV ≠ production`. En producción, `/api/docs` y `/api/docs-json` responden 404. **VERIFICADO** (`production-config.e2e-spec.ts`). Swagger no contiene tokens: los esquemas `bearer` y `service` no tienen valores de ejemplo.
+**VERIFICADO en Neon, solo lectura:**
 
-## 8. Base de datos
+- conexión pooled (la de la API) y directa;
+- PostgreSQL 18.6, 18 tablas, 3 migraciones;
+- 4 cuentas;
+- huella SHA-256 de todas las tablas idéntica antes y después del smoke test.
 
-- **BLOQUEANTE.** Crear `notihouse_app` y cambiar `DATABASE_URL` (procedimiento en backend-security-review.md, sección 6). Los SQL y la API con ese rol se comprobaron en PostgreSQL 18 local (Fase 4.2F.2); en Neon sigue sin ejecutarse. Hay que volver a aplicar `02-grant-app-privileges.sql` después de cada migración nueva.
-- Pool: máximo 5 conexiones por instancia, `connectionTimeoutMillis` 10 s. Usar el host con **pooler** de Neon.
-- El rol de aplicación tiene `statement_timeout` de 30 s e `idle_in_transaction_session_timeout` de 60 s.
-- Las migraciones nunca se ejecutan desde Render.
+**Compatibilidad con el pooler:** el código no usa `SET` de sesión ni bloqueos asesores de sesión. Solo `pg_advisory_xact_lock`, que es de transacción.
 
-## 9. Almacenamiento de archivos (BLOQUEANTE para la ingesta)
+**Rol `notihouse_app`:**
 
-El disco de Render es efímero: el driver `local` está prohibido en producción y la API no arranca con él. Requisitos para elegir y configurar el proveedor S3-compatible:
+- **VERIFICADO en PostgreSQL 18 local:** los SQL `01`, `02`, `03`, el `LOGIN`, la API completa con ese rol (flujos PDF y voz sobre S3 local) y la reversión `99`.
+- **PENDIENTE EN NEON:** no se ha creado. Requiere autorización.
+- **Corrección de procedimiento:** Neon no admite contraseñas con hash, así que `\password` no sirve; se usa `ALTER ROLE … PASSWORD`. No se comprobó si la consola de Neon puede reiniciar la contraseña de un rol creado por SQL.
+- **Sin comprobar todavía:** el acceso de un rol creado por SQL a través del pooler de Neon. El paso 5 del procedimiento lo prueba antes de tocar Render.
 
-1. Bucket **privado**: sin ACL públicas ni políticas de lectura anónima, con *Block Public Access* o equivalente.
-2. Soporte de escritura condicional `If-None-Match: *` en `PutObject`, que es la política de no sobrescritura. **Verificarlo** subiendo dos veces la misma clave: la segunda debe responder 412. Si el proveedor no lo soporta, hay que decidir entre aceptar el riesgo (las claves son UUID nuevos) y añadir `HeadObject` previo.
-3. Credenciales exclusivas del backend con permisos mínimos sobre el prefijo del bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` (para la compensación) y `s3:ListBucket` (solo si se implementa la limpieza de huérfanos). Sin permisos de administración del bucket.
-4. Cifrado en reposo y TLS (`STORAGE_S3_ENDPOINT` https).
-5. Región próxima a Render y Neon (us-east). Las facturas no salen por URLs firmadas: todo pasa por la API.
-6. Versionado y retención según la política de documentos: **REQUIERE DECISIÓN**.
-7. Prueba de humo tras configurarlo:
-   - subir un PDF;
-   - descargarlo como propietario;
-   - comprobar 404 para otro usuario;
-   - comprobar el acceso del worker con su reclamación;
-   - simular un fallo para verificar la compensación.
+## 8. Almacenamiento
 
-## 10. Secretos y rotación antes de publicar
+**Adaptador S3, VERIFICADO** contra MinIO con HTTPS, usando la API de producción en contenedor Linux:
 
-1. Mover el clon fuera de OneDrive o excluir `backend/.env` y `backend/.local/` de la sincronización.
-2. Rotar la contraseña del rol de Neon usado hasta ahora; desde la consola de Neon se reinicia la contraseña.
-3. Generar un `JWT_SECRET` nuevo solo para producción. Esto invalida todas las sesiones.
-4. Generar un `N8N_SERVICE_TOKEN` nuevo y cargarlo en n8n y en Render.
-5. Rotar las contraseñas demo con `npm run db:demo:rotate-passwords`.
-6. Cargar los secretos solo en el panel de Render (*Environment*), nunca en `render.yaml` ni en el repositorio.
+- escritura y lectura en streaming, con contenido íntegro;
+- `If-None-Match: *`, con 412 al sobrescribir;
+- sin ACL ni URLs firmadas; acceso anónimo → 403;
+- subida de PDF y audio, descarga del propietario y lectura del worker con reclamación;
+- archivos disponibles tras **recrear el contenedor**, simulando el disco efímero de Render;
+- logs sin credenciales;
+- sin cambios de esquema.
 
-## 11. Bloqueantes y checklist previa a la publicación
+**Compensación:** el borrado se probó contra MinIO. El caso de fallo de PostgreSQL tras guardar sigue cubierto en pruebas e2e con almacenamiento local y dobles.
 
-**Bloqueantes:**
+**Ajuste realizado:** los checksums automáticos del SDK se limitan a las operaciones que los exigen. Con streams, el SDK añade trailers `aws-chunked` que no todos los proveedores documentan. La integridad se controla con el SHA-256 calculado al recibir.
 
-- [ ] API con rol `notihouse_app` (no `neondb_owner`).
-- [ ] Contraseñas demo individuales y rotadas; archivo de credenciales eliminado.
-- [ ] Almacenamiento S3 privado configurado y probado.
-- [ ] Secretos de producción nuevos (`JWT_SECRET`, `N8N_SERVICE_TOKEN`, contraseña de Neon).
+**PENDIENTE:** el proveedor no está elegido ni probado, y la persistencia **no está verificada en Render**. Comparación y pasos: [mvp-demo-setup.md, sección 5](mvp-demo-setup.md#5-almacenamiento-de-pdf-y-audio).
 
-**Checklist:**
+## 9. Mejoras posteriores al MVP
 
-- [ ] `FRONTEND_URL` con el dominio definitivo de Vercel.
-- [ ] `TRUST_PROXY_HOPS` medido y probado (sección 5).
-- [ ] Una sola instancia, o decisión tomada sobre el rate limit compartido.
-- [ ] Build y start en Render con los comandos de la sección 1.
-- [ ] Health check en `/api/v1/health`; `/api/v1/health/ready` → 200.
-- [ ] Swagger: `/api/docs` → 404.
-- [ ] CORS: preflight desde el frontend real → permitido; desde otro origen → sin `Access-Control-Allow-Origin`.
-- [ ] Login de las cuatro cuentas, `/auth/me`, dashboard y bandeja.
-- [ ] Ruta interna con un token incorrecto → 401; con un JWT de usuario → 401.
-- [ ] Logs de Render revisados: sin tokens, contraseñas ni cadenas de conexión.
-- [ ] Fase 4.2F.2 (concurrencia real) completada sobre un entorno descartable.
+No se implementan ahora; quedan documentadas:
+
+- RLS, rate limit compartido, varias instancias y límites de subida por hora.
+- Lista de varios orígenes CORS (para *previews* de Vercel).
+- Limpieza de objetos huérfanos y análisis antimalware antes de aceptar PDF reales de terceros.
+- Prueba de contención a través del pooler de Neon.
+- Mover el clon fuera de OneDrive y rotar la contraseña de `neondb_owner`.
+
+## 10. Checklist de publicación
+
+**Antes de la URL pública (requieren aprobación):**
+
+- [ ] `JWT_SECRET` y `N8N_SERVICE_TOKEN` nuevos, solo en Render.
+- [ ] Contraseñas demo rotadas (recomendado; [riesgo](mvp-demo-setup.md#9-usuarios-demo)).
+- [ ] API con `notihouse_app` (recomendado).
+- [ ] Bucket privado con `npm run storage:check` correcto.
+
+**Tras el primer despliegue:**
+
+- [ ] `npm run smoke:api` contra la URL HTTPS.
+- [ ] `TRUST_PROXY_HOPS` medido con dos redes.
+- [ ] PDF y audio disponibles tras reiniciar en Render.
+- [ ] Logs de Render sin tokens, contraseñas ni cadenas de conexión.
+- [ ] `FRONTEND_URL` con el dominio definitivo y preflight real desde el navegador.

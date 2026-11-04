@@ -144,7 +144,7 @@ Herramientas: `npm run db:demo:rotate-passwords`, con el script `src/database/sc
 | Login limitado a 5 intentos por minuto y por IP; responde 429 | VERIFICADO | `auth.e2e-spec.ts` |
 | `X-Forwarded-For` falsificado no evade el límite (por defecto no se confía en ningún proxy) | VERIFICADO | `auth.e2e-spec.ts › ignores spoofed X-Forwarded-For` |
 | Política explícita de proxy: `TRUST_PROXY_HOPS` (0 a 3, nunca `true`) | **CORREGIDO** | Antes, detrás de Render todas las solicitudes compartirían la IP del proxy y un cliente podía bloquear el login de todos. `production-config.e2e-spec.ts`: con 1 salto, otro cliente no queda bloqueado y anteponer una IP falsa no evade el límite. |
-| Valor correcto de `TRUST_PROXY_HOPS` en Render | PENDIENTE DE VALIDACIÓN REAL | Ver render-readiness.md |
+| Valor correcto de `TRUST_PROXY_HOPS` en Render | PENDIENTE DE VALIDACIÓN REAL | Se mide desde fuera, con dos redes: [mvp-demo-setup.md](../deployment/mvp-demo-setup.md#6-verificar-el-backend-por-https) |
 | CORS: un único origen (`FRONTEND_URL`, sin comodín ni ruta), sin credenciales, métodos `GET,POST,PATCH`, cabeceras `Authorization, Content-Type, X-Correlation-Id`; expone `X-Correlation-Id` | **CORREGIDO** (antes permitía cualquier método y cabecera, y no exponía el correlation id) | `app.e2e-spec.ts`, `production-config.e2e-spec.ts` |
 | Contador del rate limit en memoria: con varias instancias cada una cuenta por separado (el límite efectivo es N × 5) | REQUIERE DECISIÓN | Para el MVP con una instancia es aceptable; con varias, almacenamiento compartido (Redis o PostgreSQL). |
 | Límites de subida: 2 simultáneas por usuario y 10 por proceso, más límites de tamaño; sin límite por minuto | REQUIERE DECISIÓN | Recomendación: añadir un throttler por usuario a `/ingestions/*` (p. ej. 20/h) antes de abrir a usuarios reales. |
@@ -193,14 +193,12 @@ Ningún servicio usa `DELETE`, `TRUNCATE`, `REFERENCES`, `TRIGGER`, secuencias n
 
 ### 6.3 Procedimiento (Fase 4.2F.3)
 
-1. Como `neondb_owner`: ejecutar `01` y `02` (psql, una transacción cada uno) y `03` (sin filas con `ok = false`).
-2. Asignar la contraseña sin que quede en SQL ni en el historial: consola de Neon (*Roles → Reset password*) o `\password notihouse_app` en psql. Después: `ALTER ROLE notihouse_app LOGIN;`.
-3. Construir la nueva `DATABASE_URL` (pooler) con `notihouse_app` y probarla localmente: arrancar la API con esa cadena y comprobar `/api/v1/health/ready` y un inicio de sesión. `npm run db:check` sigue usando `DATABASE_URL_DIRECT` (propietario) y no prueba el rol nuevo.
-4. Cambiar `DATABASE_URL` en Render y reiniciar. `DATABASE_URL_DIRECT` (migraciones) sigue siendo `neondb_owner` y no se carga en Render.
-5. **Reversión:** volver a la `DATABASE_URL` anterior y reiniciar. Luego, si se desea, `99-rollback-app-role.sql`. Ningún paso toca datos.
-6. Tras cada migración futura: volver a ejecutar `02` y `03`.
+Los pasos están en [mvp-demo-setup.md](../deployment/mvp-demo-setup.md#3-neon). `npm run db:check` usa también `DATABASE_URL_DIRECT` (propietario), así que no sustituye a la prueba de la API con el rol nuevo.
 
-En Neon, la creación de roles también puede hacerse desde la consola o la API. Si la consola crea el rol con privilegios por defecto amplios, `02` los reduce, porque empieza con `REVOKE ALL`.
+**Dos correcciones respecto al procedimiento anterior:**
+
+- **Contraseña.** Neon no admite contraseñas con hash, así que `\password` de psql no sirve. Se usa `ALTER ROLE notihouse_app WITH LOGIN PASSWORD '…'`.
+- **Crear el rol por SQL, no desde la consola.** Los roles creados con la consola o la API de Neon reciben `neon_superuser` (`CREATEROLE`, `BYPASSRLS`…), que `02` no retira: ese script solo revoca privilegios sobre objetos, no la pertenencia a un rol.
 
 ## 7. Row-Level Security
 
@@ -281,7 +279,8 @@ En Neon, la creación de roles también puede hacerse desde la consola o la API.
 | Audio: validación estructural propia (WebM, M4A, Ogg, WAV, MP3), rechazo de archivos solo con video y límites de parseo (cajas y elementos) | VERIFICADO con grabaciones sintéticas | `audio-structure.spec.ts`, fixtures |
 | PDF: rechazo heurístico de contenido activo (`/JavaScript`, `/JS`, `/Launch`, `/EmbeddedFile(s)`, `/RichMedia`, `/XFA`). **No es antimalware ni sanitización** | **REQUIERE DECISIÓN** antes de aceptar PDF de terceros reales | Ver 9.1 |
 | Compensación: si PostgreSQL falla tras guardar el archivo, se borra el objeto; si el borrado falla, queda huérfano y se registra | VERIFICADO (local) | `ingestion.e2e-spec.ts` |
-| Bucket S3 real, `IfNoneMatch` del proveedor y credenciales de permisos mínimos | PENDIENTE DE VALIDACIÓN REAL | render-readiness.md, sección de almacenamiento |
+| Adaptador S3 contra un servidor real: streaming, `IfNoneMatch` (412), sin acceso anónimo (403) y persistencia al recrear el contenedor | VERIFICADO (MinIO local con HTTPS, Fase 4.2F.3) | [render-readiness.md](../deployment/render-readiness.md#8-almacenamiento) |
+| Bucket del proveedor final, `IfNoneMatch` allí y credenciales de permisos mínimos | PENDIENTE DE VALIDACIÓN REAL | `npm run storage:check` |
 | Limpieza periódica de objetos huérfanos | REQUIERE DECISIÓN | Hoy solo hay registro. Propuesta: tarea que compare claves del bucket con `documents.storage_key` y borre huérfanos con más de 24 h. |
 
 ### 9.1 PDF no confiables
@@ -313,10 +312,12 @@ Antes de procesar PDF reales de terceros (Gmail):
 
 ## 12. Riesgos abiertos
 
+Revisados en la Fase 4.2F.3 para el alcance real: demostración académica con datos ficticios, usada por el equipo. Antes de atender usuarios reales, los dos primeros vuelven a ser bloqueantes.
+
 | Riesgo | Clasificación |
 |---|---|
-| API con `neondb_owner` | BLOQUEANTE (Fase 4.2F.3) |
-| Contraseña demo compartida, débil y expuesta en salidas locales | BLOQUEANTE para un despliegue público |
+| API con `neondb_owner` | Muy recomendado corregirlo antes de la URL pública; procedimiento listo, requiere aprobación |
+| Contraseña demo compartida, débil y expuesta en salidas locales | Muy recomendado rotarla antes de la URL pública; procedimiento listo, requiere aprobación |
 | Secretos locales sincronizados por OneDrive | REQUIERE DECISIÓN (mover el clon y rotar) |
 | Almacenamiento S3 real no configurado (el local está prohibido en producción) | BLOQUEANTE para ingesta en producción |
 | Contención real entre conexiones | VERIFICADO en PostgreSQL 18 local; pendiente en el pooler de Neon |

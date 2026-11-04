@@ -54,7 +54,8 @@ Los errores del proveedor se convierten en `StorageUnavailableError`, sin rutas,
 - **Cliente:** el oficial `@aws-sdk/client-s3`. Se crea sin conectarse; el SDK solo abre conexiones al ejecutar un comando.
 - **Escritura:** `PutObject` envía `ContentLength`, `ContentType` e `IfNoneMatch: '*'` para impedir la sobrescritura. No envía ACL y no se generan URLs públicas ni firmadas: el contenido solo sale por los endpoints autenticados.
 - **Credenciales:** opcionales. Si se omiten, se usa la cadena estándar del SDK, por ejemplo el rol de la instancia.
-- **Proveedor:** no se eligió ni se configuró ninguno. El adaptador se prueba con dobles del cliente, sin red.
+- **Checksums del SDK:** limitados a las operaciones que los exigen (`WHEN_REQUIRED`), por compatibilidad. La integridad se controla con el SHA-256 calculado al recibir.
+- **Proveedor:** no se eligió ni se configuró ninguno. Las pruebas automatizadas usan dobles del cliente. En la Fase 4.2F.3 el adaptador se comprobó de punta a punta contra MinIO local con HTTPS. `npm run storage:check` comprueba cualquier bucket ([guía](../deployment/mvp-demo-setup.md#5-almacenamiento-de-pdf-y-audio)).
 - **Cifrado en reposo:** debe configurarse en el bucket. AWS lo aplica por defecto; no se envía cabecera para no romper la compatibilidad con otros proveedores.
 
 ## 3. Variables de entorno
@@ -176,7 +177,7 @@ No se usa un estado `queued` porque no existe en el esquema. El caso queda `rece
 
 Crea el documento `voice_note` (origen `voice`), un caso de origen `voice` y un trabajo `voice.transcribe`.
 
-- **No hay transcripción ni propuesta.** La transcripción futura entrará como **propuesta** (`POST /internal/cases/:id/proposals`, `source: "stt"`) y, si hay ambigüedad, como **HITL**.
+- **No hay transcripción ni propuesta.** La transcripción futura entrará como **propuesta** (`POST /internal/cases/:id/proposals`, `source: "stt"`) que nunca se aplica; la operación aplicable debe llegar en una propuesta `llm` posterior, con su revisión **HITL**.
 - El audio nunca se guarda en PostgreSQL ni en Base64, y nunca aparece en logs ni en la auditoría.
 
 ## 8. Documentos privados
@@ -331,7 +332,7 @@ La Fase 4.2F.2 repitió la idempotencia, la compensación, la descarga privada y
 - **Límite de concurrencia por proceso:** con varias instancias habrá que llevarlo a un almacén compartido.
 - **Objetos huérfanos:** se registran, pero no hay limpieza automática.
 - **Gmail no operativo:** sin OAuth ni tabla de vínculos.
-- **Adaptador S3 sin probar en real:** no se ha usado contra un proveedor real.
+- **Adaptador S3 sin proveedor elegido:** se probó contra MinIO local, no contra el proveedor final ni en Render.
 
 ## 19. Antes del despliegue en Render
 

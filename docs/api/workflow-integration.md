@@ -307,14 +307,14 @@ Cada transición y su auditoría se escriben en la misma transacción; si la aud
 
 ## 16. Limitaciones y pendientes
 
-- **Concurrencia real:** PGlite serializa las transacciones. Las pruebas concurrentes verifican la lógica (`SKIP LOCKED`, actualizaciones condicionadas, idempotencia), pero **no** la contención entre conexiones independientes de Neon. Esa prueba controlada queda pendiente.
+- **Concurrencia real:** comprobada en PostgreSQL 18 local con conexiones independientes ([resultados](../testing/postgres-concurrency-results.md)). Falta comprobarla a través del pooler de Neon.
 - **`locked_by` con dos funciones:** guarda la huella de la última reclamación también después de completar o fallar. Es seguro y no requiere migración. Una columna dedicada (`claim_token_hash`) sería una mejora opcional de claridad.
 - **Aplicación de propuestas aprobadas (Fase 4.2E):** solo la ejecuta el usuario autenticado con `POST /cases/:caseId/proposals/:proposalId/apply`, para una lista cerrada de acciones y exactamente una vez ([proposal-application.md](proposal-application.md)). El trabajo `hitl.decision` sigue siendo solo informativo: completarlo no aplica datos.
 - **Sin cancelación de casos por el usuario:** existe el estado `cancelled`, pero no tiene endpoint.
 - **Ingesta:** desde la Fase 4.2D existen los casos de origen `document` y `voice`, con los trabajos `document.process` y `voice.transcribe` y la lectura de archivos por el worker ([ingestion-api.md](ingestion-api.md)). El origen `gmail` sigue sin habilitar porque no hay vínculos OAuth verificados.
 - **Sin workflows de n8n:** no hay archivos de workflows, Docker ni conexión con IA o FCM.
 - **Credencial compartida:** el token de servicio es único. La rotación requiere reiniciar el backend con el nuevo valor.
-- **Rol de base de datos:** la API sigue usando `neondb_owner`. Antes del despliegue público hay que crear un rol restringido.
+- **Rol de base de datos:** la API sigue usando `neondb_owner`. La activación de `notihouse_app` está en [mvp-demo-setup.md](../deployment/mvp-demo-setup.md#3-neon).
 
 ## Notas para el workflow de n8n (Fase 4.2F.2)
 
@@ -325,3 +325,58 @@ Comprobado con un cliente HTTP simulado sobre PostgreSQL 18 real; n8n no está c
 - **Casos cerrados durante una reclamación:** su trabajo no se entrega y pasa a `cancelled`, con un evento `workflow_job.cancel`.
 - **Varios workers:** los casos de un lote se bloquean por id, de modo que pueden reclamar a la vez sin interbloquearse.
 - **Notas de voz:** una propuesta `stt` aprobada no se aplica. El workflow debe generar después una propuesta `llm` con una acción permitida.
+
+## Contrato para n8n contra Render (Fase 4.2F.3)
+
+n8n en Docker, en un equipo del proyecto, consulta la API de Render por HTTPS con `Authorization: Bearer <N8N_SERVICE_TOKEN>`. Solo hace solicitudes salientes: no hay que publicar su puerto. Conexión: [mvp-demo-setup.md](../deployment/mvp-demo-setup.md#7-conectar-n8n-local-fase-posterior).
+
+Los workflows reales aún no existen. Este contrato se comprobó con un cliente HTTP simulado sobre la API de producción en contenedor, PostgreSQL 18 local y S3 local.
+
+### Respuestas que el workflow debe respetar
+
+| Situación | Respuesta | Qué hacer |
+|---|---|---|
+| `complete` idéntico repetido | 200, idempotente | Nada |
+| `complete` contradictorio | 409 | Es un error del workflow; no se ignora |
+| Reclamación vencida | 409 | Volver a reclamar; no continuar |
+| Worker antiguo, tras una nueva reclamación | 409 | Abandonar ese trabajo |
+| Propuesta antigua reenviada | 200 con su estado real (`superseded`); no revive | Usar la versión vigente |
+| HITL vencida | Nunca aprueba: 409 al decidir y el caso se detiene | Crear un caso nuevo si hace falta |
+| Aplicación de propuesta | Solo el usuario, con JWT, tras aprobación humana. El token de servicio recibe 401 | n8n nunca la llama |
+| Confirmación financiera | No existe ruta interna ni acción permitida. Aplicar crea un período `pending`, nunca un pago | El usuario confirma aparte |
+| Propuesta `stt` | 400 al aplicar, aunque esté aprobada y tenga forma de acción permitida | Registrar una propuesta `llm` |
+
+### Flujo PDF
+
+PDF → caso → trabajo → procesamiento externo → propuesta → HITL → aplicación → actualización de alertas.
+
+1. El usuario sube el PDF (`POST /ingestions/documents`). Se crean el caso y el trabajo `document.process`.
+2. n8n: `POST /internal/workflow-jobs/claim` con `jobTypes: ["document.process"]`.
+3. n8n: `GET /internal/documents/:documentId/content` con `X-Job-Id` y `X-Claim-Token`. Si tarda, `heartbeat`.
+4. n8n procesa el archivo fuera del backend y envía `POST /internal/cases/:id/proposals`, con `source: "llm"` u `"ocr"` y `proposedData: { action, data }`.
+5. n8n: `POST /internal/cases/:id/hitl-requests` con `decisionType: "data_confirmation"`, sin `choices`: con alternativas, la propuesta no se puede aplicar.
+6. n8n: `POST /internal/workflow-jobs/:id/complete`.
+7. El usuario decide (`POST /hitl-requests/:id/decision`) y aplica (`POST /cases/:caseId/proposals/:proposalId/apply`).
+8. n8n reclama `hitl.decision` y cierra (ver *Cierre de casos*).
+9. La siguiente evaluación programada actualiza las alertas.
+
+### Flujo de voz
+
+Audio → STT → texto → interpretación LLM → propuesta → HITL → aplicación.
+
+1. El usuario sube el audio (`POST /ingestions/voice`). Se crea el trabajo `voice.transcribe`.
+2. n8n reclama `voice.transcribe`, lee el audio igual que el PDF y lo envía al servicio STT.
+3. Opcional: registra el texto con `source: "stt"`, solo como evidencia. **No se aplica nunca.**
+4. n8n interpreta el texto con el LLM y registra `source: "llm"` con `{ action, data }`. Esa versión reemplaza a la anterior.
+5. Continúa como el flujo PDF desde el paso 5, sobre la versión `llm`.
+
+### Cierre de casos
+
+Orden comprobado en PostgreSQL real:
+
+1. `POST /internal/cases/:id/complete`, mientras la reclamación esté vigente.
+2. `POST /internal/workflow-jobs/:id/complete`.
+
+### Alertas
+
+Un **único** scheduler llama a `POST /internal/alerts/evaluate`, como máximo una vez por hora. No lo dupliques en varios workflows.

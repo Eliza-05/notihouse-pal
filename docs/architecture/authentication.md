@@ -174,7 +174,7 @@ Se ejecutó una vez sobre Neon el 2026-10-24.
 
 - Usa `@nestjs/throttler` solo en `POST /auth/login`: 5 intentos por minuto por IP. A partir del sexto responde 429.
 - El almacenamiento es **en memoria**: funciona para **una instancia** y se reinicia al reiniciar el proceso. Con varias instancias, habrá que usar un almacenamiento compartido (por ejemplo, Redis) o un limitador en el borde.
-- Detrás de un proxy, `req.ip` sería la IP del proxy. Desde la Fase 4.2F.1, `TRUST_PROXY_HOPS` (0 por defecto) indica cuántos proxies son de confianza; nunca se usa `trust proxy = true`. El valor correcto para Render debe verificarse en la Fase 4.2F.3 (ver [render-readiness.md](../deployment/render-readiness.md)).
+- Detrás de un proxy, `req.ip` sería la IP del proxy. Desde la Fase 4.2F.1, `TRUST_PROXY_HOPS` (0 por defecto) indica cuántos proxies son de confianza; nunca se usa `trust proxy = true`. El valor correcto para Render se mide tras desplegar (ver [mvp-demo-setup.md](../deployment/mvp-demo-setup.md#6-verificar-el-backend-por-https)).
 
 ## 9. Pruebas
 

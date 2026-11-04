@@ -1,12 +1,13 @@
--- NotiHouse-Pal — Rol de aplicación (Fase 4.2F.1: PREPARADO, NO EJECUTADO).
+-- NotiHouse-Pal — Rol de aplicación (probado en PostgreSQL 18 local; NO EJECUTADO en Neon).
 --
 -- Crea el rol que usará NestJS en tiempo de ejecución (DATABASE_URL), separado
 -- del rol propietario/migrador (`neondb_owner`), que queda reservado para
 -- migraciones y scripts administrativos.
 --
 -- * NO contiene contraseñas. El rol se crea SIN LOGIN; la contraseña se asigna
---   después de forma interactiva (consola de Neon o `\password notihouse_app`
---   en psql) y solo entonces se habilita LOGIN (ver docs/security/backend-security-review.md).
+--   después con `ALTER ROLE ... LOGIN PASSWORD`, sin guardarla en este archivo.
+--   Neon no admite contraseñas con hash, así que `\password` de psql no sirve
+--   (ver docs/deployment/mvp-demo-setup.md).
 -- * Ejecutar como el rol propietario del esquema, en una transacción revisada.
 -- * No es una migración de Drizzle: vive fuera de database/migrations a
 --   propósito, para que `drizzle-kit migrate` nunca lo aplique por sí solo.
