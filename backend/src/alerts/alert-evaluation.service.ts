@@ -37,6 +37,8 @@ import type {
 const COMPONENT = 'process.alerts';
 const DEFAULT_BATCH = 100;
 const DEFAULT_MAX_BATCHES = 20;
+/** Clave del bloqueo consultivo que serializa los lotes de evaluación. */
+const ALERT_SWEEP_LOCK = 4_202_001;
 
 /**
  * Fases de un barrido, en orden. Las cuatro primeras crean o escalan alertas
@@ -158,6 +160,13 @@ export class AlertEvaluationService {
     after: string | null,
     run: Run,
   ): Promise<string | null> {
+    // Las fases bloquean alertas en órdenes distintos (por recurso y por id de
+    // alerta): dos barridos en paralelo se interbloquean (40P01). Se serializan
+    // los lotes; cada uno sigue siendo una transacción corta, y la consulta
+    // siguiente ya ve lo que confirmó el lote anterior.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(${ALERT_SWEEP_LOCK}::bigint)`,
+    );
     const ids =
       phase === 'resolve'
         ? await this.resolveBatch(tx, after, run)

@@ -683,6 +683,42 @@ describe('Obligations and occurrences (e2e)', () => {
         .expect(409);
     });
 
+    it('treats a different reference as contradictory and keeps the original confirmation', async () => {
+      const own = await newObligation(laura);
+      const occurrence = await newOccurrence(laura, own.id);
+      const path = `/obligations/${own.id}/occurrences/${occurrence.id}/confirm`;
+      const first = (
+        await h
+          .as(laura)
+          .post(path, { result: 'paid', reference: 'R1' })
+          .expect(200)
+      ).body;
+      const same = (
+        await h
+          .as(laura)
+          .post(path, { result: 'paid', reference: '  R1  ' })
+          .expect(200)
+      ).body;
+      expect(same).toEqual(first);
+      for (const body of [
+        { result: 'paid', reference: 'R2' },
+        { result: 'paid' },
+        { result: 'attended', reference: 'R1' },
+      ]) {
+        await h.as(laura).post(path, body).expect(409);
+      }
+      const stored = (
+        await h
+          .as(laura)
+          .get(`/obligations/${own.id}/occurrences/${occurrence.id}`)
+          .expect(200)
+      ).body;
+      expect(stored).toEqual(first);
+      expect(
+        await countAudit('obligation_occurrence.confirm', occurrence.id),
+      ).toBe(1);
+    });
+
     it('lets only one of two concurrent contradictory confirmations win', async () => {
       const own = await newObligation(laura);
       const occurrence = await newOccurrence(laura, own.id);

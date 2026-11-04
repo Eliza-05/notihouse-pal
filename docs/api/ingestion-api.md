@@ -321,6 +321,8 @@ Los temporales multipart se eliminan siempre al terminar la solicitud, con éxit
 
 Todas las escrituras usan PGlite y directorios temporales aislados por archivo de pruebas, que se eliminan al terminar. Ninguna prueba escribe en Neon.
 
+La Fase 4.2F.2 repitió la idempotencia, la compensación, la descarga privada y el acceso del worker sobre PostgreSQL 18 local con conexiones independientes: `test/pg/06-ingestion.pg-spec.ts` ([resultados](../testing/postgres-concurrency-results.md)).
+
 ## 18. Limitaciones actuales
 
 - **Sin antimalware ni sanitización de PDF:** la detección de contenido activo es heurística.

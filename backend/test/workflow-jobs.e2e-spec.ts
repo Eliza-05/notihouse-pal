@@ -195,7 +195,7 @@ describe('Workflow job queue (e2e)', () => {
   });
 
   describe('complete', () => {
-    it('completes once; a duplicate returns the same result without a new transition', async () => {
+    it('completes once; an identical repeat is idempotent and a contradictory one answers 409', async () => {
       await newCase(w.laura);
       const [job] = await claim('worker-1');
       const path = jobPath(job!.id, 'complete');
@@ -208,10 +208,16 @@ describe('Workflow job queue (e2e)', () => {
         lockedUntil: null,
         workerId: 'worker-1',
       });
-      const again = await svc()
+      await svc()
         .post(path, {
           claimToken: job!.claimToken,
           result: { summary: 'otro' },
+        })
+        .expect(409);
+      const again = await svc()
+        .post(path, {
+          claimToken: job!.claimToken,
+          result: { summary: 'ok' },
         })
         .expect(200);
       expect(again.body.completedAt).toBe(first.body.completedAt);

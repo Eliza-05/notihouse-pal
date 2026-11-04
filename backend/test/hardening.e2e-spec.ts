@@ -86,7 +86,27 @@ describe('Backend hardening (e2e)', () => {
   });
 
   describe('job completion', () => {
-    it('a repeated complete never runs twice and keeps the first result', async () => {
+    it('an identical repeated complete is idempotent, ignoring key order', async () => {
+      const { job } = await startCase();
+      const complete = (result: object) =>
+        svc().post(`/internal/workflow-jobs/${job.id}/complete`, {
+          claimToken: job.claimToken,
+          result,
+        });
+      await complete({ pages: 1, meta: { a: 1, b: 2 } }).expect(200);
+      const repeated = await complete({
+        meta: { b: 2, a: 1 },
+        pages: 1,
+      }).expect(200);
+      expect(repeated.body.result).toEqual({ pages: 1, meta: { a: 1, b: 2 } });
+      const [counts] = await sql<{ n: string }>(
+        `SELECT count(*) AS n FROM audit_events WHERE action = 'workflow_job.complete' AND metadata->>'resourceId' = $1`,
+        [job.id],
+      );
+      expect(Number(counts!.n)).toBe(1);
+    });
+
+    it('a contradictory repeated complete answers 409 and keeps the first result', async () => {
       const { job } = await startCase();
       await svc()
         .post(`/internal/workflow-jobs/${job.id}/complete`, {
@@ -94,15 +114,18 @@ describe('Backend hardening (e2e)', () => {
           result: { pages: 1 },
         })
         .expect(200);
-      // Contrato vigente: un `complete` repetido de la misma reclamación es
-      // idempotente aunque traiga otro `result`; se conserva el primero.
-      const repeated = await svc()
+      // Una repetición contradictoria revela un error del workflow: no se oculta.
+      await svc()
         .post(`/internal/workflow-jobs/${job.id}/complete`, {
           claimToken: job.claimToken,
           result: { pages: 99 },
         })
-        .expect(200);
-      expect(repeated.body.result).toEqual({ pages: 1 });
+        .expect(409);
+      const [row] = await sql<{ result: unknown }>(
+        `SELECT result FROM workflow_jobs WHERE id = $1`,
+        [job.id],
+      );
+      expect(row!.result).toEqual({ pages: 1 });
       const [counts] = await sql<{ n: string }>(
         `SELECT count(*) AS n FROM audit_events WHERE action = 'workflow_job.complete' AND metadata->>'resourceId' = $1`,
         [job.id],

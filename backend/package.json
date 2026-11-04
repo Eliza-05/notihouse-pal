@@ -25,7 +25,14 @@
     "db:check:migrations": "drizzle-kit check",
     "db:seed:demo": "nest build && node --env-file-if-exists=.env dist/database/scripts/seed-demo.js",
     "db:demo:update-identities": "nest build && node --env-file-if-exists=.env dist/database/scripts/update-demo-identities.js",
-    "db:demo:rotate-passwords": "nest build && node --env-file-if-exists=.env dist/database/scripts/rotate-demo-passwords.js"
+    "db:demo:rotate-passwords": "nest build && node --env-file-if-exists=.env dist/database/scripts/rotate-demo-passwords.js",
+    "conc:env": "nest build && node dist/database/scripts/concurrency/generate-env.js",
+    "conc:up": "docker compose -p notihouse-concurrency -f ../infra/testing/postgres-concurrency.compose.yml --env-file .local/concurrency.env up -d --wait",
+    "conc:init": "nest build && node --env-file=.local/concurrency.env dist/database/scripts/concurrency/init-disposable-db.js",
+    "conc:test": "vitest run --config ./vitest.config.pg.ts",
+    "conc:suite": "nest build && node --env-file=.local/concurrency.env dist/database/scripts/concurrency/run-with-api-processes.js",
+    "conc:down": "docker compose -p notihouse-concurrency -f ../infra/testing/postgres-concurrency.compose.yml --env-file .local/concurrency.env stop",
+    "conc:destroy": "docker compose -p notihouse-concurrency -f ../infra/testing/postgres-concurrency.compose.yml --env-file .local/concurrency.env down -v"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1158.0",
@@ -71,6 +78,9 @@
     },
     "@esbuild-kit/core-utils": {
       "esbuild": "0.25.12"
+    },
+    "@nestjs/cli": {
+      "minimatch": "11.0.4"
     }
   }
 }

@@ -364,6 +364,7 @@ export class CaseProcessService {
     );
     const caseRow = await lockCase(tx, caseId);
     if (!caseRow) throw new NotFoundException(CASE_NOT_FOUND);
+    await this.jobs.assertLeaseStillLive(tx, claim.jobId);
     return {
       caseRow,
       actor: { kind: 'workflow', workerId: verified.workerId },

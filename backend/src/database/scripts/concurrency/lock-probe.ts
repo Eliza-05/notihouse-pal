@@ -1,44 +1,41 @@
 /**
  * Sonda de bloqueos entre DOS conexiones independientes (Fase 4.2F.2).
- * PREPARADA EN LA FASE 4.2F.1: NO EJECUTADA.
  *
  * No modifica datos: ambas transacciones terminan en ROLLBACK y no hay
  * INSERT/UPDATE/DELETE ni DDL. Verifica en el PostgreSQL real que:
  * 1. `FOR UPDATE SKIP LOCKED` omite la fila bloqueada por la otra conexión.
  * 2. `FOR UPDATE NOWAIT` falla con 55P03 si la fila está bloqueada.
  * 3. Al liberar (ROLLBACK) la fila vuelve a estar disponible.
- * Nota: un bloqueo de fila marca la tupla (xmax) sin cambiar su contenido;
- * no se crean versiones nuevas ni eventos de auditoría.
  *
- * Requiere LOCK_PROBE_CONFIRM=lock-only-rollback y DATABASE_URL_DIRECT.
+ * Aunque no escribe, las pruebas de bloqueo no están autorizadas en Neon: la
+ * sonda solo admite el PostgreSQL descartable (target-guard.ts). Requiere filas
+ * sintéticas: ejecutarla después de la suite.
+ *
+ * Uso: node --env-file=.local/concurrency.env dist/database/scripts/concurrency/lock-probe.js
  */
-import pg from 'pg';
-import { normalizeConnectionString } from '../../connection-string.js';
+import { readFileSync } from 'node:fs';
+import type pg from 'pg';
 import { fail } from '../local-script-support.js';
+import { GUARD_STATE_FILE } from './init-disposable-db.js';
+import { connectGuardedOwner } from './run-concurrency-suite.js';
 
-export const LOCK_PROBE_ACK = 'lock-only-rollback';
-
-/** Tabla con filas en la base de demostración; se lee por id, sin filtros de negocio. */
 const TABLE = 'obligation_occurrences';
 
 async function main(): Promise<void> {
-  if (process.env.LOCK_PROBE_CONFIRM !== LOCK_PROBE_ACK) {
-    fail(`LOCK_PROBE_CONFIRM debe ser "${LOCK_PROBE_ACK}"`);
-  }
-  const connectionString = normalizeConnectionString(
-    process.env.DATABASE_URL_DIRECT,
-    'DATABASE_URL_DIRECT',
+  const state = JSON.parse(readFileSync(GUARD_STATE_FILE, 'utf8')) as {
+    marker: string;
+    systemIdentifier: string;
+  };
+  const a: pg.Client = await connectGuardedOwner(
+    process.env,
+    state,
+    'lock-probe-a',
   );
-  const a = new pg.Client({
-    connectionString,
-    application_name: 'lock-probe-a',
-  });
-  const b = new pg.Client({
-    connectionString,
-    application_name: 'lock-probe-b',
-  });
-  await a.connect();
-  await b.connect();
+  const b: pg.Client = await connectGuardedOwner(
+    process.env,
+    state,
+    'lock-probe-b',
+  );
   const results: string[] = [];
   try {
     const [pidA, pidB] = await Promise.all([
@@ -48,6 +45,9 @@ async function main(): Promise<void> {
     if (pidA.rows[0]!.pid === pidB.rows[0]!.pid) {
       fail('Las dos conexiones comparten backend: la prueba no es válida');
     }
+    results.push(
+      `✓ PIDs distintos: ${pidA.rows[0]!.pid} y ${pidB.rows[0]!.pid}`,
+    );
     await a.query('BEGIN');
     await b.query('BEGIN');
     await a.query(`SET LOCAL lock_timeout = '5s'`);

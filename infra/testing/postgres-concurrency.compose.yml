@@ -1,0 +1,45 @@
+# NotiHouse-Pal — PostgreSQL 18 DESCARTABLE para las pruebas de concurrencia
+# (Fase 4.2F.2). Procedimiento: docs/testing/postgres-concurrency-results.md.
+#
+# * Sin servicios adicionales y sin relación alguna con Neon.
+# * Publicado solo en 127.0.0.1:55432: inalcanzable desde otros equipos.
+# * Contraseña aleatoria local: se genera con `npm run conc:env` en
+#   backend/.local/concurrency.env (ignorado por Git); este archivo no contiene
+#   secretos y falla si la variable no existe.
+# * Volumen exclusivo del proyecto Compose `notihouse-concurrency`.
+#
+# La imagen oficial de PostgreSQL 18 guarda los datos en
+# /var/lib/postgresql/18/docker (PGDATA específico de la versión): por eso el
+# volumen se monta en /var/lib/postgresql y no en /var/lib/postgresql/data.
+name: notihouse-concurrency
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: notihouse-concurrency-postgres
+    restart: 'no'
+    ports:
+      - '127.0.0.1:55432:5432'
+    environment:
+      POSTGRES_DB: notihouse_concurrency
+      POSTGRES_USER: notihouse_conc_owner
+      POSTGRES_PASSWORD: ${CONCURRENCY_OWNER_PASSWORD:?Genera las credenciales con npm run conc:env}
+      # Nunca `trust`: autenticación SCRAM también para conexiones locales.
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=scram-sha-256
+    volumes:
+      - notihouse-concurrency-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U notihouse_conc_owner -d notihouse_concurrency
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    labels:
+      com.notihouse.purpose: disposable-concurrency-tests
+
+volumes:
+  notihouse-concurrency-data:
+    name: notihouse-concurrency-data
+    labels:
+      com.notihouse.purpose: disposable-concurrency-tests

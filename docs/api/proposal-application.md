@@ -128,5 +128,5 @@ Todo ocurre en **una transacción** de PostgreSQL:
 ## 6. Limitaciones
 
 - Solo hay acciones para obligaciones del hogar. Arriendos y contratos no tienen acciones aplicables (por diseño, nunca se confirman ingresos ni se renuevan contratos desde una propuesta).
-- La concurrencia se probó con PGlite (una conexión, transacciones serializadas). La contención entre conexiones reales de Neon queda pendiente.
-- La deduplicación de propuestas anteriores y las respuestas contradictorias de `complete` siguen pendientes de probarse con workflows reales.
+- La concurrencia se comprobó en PostgreSQL 18 local con conexiones independientes: 2, 3, 8 y 10 aplicaciones simultáneas producen un período, una aplicación y un evento ([resultados](../testing/postgres-concurrency-results.md)). Falta comprobarlo a través del pooler de Neon.
+- La deduplicación de propuestas anteriores y las respuestas contradictorias de `complete` se comprobaron con un cliente HTTP simulado; faltan los workflows reales de n8n.

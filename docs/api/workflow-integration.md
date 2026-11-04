@@ -163,8 +163,8 @@ Las respuestas nunca incluyen `ownerId`. Las internas tampoco exponen datos pers
 3. El usuario consulta `GET /hitl-requests` y el detalle con la propuesta vinculada. El campo `overdue` indica si ya pasó la fecha límite.
 4. La decisión:
    - Bloquea caso y solicitud, en ese orden.
-   - Exige estado `pending` y `due_at > now()`.
-   - Registra `decision` (`outcome`, `choice`, `comment`) y `responded_at = now()` (servidor) con un `UPDATE … WHERE status = 'pending' AND due_at > now()`.
+   - Exige estado `pending` y `due_at > clock_timestamp()`, evaluado con el bloqueo ya tomado: una decisión retenida más allá del plazo se rechaza.
+   - Registra `decision` (`outcome`, `choice`, `comment`) y `responded_at = clock_timestamp()` (servidor) con un `UPDATE … WHERE status = 'pending' AND due_at > clock_timestamp()`.
    - Audita con el usuario como actor.
 5. **Aprobar** marca la propuesta `accepted`; si ya fue reemplazada, 409 y no se registra nada. **Rechazar** la marca `rejected`. Ninguna de las dos aplica datos financieros.
 6. Si no quedan revisiones pendientes, el caso vuelve a `processing`, y se crea el trabajo `hitl.decision` (clave `hitl-decision:<id>`) para que n8n continúe.
@@ -180,7 +180,7 @@ Las respuestas nunca incluyen `ownerId`. Las internas tampoco exponen datos pers
 ## 9. Vencimiento HITL (SLA de 24 horas)
 
 - **El vencimiento nunca es una aprobación.**
-- El endpoint de decisión compara `due_at` con `now()` de PostgreSQL aunque nadie haya materializado el vencimiento. Si ya pasó, marca la solicitud `expired`, lo audita (`hitl_request.expire`, actor `system`), confirma ese cambio y responde 409. `decision` y `responded_at` quedan nulos.
+- El endpoint de decisión compara `due_at` con el reloj de PostgreSQL (`clock_timestamp()`) aunque nadie haya materializado el vencimiento. Si ya pasó, marca la solicitud `expired`, lo audita (`hitl_request.expire`, actor `system`), confirma ese cambio y responde 409. `decision` y `responded_at` quedan nulos.
 - `POST /internal/hitl-requests/expire` permite que un workflow programado materialice los vencimientos. Procesa cada solicitud en su propia transacción y omite las que se decidieron mientras tanto.
 - Si el caso queda sin revisiones pendientes, se **detiene**: pasa a `failed` con el motivo "La revisión humana venció sin decisión". Un proceso sensible no continúa sin decisión humana.
 - No hay cron en el backend.
@@ -189,7 +189,7 @@ Las respuestas nunca incluyen `ownerId`. Las internas tampoco exponen datos pers
 
 **Reclamación** (una transacción):
 
-1. Falla los trabajos con arrendamiento vencido y sin intentos restantes.
+1. Falla, en una transacción propia, los trabajos con arrendamiento vencido y sin intentos restantes.
 2. Selecciona trabajos `pending` con `available_at <= now()`, o `claimed` con arrendamiento vencido, con `attempts < max_attempts` y caso abierto.
 3. Ordena por `available_at, id`, aplica `LIMIT` y bloquea con `FOR UPDATE OF workflow_jobs SKIP LOCKED`.
 4. Por cada trabajo: `status = claimed`, `attempts + 1`, `locked_until = now() + lease`, y un token nuevo.
@@ -206,8 +206,9 @@ Solo se devuelven los trabajos realmente reclamados.
 
 **complete:**
 
-- Exige la reclamación vigente con el arrendamiento activo.
-- Usa un `UPDATE` condicionado a `status`, `locked_by` y `locked_until > now()`.
+- Exige la reclamación vigente con el arrendamiento activo **en el instante en que se obtiene el bloqueo** (`clock_timestamp()`, no `now()`). Lo mismo aplica a `heartbeat`, `fail`, propuestas, revisiones, cierre de caso y lectura de documentos; en las rutas de casos se revalida también tras obtener el bloqueo del caso.
+- Usa un `UPDATE` condicionado a `status`, `locked_by` y `locked_until > clock_timestamp()`.
+- Una repetición de un trabajo ya completado no comprueba el arrendamiento: un reintento idéntico sigue siendo 200 aunque haya pasado el tiempo.
 - Guarda `result` y `completed_at`.
 - **Completar no confirma pagos, cobros ni contratos, ni aprueba propuestas.**
 
@@ -221,7 +222,9 @@ Solo se devuelven los trabajos realmente reclamados.
 | `fail` con `retryable` (por defecto) e intentos restantes | `pending` con `available_at = now() + 30 s · 2^(intentos-1)`, máximo 1 h |
 | `fail` sin intentos o con `retryable: false` | `failed`; el caso se cierra como `failed` |
 | Arrendamiento vencido sin respuesta | Se puede volver a reclamar si quedan intentos; si no, se marca `failed` en la siguiente reclamación |
-| `complete` duplicado (misma reclamación) | 200 con el resultado ya guardado, sin nueva transición ni evento |
+| `complete` duplicado **idéntico** (misma reclamación) | 200 con el resultado ya guardado, sin nueva transición ni evento. Se compara como `jsonb`: el orden de las claves no importa; valores, tipos y orden de arreglos sí. Omitir `result` equivale a `{}` |
+| `complete` duplicado **contradictorio** | **409**; el resultado, el estado y la auditoría no cambian |
+| `complete` de una reclamación antigua, o de un trabajo fallido o anulado | 409, aunque el resultado coincida |
 | `fail` duplicado (misma reclamación) | 200 con el estado actual; **no** incrementa intentos ni audita |
 | `complete`/`fail` con una reclamación antigua o un token inválido | 409 |
 | Creación de caso, propuesta o revisión repetida | Ver §6, §7 y §8 |
@@ -312,3 +315,13 @@ Cada transición y su auditoría se escriben en la misma transacción; si la aud
 - **Sin workflows de n8n:** no hay archivos de workflows, Docker ni conexión con IA o FCM.
 - **Credencial compartida:** el token de servicio es único. La rotación requiere reiniciar el backend con el nuevo valor.
 - **Rol de base de datos:** la API sigue usando `neondb_owner`. Antes del despliegue público hay que crear un rol restringido.
+
+## Notas para el workflow de n8n (Fase 4.2F.2)
+
+Comprobado con un cliente HTTP simulado sobre PostgreSQL 18 real; n8n no está conectado ([resultados](../testing/postgres-concurrency-results.md)).
+
+- **Orden de cierre:** llama a `cases/:id/complete` **antes** de `workflow-jobs/:id/complete`, porque el primero exige una reclamación vigente.
+- **Reintentos de `complete`:** reenvía exactamente el mismo cuerpo. Un 409 en un reintento revela un error del workflow y no debe ignorarse.
+- **Casos cerrados durante una reclamación:** su trabajo no se entrega y pasa a `cancelled`, con un evento `workflow_job.cancel`.
+- **Varios workers:** los casos de un lote se bloquean por id, de modo que pueden reclamar a la vez sin interbloquearse.
+- **Notas de voz:** una propuesta `stt` aprobada no se aplica. El workflow debe generar después una propuesta `llm` con una acción permitida.

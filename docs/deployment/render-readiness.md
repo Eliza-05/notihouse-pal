@@ -117,7 +117,7 @@ Se publica en `/api/docs` solo si `NODE_ENV ≠ production`. En producción, `/a
 
 ## 8. Base de datos
 
-- **BLOQUEANTE.** Crear `notihouse_app` y cambiar `DATABASE_URL` (procedimiento en backend-security-review.md, sección 6).
+- **BLOQUEANTE.** Crear `notihouse_app` y cambiar `DATABASE_URL` (procedimiento en backend-security-review.md, sección 6). Los SQL y la API con ese rol se comprobaron en PostgreSQL 18 local (Fase 4.2F.2); en Neon sigue sin ejecutarse. Hay que volver a aplicar `02-grant-app-privileges.sql` después de cada migración nueva.
 - Pool: máximo 5 conexiones por instancia, `connectionTimeoutMillis` 10 s. Usar el host con **pooler** de Neon.
 - El rol de aplicación tiene `statement_timeout` de 30 s e `idle_in_transaction_session_timeout` de 60 s.
 - Las migraciones nunca se ejecutan desde Render.

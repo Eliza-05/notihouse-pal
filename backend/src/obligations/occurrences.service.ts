@@ -243,8 +243,9 @@ export class OccurrencesService {
    * Confirmación humana de pago o atención.
    * - Desde `pending`/`overdue`: registra el resultado, `confirmed_by` (JWT) y
    *   `confirmed_at` (reloj del servidor) junto con su evento de auditoría.
-   * - Repetir la misma confirmación devuelve el período sin cambios (idempotente).
-   * - Un resultado distinto o un período anulado responden 409.
+   * - Repetir la misma confirmación (resultado y referencia) devuelve el período
+   *   sin cambios (idempotente).
+   * - Un resultado o una referencia distintos, o un período anulado, responden 409.
    * El bloqueo `FOR UPDATE` serializa solicitudes concurrentes sobre el mismo período.
    */
   async confirm(
@@ -258,12 +259,22 @@ export class OccurrencesService {
       const current = await this.lockOccurrence(tx, user, obligationId, id);
 
       if (!isOpen(current.status)) {
-        if (current.status === dto.result) return current;
-        throw new ConflictException(
-          current.status === 'cancelled'
-            ? 'El período está anulado y no puede confirmarse'
-            : `El período ya fue confirmado como "${current.status}"`,
-        );
+        if (current.status === 'cancelled') {
+          throw new ConflictException(
+            'El período está anulado y no puede confirmarse',
+          );
+        }
+        if (current.status !== dto.result) {
+          throw new ConflictException(
+            `El período ya fue confirmado como "${current.status}"`,
+          );
+        }
+        if (current.confirmationReference !== (dto.reference ?? null)) {
+          throw new ConflictException(
+            'El período ya fue confirmado con otra referencia',
+          );
+        }
+        return current;
       }
 
       const [row] = await tx

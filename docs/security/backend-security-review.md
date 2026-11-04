@@ -12,7 +12,7 @@ Revisión integral del backend NestJS antes de las integraciones reales (n8n, Gm
 | **REQUIERE DECISIÓN** | Hay alternativas legítimas y hay que elegir una. |
 | **BLOQUEANTE** | Impide publicar el backend de forma segura. |
 
-**Alcance de las pruebas.** Las pruebas automatizadas usan **PGlite**: PostgreSQL real en memoria, pero con una sola conexión. Demuestran la lógica, las restricciones y los privilegios. No demuestran contención entre conexiones remotas: eso es la Fase 4.2F.2. En esta fase no se escribió nada en Neon; las comprobaciones allí fueron de solo lectura (`BEGIN READ ONLY`).
+**Alcance de las pruebas.** Las pruebas automatizadas usan **PGlite**: PostgreSQL real en memoria, pero con una sola conexión. Demuestran la lógica, las restricciones y los privilegios. No demuestran contención entre conexiones: eso se comprobó en la Fase 4.2F.2 sobre PostgreSQL 18 local y descartable ([resultados](../testing/postgres-concurrency-results.md)). No se escribió nada en Neon; las comprobaciones allí fueron de solo lectura (`BEGIN READ ONLY`).
 
 ## 1. Autenticación
 
@@ -229,16 +229,18 @@ En Neon, la creación de roles también puede hacerse desde la consola o la API.
 
 | Aspecto | Estado | Evidencia |
 |---|---|---|
-| Reclamación con `FOR UPDATE … SKIP LOCKED`: un trabajo no queda en dos reclamaciones | VERIFICADO (PGlite) / PENDIENTE DE VALIDACIÓN REAL | `workflow-jobs.e2e-spec.ts`, escenario `claim-race` |
+| Reclamación con `FOR UPDATE … SKIP LOCKED`: un trabajo no queda en dos reclamaciones | VERIFICADO (PostgreSQL 18 local) / PENDIENTE en el pooler de Neon | `test/pg/01-workflow-jobs.pg-spec.ts` |
 | Fencing con token de reclamación (huella en `locked_by`); el worker antiguo recibe 409 | VERIFICADO | `hardening.e2e-spec.ts`, `workflow-jobs.e2e-spec.ts` |
 | `complete` repetido de la misma reclamación: idempotente, sin doble transición ni doble auditoría | VERIFICADO | `hardening.e2e-spec.ts` |
-| `complete` repetido con un `result` **distinto**: hoy devuelve 200 con el resultado original (descarta el nuevo en silencio) | **REQUIERE DECISIÓN** | Ver 8.1 |
+| `complete` repetido con un `result` **distinto**: 409 sin cambios | **CORREGIDO** (4.2F.2) | Ver 8.1 |
 | Retransmisión tardía de una propuesta ya reemplazada | **CORREGIDO** | Ver 8.2 |
 | HITL: plazo de 24 h con el reloj de PostgreSQL; una revisión vencida nunca aprueba; decisiones contradictorias → 409; mismas decisiones → idempotentes | VERIFICADO | `hitl.e2e-spec.ts`; escenario `contradictory-hitl` |
-| Aplicación de propuestas exactamente una vez (bloqueo del caso + `UNIQUE(proposal_id)`) | VERIFICADO (PGlite) / PENDIENTE DE VALIDACIÓN REAL | `proposal-application.e2e-spec.ts`, escenario `apply-race` |
+| Aplicación de propuestas exactamente una vez (bloqueo del caso + `UNIQUE(proposal_id)`) | VERIFICADO (PostgreSQL 18 local) / PENDIENTE en el pooler de Neon | `test/pg/03-hitl-apply.pg-spec.ts` |
 | Cambios de estado y auditoría en la misma transacción; un fallo de auditoría revierte todo | VERIFICADO | Pruebas con un `AuditService` que falla en cada módulo |
 | Limpieza de temporales antes de responder (Fase 4.2E.1) | VERIFICADO | `upload-cleanup.e2e-spec.ts` |
-| Solapamiento de arriendos en un mismo inmueble | **REQUIERE DECISIÓN** | Ver 8.3 |
+| Solapamiento de arriendos en un mismo inmueble | **CORREGIDO** (4.2F.2) | Ver 8.3 |
+| Decisión HITL retenida en un bloqueo más allá del plazo | **CORREGIDO** (4.2F.2) | `clock_timestamp()`; `test/pg/03-hitl-apply.pg-spec.ts` |
+| Interbloqueos en barridos de alertas y en `claim` con casos cruzados | **CORREGIDO** (4.2F.2) | `test/pg/05-alerts-dashboard.pg-spec.ts`, `01-workflow-jobs.pg-spec.ts` |
 
 ### 8.1 `complete` con resultado contradictorio
 
@@ -247,7 +249,7 @@ En Neon, la creación de roles también puede hacerse desde la consola o la API.
 - **Opciones:**
   - (a) Mantener: máxima tolerancia a reintentos.
   - (b) Responder **409** si `result` difiere (comparación `jsonb`) y 200 si es igual. Los reintentos de n8n reenvían el mismo cuerpo, así que no se rompen.
-- **Recomendación: (b)**, antes de construir los workflows, para que el contrato nazca estricto. No se cambió en esta fase porque altera el contrato documentado. El comportamiento actual queda fijado por una prueba que habrá que ajustar si se elige (b).
+- **Decisión (Fase 4.2F.2): (b).** Una repetición idéntica es idempotente y una contradictoria responde 409. Comparación `jsonb` en PostgreSQL, sin migración.
 
 ### 8.2 Defecto: propuesta tardía que reemplazaba a la vigente (CORREGIDO)
 
@@ -267,7 +269,7 @@ En Neon, la creación de roles también puede hacerse desde la consola o la API.
   - No aplica a arriendos `ended`.
   - Más adelante, si se modelan unidades, una restricción `EXCLUDE USING gist` sobre `(property_id, daterange)`.
 
-  **No se implementó**: es una política de negocio que debe aprobarse.
+  **Implementado en la Fase 4.2F.2**, con `FOR NO KEY UPDATE` sobre el inmueble y sin migración. Neon tiene 0 solapes (consulta de solo lectura).
 
 ## 9. Archivos y almacenamiento
 
@@ -295,7 +297,7 @@ Antes de procesar PDF reales de terceros (Gmail):
 | Aspecto | Estado |
 |---|---|
 | `audit_events` append-only (triggers que rechazan `UPDATE`, `DELETE` y `TRUNCATE`; presentes en Neon) | VERIFICADO |
-| Con el rol restringido, la API tampoco tiene privilegio para modificar la auditoría ni desactivar triggers | VERIFICADO (PGlite) / PENDIENTE DE VALIDACIÓN REAL |
+| Con el rol restringido, la API tampoco tiene privilegio para modificar la auditoría ni desactivar triggers | VERIFICADO (PostgreSQL 18 local) / PENDIENTE en Neon: el rol aún no existe allí |
 | Eventos sin contraseñas, hashes, tokens ni contenido documental | VERIFICADO (pruebas por módulo y de la rotación) |
 | `correlation_id` en toda la cadena caso → propuesta → HITL → aplicación | VERIFICADO |
 
@@ -317,10 +319,8 @@ Antes de procesar PDF reales de terceros (Gmail):
 | Contraseña demo compartida, débil y expuesta en salidas locales | BLOQUEANTE para un despliegue público |
 | Secretos locales sincronizados por OneDrive | REQUIERE DECISIÓN (mover el clon y rotar) |
 | Almacenamiento S3 real no configurado (el local está prohibido en producción) | BLOQUEANTE para ingesta en producción |
-| Contención real entre conexiones | PENDIENTE DE VALIDACIÓN REAL (Fase 4.2F.2) |
+| Contención real entre conexiones | VERIFICADO en PostgreSQL 18 local; pendiente en el pooler de Neon |
 | `TRUST_PROXY_HOPS` en Render | PENDIENTE DE VALIDACIÓN REAL |
 | Rate limit en memoria con varias instancias | REQUIERE DECISIÓN |
-| `complete` contradictorio | REQUIERE DECISIÓN |
-| Solapamiento de arriendos | REQUIERE DECISIÓN |
 | PDF no confiables sin antimalware | REQUIERE DECISIÓN (antes de Gmail) |
 | RLS | REQUIERE DECISIÓN (recomendado después del MVP) |

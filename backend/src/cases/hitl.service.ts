@@ -140,13 +140,18 @@ export class HitlService {
         .where(and(eq(hitlRequests.id, id), this.ownedBy(user)));
       if (!ref) throw new NotFoundException(HITL_NOT_FOUND);
       const caseRow = (await lockCase(tx, ref.caseId))!;
+      // `now()` es la hora de INICIO de la transacción: una decisión retenida
+      // en un bloqueo no puede ampararse en ella para superar la fecha límite.
       const [current] = await tx
-        .select(hitlColumns)
+        .select({
+          ...hitlColumns,
+          deadlinePassed: sql<boolean>`${hitlRequests.dueAt} <= clock_timestamp()`,
+        })
         .from(hitlRequests)
         .where(eq(hitlRequests.id, id))
         .for('update');
 
-      if (current!.status === 'pending' && current!.overdue) {
+      if (current!.status === 'pending' && current!.deadlinePassed) {
         await this.expireLocked(tx, caseRow, id, { kind: 'system' });
         return { expired: true } as const;
       }
@@ -179,13 +184,13 @@ export class HitlService {
         .set({
           status: dto.decision,
           decision,
-          respondedAt: sql`now()`,
+          respondedAt: sql`clock_timestamp()`,
         })
         .where(
           and(
             eq(hitlRequests.id, id),
             eq(hitlRequests.status, 'pending'),
-            sql`${hitlRequests.dueAt} > now()`,
+            sql`${hitlRequests.dueAt} > clock_timestamp()`,
           ),
         )
         .returning(hitlColumns);
@@ -304,7 +309,7 @@ export class HitlService {
         and(
           eq(hitlRequests.id, id),
           eq(hitlRequests.status, 'pending'),
-          lte(hitlRequests.dueAt, sql`now()`),
+          lte(hitlRequests.dueAt, sql`clock_timestamp()`),
         ),
       )
       .returning({

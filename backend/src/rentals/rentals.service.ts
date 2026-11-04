@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, count, eq, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthenticatedUser } from '../auth/authenticated-user.js';
 import {
@@ -13,8 +13,12 @@ import {
   diffPatch,
 } from '../common/dto-helpers.js';
 import { offsetOf, type Page } from '../common/pagination.js';
-import { DRIZZLE, type Database } from '../database/database.constants.js';
-import { rentals } from '../database/schema/index.js';
+import {
+  DRIZZLE,
+  type Database,
+  type DbTransaction,
+} from '../database/database.constants.js';
+import { properties, rentals } from '../database/schema/index.js';
 import { assertAssignableProperty } from '../properties/properties.service.js';
 import type {
   CreateRentalDto,
@@ -25,6 +29,8 @@ import type {
 
 const COMPONENT = 'api.rentals';
 export const RENTAL_NOT_FOUND = 'Arriendo no encontrado';
+/** Serializa altas y cambios de arriendos de un inmueble; admite FK simultáneas. */
+const PROPERTY_WRITE_LOCK = 'no key update';
 
 export const rentalColumns = {
   id: rentals.id,
@@ -98,7 +104,18 @@ export class RentalsService {
   ): Promise<RentalResponseDto> {
     assertDateOrder(dto.startsOn, dto.endsOn ?? null, 'startsOn', 'endsOn');
     return this.db.transaction(async (tx) => {
-      await assertAssignableProperty(tx, user, dto.propertyId);
+      await assertAssignableProperty(
+        tx,
+        user,
+        dto.propertyId,
+        PROPERTY_WRITE_LOCK,
+      );
+      await this.assertPropertyFree(
+        tx,
+        dto.propertyId,
+        dto.startsOn,
+        dto.endsOn ?? null,
+      );
       const [row] = await tx
         .insert(rentals)
         .values({
@@ -134,6 +151,19 @@ export class RentalsService {
   ): Promise<RentalResponseDto> {
     assertHasChanges(dto);
     return this.db.transaction(async (tx) => {
+      // Orden de bloqueo: inmueble → arriendo, igual que el alta de contratos.
+      // `property_id` es inmutable, así que puede leerse antes de bloquear.
+      const [ref] = await tx
+        .select({ propertyId: rentals.propertyId })
+        .from(rentals)
+        .where(and(eq(rentals.id, id), eq(rentals.ownerId, user.profileId)));
+      if (!ref) throw new NotFoundException(RENTAL_NOT_FOUND);
+      await tx
+        .select({ id: properties.id })
+        .from(properties)
+        .where(eq(properties.id, ref.propertyId))
+        .for(PROPERTY_WRITE_LOCK);
+
       const [current] = await tx
         .select(rentalColumns)
         .from(rentals)
@@ -163,6 +193,20 @@ export class RentalsService {
       const { changes, values } = diffPatch(current, patch);
       if (changes.length === 0) return current;
 
+      const nextStatus = patch.status ?? current.status;
+      if (
+        nextStatus !== 'ended' &&
+        changes.some((c) => ['startsOn', 'endsOn', 'status'].includes(c))
+      ) {
+        await this.assertPropertyFree(
+          tx,
+          current.propertyId,
+          patch.startsOn ?? current.startsOn,
+          patch.endsOn === undefined ? current.endsOn : patch.endsOn,
+          id,
+        );
+      }
+
       // Solo se actualiza el arriendo: cada cobro conserva el monto con el que
       // se registró y los contratos no se modifican.
       const [row] = await tx
@@ -186,5 +230,37 @@ export class RentalsService {
       });
       return row!;
     });
+  }
+
+  /**
+   * Para el MVP cada inmueble es UNA unidad arrendable: no admite dos arriendos
+   * `active`/`suspended` con intervalos que compartan algún día (`endsOn` nulo =
+   * sin fin). Exige el inmueble ya bloqueado (`PROPERTY_WRITE_LOCK`): así dos
+   * escrituras concurrentes se serializan y esta consulta no sufre carreras.
+   */
+  private async assertPropertyFree(
+    tx: DbTransaction,
+    propertyId: string,
+    startsOn: string,
+    endsOn: string | null,
+    excludeRentalId?: string,
+  ): Promise<void> {
+    const [overlap] = await tx
+      .select({ id: rentals.id })
+      .from(rentals)
+      .where(
+        and(
+          eq(rentals.propertyId, propertyId),
+          inArray(rentals.status, ['active', 'suspended']),
+          excludeRentalId ? ne(rentals.id, excludeRentalId) : undefined,
+          sql`daterange(${rentals.startsOn}, ${rentals.endsOn}, '[]') && daterange(${startsOn}::date, ${endsOn}::date, '[]')`,
+        ),
+      )
+      .limit(1);
+    if (overlap) {
+      throw new ConflictException(
+        'El inmueble ya tiene un arriendo vigente o suspendido que se solapa con esas fechas',
+      );
+    }
   }
 }

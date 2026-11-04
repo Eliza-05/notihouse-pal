@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Test } from 'supertest';
 import {
-  assertTargetConfirmed,
-  REQUIRED_ACK,
-} from '../src/database/scripts/concurrency/run-concurrency-suite.js';
+  assertSafeConfiguration,
+  ENABLE_VALUE,
+  UnsafeTargetError,
+} from '../src/database/scripts/concurrency/target-guard.js';
 import {
   type HttpActor,
   runScenarios,
@@ -61,30 +62,19 @@ describe('Concurrency suite scenarios (logic on PGlite)', () => {
     expect(results.map((r) => r.name)).toEqual(Object.keys(SCENARIOS));
   });
 
-  it('refuses to run without an explicit, matching target', () => {
-    const host = 'ep-example.us-east-2.aws.neon.tech';
-    expect(() => assertTargetConfirmed({}, host)).toThrow(/CONCURRENCY_ACK/);
+  it('refuses any target other than the disposable local PostgreSQL', () => {
+    const neon = 'postgresql://u:p@ep-x.us-east-2.aws.neon.tech/neondb';
+    const local = 'postgresql://u:p@127.0.0.1:55432/notihouse_concurrency';
+    const enabled = { CONCURRENCY_TEST_ENABLED: ENABLE_VALUE };
+    expect(() => assertSafeConfiguration({}, local, 'X')).toThrow(
+      UnsafeTargetError,
+    );
+    expect(() => assertSafeConfiguration(enabled, neon, 'X')).toThrow(
+      UnsafeTargetError,
+    );
     expect(() =>
-      assertTargetConfirmed(
-        { CONCURRENCY_ACK: REQUIRED_ACK, CONCURRENCY_DB_HOST: 'other' },
-        host,
-      ),
-    ).toThrow(/CONCURRENCY_DB_HOST/);
-    expect(() =>
-      assertTargetConfirmed(
-        {
-          CONCURRENCY_ACK: REQUIRED_ACK,
-          CONCURRENCY_DB_HOST: host,
-          RENDER: 'true',
-        },
-        host,
-      ),
-    ).toThrow(/administrador/);
-    expect(() =>
-      assertTargetConfirmed(
-        { CONCURRENCY_ACK: REQUIRED_ACK, CONCURRENCY_DB_HOST: host },
-        host,
-      ),
-    ).not.toThrow();
+      assertSafeConfiguration({ ...enabled, RENDER: 'true' }, local, 'X'),
+    ).toThrow(UnsafeTargetError);
+    expect(() => assertSafeConfiguration(enabled, local, 'X')).not.toThrow();
   });
 });

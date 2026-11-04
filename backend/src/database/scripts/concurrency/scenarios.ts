@@ -432,6 +432,61 @@ const alertEvaluationRace: Scenario = async (ctx) => {
   return ['3 evaluaciones simultáneas → 1 alerta activa'];
 };
 
+/** 9. `complete` duplicado: idéntico → 200; contradictorio → 409 sin cambios. */
+const contradictoryComplete: Scenario = async (ctx) => {
+  const c = await expectStatus(
+    ctx.user.post('/cases', { type: 'household_obligation' }),
+    201,
+    'crear caso',
+  );
+  const job = await claimJobOf(ctx, id(c), 'worker-complete');
+  const path = `/internal/workflow-jobs/${job.id}/complete`;
+  const results = await Promise.all(
+    [1, 2, 1, 2].map((n) =>
+      ctx.service.post(path, {
+        claimToken: job.claimToken,
+        result: { n },
+      }),
+    ),
+  );
+  check(
+    statuses(results).join() === '200,200,409,409',
+    `estados ${statuses(results).join()}`,
+  );
+  check(
+    (await auditCount(ctx, 'workflow_job.complete', job.id)) === 1,
+    'más de un complete auditado',
+  );
+  return ['2×resultado A y 2×resultado B → un resultado; los contrarios 409'];
+};
+
+/** 10. Arriendos solapados simultáneos en un inmueble: entra uno solo. */
+const rentalOverlapRace: Scenario = async (ctx) => {
+  const property = id(
+    await expectStatus(
+      ctx.user.post('/properties', { name: `CONC-L ${ctx.runId}` }),
+      201,
+      'crear inmueble',
+    ),
+  );
+  const results = await Promise.all(
+    Array.from({ length: 4 }, () =>
+      ctx.user.post('/rentals', {
+        propertyId: property,
+        expectedAmount: '1000.00',
+        dueDay: 5,
+        startsOn: '2099-01-01',
+        endsOn: '2099-12-31',
+      }),
+    ),
+  );
+  check(
+    statuses(results).join() === '201,409,409,409',
+    `estados ${statuses(results).join()}`,
+  );
+  return ['4 altas solapadas → 1 arriendo; 3 reciben 409'];
+};
+
 export const SCENARIOS: Record<string, Scenario> = {
   'duplicate-case-request': duplicateCaseRequest,
   'claim-race': claimRace,
@@ -441,6 +496,8 @@ export const SCENARIOS: Record<string, Scenario> = {
   'contradictory-hitl': contradictoryHitl,
   'apply-race': applyRace,
   'alert-evaluation-race': alertEvaluationRace,
+  'contradictory-complete': contradictoryComplete,
+  'rental-overlap-race': rentalOverlapRace,
 };
 
 /** Ejecuta en orden; se detiene en el primer fallo (criterio de parada). */

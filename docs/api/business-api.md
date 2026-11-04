@@ -137,7 +137,8 @@ Los filtros siempre se combinan con el propietario autenticado: filtrar por el `
 | Situación | Respuesta |
 |---|---|
 | Primera confirmación | 200 con el período confirmado |
-| Repetir **el mismo** resultado (doble clic) | 200 con el período tal como estaba: mismo `confirmedAt` y **sin** nuevo evento de auditoría |
+| Repetir **el mismo** resultado y **la misma** referencia (doble clic) | 200 con el período tal como estaba: mismo `confirmedAt` y **sin** nuevo evento de auditoría. La referencia se compara tras recortar espacios; omitirla equivale a no tener referencia |
+| Repetir con **otra** referencia, añadirla u omitir la registrada | 409: la confirmación original no se sobrescribe (igual que la evidencia de los cobros) |
 | Resultado **distinto** de uno ya confirmado | 409 |
 | Período anulado (`cancelled`) | 409 |
 
@@ -238,7 +239,7 @@ Reutiliza la misma arquitectura: el propietario sale del JWT, la paginación y l
 
 - **Campos:** `propertyId`, `tenantAlias` (opcional, un alias para no guardar datos personales), `expectedAmount` (canon, decimal como texto **mayor que cero**), `currency` (por defecto `COP`), `dueDay` (1 a 31), `startsOn`, `endsOn` (opcional) y `status` inicial (`active` o `suspended`).
 - **Inmueble:** debe ser propio (si no, 404) y estar `active` (si no, 409). La FK compuesta `(property_id, owner_id)` lo refuerza.
-- **Solapamiento:** el esquema no restringe arriendos simultáneos sobre un mismo inmueble, así que la API tampoco lo hace.
+- **Solapamiento (Fase 4.2F.2):** para el MVP cada inmueble es una unidad arrendable. Crear o editar un arriendo responde **409** si queda `active` o `suspended` y comparte algún día con otro `active` o `suspended` del mismo inmueble. `endsOn` nulo significa sin fin; los intervalos consecutivos están permitidos y `ended` no ocupa el inmueble. La regla está en el servicio, con el inmueble bloqueado (`FOR NO KEY UPDATE`) para evitar carreras; no hay restricción de esquema.
 - **PATCH:** edita `tenantAlias`, `expectedAmount`, `dueDay`, `startsOn`, `endsOn` y `status`.
   - No se pueden cambiar `propertyId` ni `currency`: de ellos dependen los cobros y los contratos (FK `contracts_rental_property_owner_fk`). Para corregir un inmueble mal asociado se termina el arriendo y se registra otro.
   - Cambiar el canon **no** altera los cobros registrados: cada cobro guarda su monto.

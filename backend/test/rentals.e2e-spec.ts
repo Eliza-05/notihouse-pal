@@ -149,7 +149,7 @@ describe('Rentals and rent charges (e2e)', () => {
     });
 
     it('does not expose DELETE routes', async () => {
-      const own = await newRental(laura, lauraProperty);
+      const own = await newRental(laura, await newProperty(laura));
       const auth = `Bearer ${h.tokenFor(laura)}`;
       await request(h.app.getHttpServer())
         .delete(`/api/v1/rentals/${own.id}`)
@@ -273,7 +273,7 @@ describe('Rentals and rent charges (e2e)', () => {
     });
 
     it('returns own rentals and hides foreign or nonexistent ones (404)', async () => {
-      const own = await newRental(andres, andresProperty);
+      const own = await newRental(andres, await newProperty(andres));
       expect(
         (await h.as(andres).get(`/rentals/${own.id}`).expect(200)).body.id,
       ).toBe(own.id);
@@ -285,6 +285,43 @@ describe('Rentals and rent charges (e2e)', () => {
       await h.as(andres).get('/rentals/not-a-uuid').expect(400);
     });
 
+    it('rejects overlapping rentals on one property and allows consecutive ones', async () => {
+      const property = await newProperty(andres);
+      const body = (startsOn: string, endsOn?: string) => ({
+        propertyId: property,
+        expectedAmount: '950000.00',
+        dueDay: 5,
+        startsOn,
+        ...(endsOn ? { endsOn } : {}),
+      });
+      const first = await h
+        .as(andres)
+        .post('/rentals', body('2030-01-01', '2030-06-30'))
+        .expect(201);
+      await h
+        .as(andres)
+        .post('/rentals', body('2030-06-30', '2030-12-31'))
+        .expect(409);
+      await h.as(andres).post('/rentals', body('2030-03-01')).expect(409);
+      const next = await h
+        .as(andres)
+        .post('/rentals', body('2030-07-01', '2030-12-31'))
+        .expect(201);
+      await h
+        .as(andres)
+        .patch(`/rentals/${first.body.id}`, { endsOn: '2030-07-01' })
+        .expect(409);
+      // Un arriendo terminado deja libre el inmueble.
+      await h
+        .as(andres)
+        .patch(`/rentals/${next.body.id}`, { status: 'ended' })
+        .expect(200);
+      await h
+        .as(andres)
+        .patch(`/rentals/${first.body.id}`, { endsOn: '2030-07-01' })
+        .expect(200);
+    });
+
     it('lists only own rentals with pagination and filters', async () => {
       const user = await createTestUser(t.db, {
         email: `list-${uniq()}@notihouse.test`,
@@ -294,7 +331,11 @@ describe('Rentals and rent charges (e2e)', () => {
       const p1 = await newProperty(user);
       const p2 = await newProperty(user);
       const r1 = await newRental(user, p1);
-      const r2 = await newRental(user, p1, { status: 'suspended' });
+      const r2 = await newRental(user, p1, {
+        status: 'suspended',
+        startsOn: '2027-01-01',
+        endsOn: '2027-12-31',
+      });
       const r3 = await newRental(user, p2);
 
       const all = (await h.as(user).get('/rentals').expect(200)).body;
@@ -335,7 +376,7 @@ describe('Rentals and rent charges (e2e)', () => {
     });
 
     it('updates allowed fields, audits the change and skips no-op patches', async () => {
-      const own = await newRental(laura, lauraProperty);
+      const own = await newRental(laura, await newProperty(laura));
       const res = await h
         .as(laura)
         .patch(`/rentals/${own.id}`, {
@@ -365,12 +406,13 @@ describe('Rentals and rent charges (e2e)', () => {
       ['end before start', { endsOn: '2025-12-31' }],
       ['unknown status', { status: 'paused' }],
     ])('rejects a PATCH that changes %s (400)', async (_case, body) => {
-      const own = await newRental(laura, lauraProperty);
+      const property = await newProperty(laura);
+      const own = await newRental(laura, property);
       await h.as(laura).patch(`/rentals/${own.id}`, body).expect(400);
       expect(
         (await h.as(laura).get(`/rentals/${own.id}`).expect(200)).body,
       ).toMatchObject({
-        propertyId: lauraProperty,
+        propertyId: property,
         currency: 'COP',
         expectedAmount: '950000.00',
         status: 'active',
@@ -378,7 +420,7 @@ describe('Rentals and rent charges (e2e)', () => {
     });
 
     it('does not let a user edit a foreign rental (404, unchanged)', async () => {
-      const own = await newRental(andres, andresProperty);
+      const own = await newRental(andres, await newProperty(andres));
       await h
         .as(laura)
         .patch(`/rentals/${own.id}`, { expectedAmount: '1.00' })
@@ -390,7 +432,7 @@ describe('Rentals and rent charges (e2e)', () => {
     });
 
     it('keeps the historical amount of existing charges when the rent changes', async () => {
-      const own = await newRental(andres, andresProperty);
+      const own = await newRental(andres, await newProperty(andres));
       const charge = await newCharge(andres, own.id);
       await h
         .as(andres)
@@ -414,7 +456,7 @@ describe('Rentals and rent charges (e2e)', () => {
     });
 
     it('supports active ↔ suspended → ended, and ended is final', async () => {
-      const own = await newRental(laura, lauraProperty);
+      const own = await newRental(laura, await newProperty(laura));
       const path = `/rentals/${own.id}`;
       await h.as(laura).patch(path, { status: 'suspended' }).expect(200);
       await h.as(laura).patch(path, { status: 'active' }).expect(200);
@@ -442,7 +484,7 @@ describe('Rentals and rent charges (e2e)', () => {
     let rental: { id: string };
 
     beforeAll(async () => {
-      rental = await newRental(andres, andresProperty);
+      rental = await newRental(andres, await newProperty(andres));
     });
 
     it('creates an expected charge copying amount and currency, and audits it', async () => {
@@ -531,7 +573,7 @@ describe('Rentals and rent charges (e2e)', () => {
     );
 
     it('lists charges ordered by due date, with filters and pagination', async () => {
-      const own = await newRental(andres, andresProperty);
+      const own = await newRental(andres, await newProperty(andres));
       const dec = await newCharge(andres, own.id, {
         periodStart: '2026-12-01',
         periodEnd: '2026-12-31',
@@ -602,7 +644,7 @@ describe('Rentals and rent charges (e2e)', () => {
       await h.as(laura).patch(path, { expectedAmount: '1.00' }).expect(404);
 
       // Cobro propio, pero consultado a través de otro arriendo propio.
-      const other = await newRental(andres, andresProperty);
+      const other = await newRental(andres, await newProperty(andres));
       await h
         .as(andres)
         .get(`/rentals/${other.id}/charges/${charge.id}`)
@@ -729,7 +771,7 @@ describe('Rentals and rent charges (e2e)', () => {
     const freshCharge = () => newCharge(andres, rental.id, nextPeriod());
 
     beforeAll(async () => {
-      rental = await newRental(andres, andresProperty);
+      rental = await newRental(andres, await newProperty(andres));
     });
 
     it('records the human confirmation with server identity, time and evidence', async () => {
@@ -811,7 +853,7 @@ describe('Rentals and rent charges (e2e)', () => {
         .as(laura)
         .post(`${path}/confirm`, { evidence: 'Intento ajeno' })
         .expect(404);
-      const other = await newRental(andres, andresProperty);
+      const other = await newRental(andres, await newProperty(andres));
       await h
         .as(andres)
         .post(`/rentals/${other.id}/charges/${charge.id}/confirm`, {
@@ -932,7 +974,7 @@ describe('Rentals and rent charges (e2e)', () => {
       await failing
         .as(laura)
         .post('/rentals', {
-          propertyId: lauraProperty,
+          propertyId: await newProperty(laura),
           expectedAmount: '950000.00',
           dueDay: 5,
           startsOn: '2026-01-01',
@@ -940,7 +982,7 @@ describe('Rentals and rent charges (e2e)', () => {
         .expect(500);
       expect(await countRows('rentals')).toBe(before);
 
-      const own = await newRental(laura, lauraProperty);
+      const own = await newRental(laura, await newProperty(laura));
       await failing
         .as(laura)
         .patch(`/rentals/${own.id}`, { expectedAmount: '1.00' })
@@ -952,7 +994,7 @@ describe('Rentals and rent charges (e2e)', () => {
     });
 
     it('rolls back charge creation, update and confirmation when auditing fails', async () => {
-      const own = await newRental(laura, lauraProperty);
+      const own = await newRental(laura, await newProperty(laura));
       const before = await countRows('rent_charges');
       await failing
         .as(laura)
@@ -984,7 +1026,7 @@ describe('Rentals and rent charges (e2e)', () => {
     });
 
     it('keeps audit events append-only', async () => {
-      const own = await newRental(laura, lauraProperty);
+      const own = await newRental(laura, await newProperty(laura));
       await expect(
         t.client.query(
           `UPDATE audit_events SET action = 'tampered' WHERE metadata->>'resourceId' = $1`,

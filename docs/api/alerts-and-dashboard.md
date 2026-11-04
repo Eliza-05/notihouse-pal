@@ -285,3 +285,12 @@ La respuesta incluye `referenceDate` (hoy en Bogotá).
 - Ruta interna: solo token de servicio; un JWT de usuario → 401. El token de servicio no sirve en rutas de usuario (401).
 - Todas las consultas SQL son parametrizadas; ningún identificador (tabla o columna) proviene del cliente.
 - Las consultas GET no escriben (verificado en pruebas comparando conteos y `updated_at`).
+
+## Evaluaciones concurrentes (Fase 4.2F.2)
+
+Comprobado en PostgreSQL 18 local con conexiones independientes ([resultados](../testing/postgres-concurrency-results.md)).
+
+- **Serialización:** las fases del barrido bloquean alertas en órdenes distintos, y eso producía interbloqueos (40P01, respondidos como 409). Ahora cada lote toma `pg_advisory_xact_lock`: los lotes de barridos simultáneos se ejecutan de uno en uno.
+- **Operación recomendada:** un solo scheduler. Un barrido en espera ocupa una conexión del pool.
+- **Confirmar durante un barrido:** puede quedar una alerta `active` almacenada hasta el siguiente barrido, pero la vista de usuario ya la muestra resuelta, porque el estado efectivo se calcula al consultar.
+- **Consultas:** los GET no escriben; la huella de alertas, auditoría y períodos no cambia.

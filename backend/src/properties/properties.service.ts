@@ -35,6 +35,7 @@ export async function assertAssignableProperty(
   tx: DbTransaction,
   user: AuthenticatedUser,
   propertyId: string,
+  lock: 'share' | 'no key update' = 'share',
 ): Promise<void> {
   const [property] = await tx
     .select({ status: properties.status })
@@ -45,7 +46,7 @@ export async function assertAssignableProperty(
         eq(properties.ownerId, user.profileId),
       ),
     )
-    .for('share');
+    .for(lock);
   if (!property) throw new NotFoundException(PROPERTY_NOT_FOUND);
   if (property.status !== 'active') {
     throw new ConflictException('El inmueble no está activo');

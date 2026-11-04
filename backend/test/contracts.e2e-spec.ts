@@ -532,9 +532,10 @@ describe('Contracts (e2e)', () => {
     });
 
     it('keeps the contract untouched when its rental changes or ends', async () => {
-      const rental = await newRental(camila, camilaProperty);
+      const property = await newProperty(camila);
+      const rental = await newRental(camila, property);
       const own = await newContract(camila, {
-        propertyId: camilaProperty,
+        propertyId: property,
         rentalId: rental,
       });
       const before = (

@@ -58,6 +58,8 @@ export const INVALID_CLAIM =
   'La reclamación no es válida o fue reemplazada por otra';
 export const LEASE_EXPIRED =
   'El arrendamiento del trabajo venció; vuelve a reclamarlo';
+export const CONTRADICTORY_RESULT =
+  'El trabajo ya se completó con un resultado distinto; no se modificó';
 
 const jobColumns = {
   id: jobs.id,
@@ -161,12 +163,17 @@ export class WorkflowJobsService {
    * obtengan el mismo trabajo. Disponibles = `pending` con `available_at`
    * cumplido, o `claimed` con el arrendamiento vencido, siempre que queden
    * intentos y el caso siga abierto. Cada reclamación cuenta como un intento.
+   *
+   * Los casos de un lote se bloquean en orden de id antes de procesarlo: sin un
+   * orden global, dos lotes con casos cruzados se interbloquean (40P01). Si un
+   * caso se cerró tras elegir el candidato, su trabajo se anula y no se entrega.
    */
   async claim(dto: ClaimJobsDto): Promise<ClaimedJobDto[]> {
     const leaseSeconds = dto.leaseSeconds ?? DEFAULT_LEASE_SECONDS;
+    // Transacción propia: también bloquea casos y no debe mezclar su orden con
+    // el del lote.
+    await this.db.transaction((tx) => this.failExhaustedLeases(tx));
     return this.db.transaction(async (tx) => {
-      await this.failExhaustedLeases(tx);
-
       const candidates = await tx
         .select({ id: jobs.id, caseId: jobs.caseId, status: jobs.status })
         .from(jobs)
@@ -191,9 +198,35 @@ export class WorkflowJobsService {
         .limit(dto.limit ?? DEFAULT_CLAIM_BATCH)
         .for('update', { of: jobs, skipLocked: true });
 
+      const caseIds = [...new Set(candidates.map((c) => c.caseId))].sort();
+      for (const caseId of caseIds) await lockCase(tx, caseId);
+
       const actor: ProcessActor = { kind: 'workflow', workerId: dto.workerId };
       const claimed: ClaimedJobDto[] = [];
       for (const candidate of candidates) {
+        const caseRow = await lockCase(tx, candidate.caseId);
+        if (caseRow && isTerminalCase(caseRow.status)) {
+          await tx
+            .update(jobs)
+            .set({ status: 'cancelled', lockedUntil: null })
+            .where(eq(jobs.id, candidate.id));
+          await recordProcessEvent(
+            this.audit,
+            tx,
+            { kind: 'system' },
+            {
+              ownerId: caseRow.ownerId,
+              correlationId: caseRow.correlationId,
+              component: COMPONENT,
+              action: 'workflow_job.cancel',
+              resource: 'workflow_job',
+              resourceId: candidate.id,
+              details: { caseId: caseRow.id, reason: 'case_closed' },
+            },
+          );
+          continue;
+        }
+
         const claimToken = newClaimToken();
         const [updated] = await tx
           .update(jobs)
@@ -207,7 +240,6 @@ export class WorkflowJobsService {
           .returning({ id: jobs.id });
         if (!updated) continue;
 
-        const caseRow = await lockCase(tx, candidate.caseId);
         if (caseRow?.status === 'received') {
           await transitionCase(tx, this.audit, caseRow, 'processing', actor);
         }
@@ -260,15 +292,26 @@ export class WorkflowJobsService {
 
   /**
    * Finaliza el trabajo. Solo el reclamante vigente, con el arrendamiento
-   * activo. Repetirlo con la misma reclamación devuelve el resultado ya
-   * guardado sin nueva transición.
+   * activo. Repetirlo con la misma reclamación y el mismo resultado devuelve
+   * lo ya guardado sin nueva transición; con un resultado distinto, 409 sin
+   * cambios. Se compara como `jsonb` en PostgreSQL: el orden de las propiedades
+   * no importa, pero sí los valores, los tipos y el orden de los arreglos.
    */
   async complete(id: string, dto: CompleteJobDto): Promise<WorkflowJobDto> {
     return this.db.transaction(async (tx) => {
       const job = await this.lockJob(tx, id);
       const workerId = matchClaim(job.lockedBy, dto.claimToken);
       if (!workerId) throw new ConflictException(INVALID_CLAIM);
-      if (job.status === 'completed') return toDto(job);
+      if (job.status === 'completed') {
+        const [{ same } = { same: false }] = await tx
+          .select({
+            same: sql<boolean>`coalesce(${jobs.result}, '{}'::jsonb) = ${JSON.stringify(dto.result ?? {})}::jsonb`,
+          })
+          .from(jobs)
+          .where(eq(jobs.id, id));
+        if (!same) throw new ConflictException(CONTRADICTORY_RESULT);
+        return toDto(job);
+      }
       if (job.status !== 'claimed') {
         throw new ConflictException(
           `El trabajo ya está en estado "${job.status}" para esta reclamación`,
@@ -427,6 +470,8 @@ export class WorkflowJobsService {
           gte(jobs.attempts, jobs.maxAttempts),
         ),
       )
+      // Mismo orden global de bloqueo de casos que el lote de reclamación.
+      .orderBy(asc(jobs.caseId), asc(jobs.id))
       .limit(20)
       .for('update', { skipLocked: true });
     const actor: ProcessActor = { kind: 'system' };
@@ -483,7 +528,7 @@ export class WorkflowJobsService {
       eq(jobs.id, job.id),
       eq(jobs.status, 'claimed'),
       eq(jobs.lockedBy, job.lockedBy!),
-      sql`${jobs.lockedUntil} > now()`,
+      sql`${jobs.lockedUntil} > clock_timestamp()`,
     );
   }
 
@@ -495,7 +540,35 @@ export class WorkflowJobsService {
       .where(eq(jobs.id, id))
       .for('update', { of: jobs });
     if (!job) throw new NotFoundException(JOB_NOT_FOUND);
-    return job;
+    return { ...job, leaseActive: await this.leaseIsLive(tx, id) };
+  }
+
+  /**
+   * Vigencia real del arrendamiento en este instante. Debe ser una consulta
+   * posterior al bloqueo: `now()` es la hora de inicio de la transacción, y las
+   * expresiones de un `SELECT … FOR UPDATE` se calculan antes de esperar la
+   * fila, de modo que una operación retenida vería un arrendamiento ya vencido
+   * como vigente.
+   */
+  private async leaseIsLive(tx: DbTransaction, id: string): Promise<boolean> {
+    const [row] = await tx
+      .select({
+        live: sql<boolean>`coalesce(${jobs.lockedUntil} > clock_timestamp(), false)`,
+      })
+      .from(jobs)
+      .where(eq(jobs.id, id));
+    return row?.live ?? false;
+  }
+
+  /**
+   * Revalida el arrendamiento tras esperar otro bloqueo (el del caso). Mantener
+   * bloqueado el trabajo impide que otro worker lo reclame, pero la reclamación
+   * de este ya no autoriza a escribir si venció durante la espera.
+   */
+  async assertLeaseStillLive(tx: DbTransaction, id: string): Promise<void> {
+    if (!(await this.leaseIsLive(tx, id))) {
+      throw new ConflictException(LEASE_EXPIRED);
+    }
   }
 
   private async selectJob(executor: Database | DbTransaction, id: string) {
