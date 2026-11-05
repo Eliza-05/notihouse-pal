@@ -1,0 +1,513 @@
+{
+  "id": "nhpHitlClose0001",
+  "name": "NotiHouse-Pal - 03 - Cierre HITL",
+  "active": false,
+  "isArchived": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": [],
+  "nodes": [
+    {
+      "id": "8b3d4c30-0001-4c00-8c00-000000000001",
+      "name": "Ejecucion manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "8b3d4c30-0002-4c00-8c00-000000000002",
+      "name": "Configuracion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "notes": "Cambia AUTORIZAR_RECLAMACION a true solo para una ejecución real autorizada.",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// ÚNICO interruptor de reclamación. Déjalo en false hasta autorizar una ejecución\n// real: con false, el workflow termina sin hacer ninguna solicitud.\nconst AUTORIZAR_RECLAMACION = false;\n\nreturn [{ json: {\n  authorized: AUTORIZAR_RECLAMACION,\n  apiBase: 'https://notihouse-pal-api.onrender.com/api/v1',\n  workerId: 'n8n-local-1',\n  leaseSeconds: 300,\n} }];"
+      }
+    },
+    {
+      "id": "8b3d4c30-0003-4c00-8c00-000000000003",
+      "name": "Autorizado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "8b3d4c30-0004-4c00-8c00-000000000004",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "8b3d4c30-0005-4c00-8c00-000000000005",
+      "name": "Detenido: sin autorizacion",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        660,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "8b3d4c30-0006-4c00-8c00-000000000006",
+      "name": "Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "notes": "Despierta Render antes de reclamar.",
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/health",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "8b3d4c30-0007-4c00-8c00-000000000007",
+      "name": "Readiness",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/health/ready",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "8b3d4c30-0008-4c00-8c00-000000000008",
+      "name": "Reclamar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "notes": "Solo hitl.decision. Sin reintentos: una respuesta perdida ya habría gastado un intento.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nhpApiService001",
+          "name": "NotiHouse-Pal API (servicio)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/internal/workflow-jobs/claim",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workerId: $('Configuracion').first().json.workerId, limit: 1, leaseSeconds: $('Configuracion').first().json.leaseSeconds, jobTypes: ['hitl.decision'] }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "8b3d4c30-0009-4c00-8c00-000000000009",
+      "name": "Preparar trabajo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const jobs = $input.first().json.jobs ?? [];\nif (jobs.length === 0) return [];\nconst job = jobs[0];\nconst p = job.payload ?? {};\nif (job.jobType !== 'hitl.decision') {\n  throw new Error('Se recibió un tipo de trabajo inesperado');\n}\n// La decisión ya la tomó y validó una persona en el backend: aquí solo se lee.\nif (p.decision !== 'approved' && p.decision !== 'rejected') {\n  throw new Error('El trabajo no contiene una decisión humana reconocible');\n}\nreturn [{ json: {\n  jobId: job.id,\n  claimToken: job.claimToken,\n  caseId: job.case.id,\n  correlationId: job.case.correlationId,\n  decision: p.decision,\n  decisionType: p.decisionType ?? null,\n  hitlRequestId: p.hitlRequestId ?? null,\n  proposalId: p.proposalId ?? null,\n} }];"
+      }
+    },
+    {
+      "id": "8b3d4c30-0010-4c00-8c00-000000000010",
+      "name": "Cerrar caso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput",
+      "notes": "Va antes de completar el trabajo: exige una reclamación vigente. Idempotente. No aprueba ni aplica nada.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nhpApiService001",
+          "name": "NotiHouse-Pal API (servicio)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/internal/cases/{{ $json.caseId }}/complete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ jobId: $json.jobId, claimToken: $json.claimToken }) }}",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "8b3d4c30-0011-4c00-8c00-000000000011",
+      "name": "Completar trabajo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput",
+      "notes": "Seguro de reintentar: un cuerpo idéntico devuelve el resultado guardado. n8n no puede saber si la propuesta se aplicó.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nhpApiService001",
+          "name": "NotiHouse-Pal API (servicio)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/internal/workflow-jobs/{{ $('Preparar trabajo').first().json.jobId }}/complete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ claimToken: $('Preparar trabajo').first().json.claimToken, result: { hitlRequestId: $('Preparar trabajo').first().json.hitlRequestId, decision: $('Preparar trabajo').first().json.decision, decisionType: $('Preparar trabajo').first().json.decisionType, proposalId: $('Preparar trabajo').first().json.proposalId, caseStatus: $json.status, applicationCheckedByWorker: false } }) }}",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "8b3d4c30-0012-4c00-8c00-000000000012",
+      "name": "Ciclo cerrado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1980,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "8b3d4c30-0013-4c00-8c00-000000000013",
+      "name": "Clasificar fallo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const claimed = $('Reclamar').first().json.jobs?.[0];\nconst item = $input.first().json;\nconst step = $prevNode.name;\nconst detail = item.error ?? item;\nconst raw = String(detail?.message ?? detail ?? '');\n// n8n sustituye el mensaje por un texto amigable; el código queda en la causa.\nconst code = Number(detail?.httpCode ?? item.httpCode ?? /^(\\d{3})\\b/.exec(String(detail?.cause?.message ?? ''))?.[1] ?? /^(\\d{3})\\b/.exec(raw)?.[1] ?? 0);\n\n// Con el caso ya cerrado, el trabajo no se puede volver a reclamar: reintentarlo\n// lo dejaría pendiente para siempre. Fallarlo aquí no afecta al caso, que es final.\nconst caseClosed = step === 'Completar trabajo';\nconst retryable = !caseClosed;\nconst reason = (caseClosed\n  ? 'El caso se cerró, pero no se pudo completar el trabajo'\n  : 'Fallo temporal en \"' + step + '\"') + (code ? ' (HTTP ' + code + ')' : '');\n\n// 401: configuración; fail también respondería 401. 409: la reclamación ya no es\n// válida o el estado no lo permite: se abandona sin escribir nada más.\nconst report = Boolean(claimed) && code !== 401 && code !== 409;\nconst message = code === 401\n  ? 'Token de servicio rechazado (401): revisa la credencial. No se registró el fallo.'\n  : code === 409\n    ? 'Conflicto (409) en \"' + step + '\". Trabajo abandonado sin escribir nada más: requiere revisión.'\n    : reason;\nreturn [{ json: {\n  report,\n  jobId: claimed?.id ?? null,\n  failBody: { claimToken: claimed?.claimToken, error: reason, retryable },\n  message,\n} }];"
+      }
+    },
+    {
+      "id": "8b3d4c30-0014-4c00-8c00-000000000014",
+      "name": "Registrar fallo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        400
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "8b3d4c30-0015-4c00-8c00-000000000015",
+              "leftValue": "={{ $json.report }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "8b3d4c30-0016-4c00-8c00-000000000016",
+      "name": "Registrar fallo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "notes": "Seguro de reintentar: un fail duplicado de la misma reclamación no cuenta otro intento.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nhpApiService001",
+          "name": "NotiHouse-Pal API (servicio)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/internal/workflow-jobs/{{ $json.jobId }}/fail",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.failBody) }}",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "8b3d4c30-0017-4c00-8c00-000000000017",
+      "name": "Terminar con error",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        400
+      ],
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "={{ $('Clasificar fallo').first().json.message }}"
+      }
+    }
+  ],
+  "connections": {
+    "Ejecucion manual": {
+      "main": [
+        [
+          {
+            "node": "Configuracion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuracion": {
+      "main": [
+        [
+          {
+            "node": "Autorizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Autorizado?": {
+      "main": [
+        [
+          {
+            "node": "Health",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Detenido: sin autorizacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health": {
+      "main": [
+        [
+          {
+            "node": "Readiness",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Readiness": {
+      "main": [
+        [
+          {
+            "node": "Reclamar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reclamar": {
+      "main": [
+        [
+          {
+            "node": "Preparar trabajo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar trabajo": {
+      "main": [
+        [
+          {
+            "node": "Cerrar caso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clasificar fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cerrar caso": {
+      "main": [
+        [
+          {
+            "node": "Completar trabajo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clasificar fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Completar trabajo": {
+      "main": [
+        [
+          {
+            "node": "Ciclo cerrado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clasificar fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clasificar fallo": {
+      "main": [
+        [
+          {
+            "node": "Registrar fallo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar fallo?": {
+      "main": [
+        [
+          {
+            "node": "Registrar fallo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Terminar con error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar fallo": {
+      "main": [
+        [
+          {
+            "node": "Terminar con error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

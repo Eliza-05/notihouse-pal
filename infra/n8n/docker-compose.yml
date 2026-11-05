@@ -1,0 +1,35 @@
+# n8n Community local para NotiHouse-Pal. Sin secretos: las credenciales se
+# guardan cifradas en el volumen, con la clave que n8n genera en su primer arranque.
+name: notihouse-n8n
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.46.6
+    container_name: notihouse-n8n
+    # Sin reinicio automático: n8n solo corre cuando alguien lo inicia.
+    restart: "no"
+    ports:
+      # Solo este equipo. n8n hace solicitudes salientes a Render.
+      - "127.0.0.1:5678:5678"
+    environment:
+      GENERIC_TIMEZONE: America/Bogota
+      TZ: America/Bogota
+      N8N_HOST: localhost
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/
+      # La interfaz se abre por http://localhost, sin TLS.
+      N8N_SECURE_COOKIE: "false"
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "true"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "336"
+    volumes:
+      - notihouse_n8n_data:/home/node/.n8n
+
+volumes:
+  notihouse_n8n_data:
+    name: notihouse_n8n_data
