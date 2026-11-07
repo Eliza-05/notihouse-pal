@@ -7,7 +7,16 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  ne,
+  notInArray,
+  sql,
+} from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthenticatedUser } from '../auth/authenticated-user.js';
 import { findDatabaseError } from '../common/database-exception.filter.js';
@@ -33,6 +42,11 @@ import {
   type ParsedProposalAction,
   parseProposalAction,
 } from './proposal-actions.js';
+import {
+  contradicts,
+  factsOf,
+  type ProposalFacts,
+} from './source-contradictions.js';
 
 const COMPONENT = 'api.proposal-applications';
 export const PROPOSAL_NOT_FOUND = 'Propuesta no encontrada en este caso';
@@ -185,6 +199,7 @@ export class ProposalApplicationService {
     }
 
     const parsed = await parseProposalAction(proposal.proposedData);
+    await this.assertNoContradictingSource(tx, user, caseId, parsed);
     const trace: Trace = {
       source: 'case_proposal',
       caseId,
@@ -366,6 +381,97 @@ export class ProposalApplicationService {
       occurrenceId: row.id,
       createdObligation: true,
     };
+  }
+
+  /**
+   * E12: otra fuente abierta (otro caso del mismo usuario, sin aplicar ni
+   * rechazar) describe la misma obligación y período con un monto o una fecha
+   * distintos. No se elige ninguna: 409 con ambas fuentes hasta que la persona
+   * rechace la incorrecta. Las transcripciones (stt) son solo evidencia.
+   */
+  private async assertNoContradictingSource(
+    tx: DbTransaction,
+    user: AuthenticatedUser,
+    caseId: string,
+    parsed: ParsedProposalAction,
+  ): Promise<void> {
+    let target: ProposalFacts;
+    let provider: string | null;
+    if (parsed.action === 'create_obligation_occurrence') {
+      const [obligation] = await tx
+        .select({ providerName: obligations.providerName })
+        .from(obligations)
+        .where(
+          and(
+            eq(obligations.id, parsed.data.obligationId),
+            eq(obligations.ownerId, user.profileId),
+          ),
+        );
+      provider = obligation?.providerName ?? null;
+      target = {
+        obligationId: parsed.data.obligationId,
+        providerName: provider,
+        amount: parsed.data.amount ?? null,
+        dueDate: parsed.data.dueDate,
+        periodStart: parsed.data.periodStart,
+      };
+    } else {
+      provider = parsed.data.obligation.providerName;
+      target = {
+        obligationId: null,
+        providerName: provider,
+        amount: parsed.data.occurrence.amount ?? null,
+        dueDate: parsed.data.occurrence.dueDate,
+        periodStart: parsed.data.occurrence.periodStart,
+      };
+    }
+    const others = await tx
+      .select({
+        id: caseProposals.id,
+        caseId: caseProposals.caseId,
+        source: cases.source,
+        proposedData: caseProposals.proposedData,
+      })
+      .from(caseProposals)
+      .innerJoin(cases, eq(cases.id, caseProposals.caseId))
+      .leftJoin(applications, eq(applications.proposalId, caseProposals.id))
+      .where(
+        and(
+          eq(caseProposals.ownerId, user.profileId),
+          ne(caseProposals.caseId, caseId),
+          inArray(caseProposals.reviewStatus, ['pending_review', 'accepted']),
+          ne(caseProposals.source, 'stt'),
+          isNull(applications.id),
+          notInArray(cases.status, ['failed', 'cancelled']),
+        ),
+      )
+      .orderBy(desc(caseProposals.createdAt))
+      .limit(50);
+    const conflicts = others.flatMap((other) => {
+      const facts = factsOf(other.proposedData);
+      return facts && contradicts(target, provider, facts)
+        ? [
+            {
+              caseId: other.caseId,
+              proposalId: other.id,
+              source: other.source,
+              amount: facts.amount,
+              dueDate: facts.dueDate,
+            },
+          ]
+        : [];
+    });
+    if (conflicts.length > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        code: 'CONTRADICTING_SOURCE',
+        message:
+          'Otra fuente describe esta misma obligación con datos distintos. Revisa ambas y rechaza la incorrecta antes de aplicar; no se registró nada.',
+        proposed: { amount: target.amount, dueDate: target.dueDate },
+        conflicts: conflicts.slice(0, 5),
+      });
+    }
   }
 
   /** Un período existente nunca se altera ni se duplica. */

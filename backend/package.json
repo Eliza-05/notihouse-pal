@@ -27,6 +27,8 @@
     "db:demo:update-identities": "nest build && node --env-file-if-exists=.env dist/database/scripts/update-demo-identities.js",
     "db:demo:rotate-passwords": "nest build && node --env-file-if-exists=.env dist/database/scripts/rotate-demo-passwords.js",
     "smoke:api": "node dist/database/scripts/smoke-api.js",
+    "ops:kill-switch": "nest build && node --env-file-if-exists=.env dist/database/scripts/kill-switch.js",
+    "demo:credentials:check": "nest build && node dist/database/scripts/demo-credentials-check.js",
     "storage:check": "nest build && node --env-file-if-exists=.env dist/storage/storage-check.js",
     "conc:env": "nest build && node dist/database/scripts/concurrency/generate-env.js",
     "conc:up": "docker compose -p notihouse-concurrency -f ../infra/testing/postgres-concurrency.compose.yml --env-file .local/concurrency.env up -d --wait",

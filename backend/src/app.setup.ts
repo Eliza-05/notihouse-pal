@@ -23,6 +23,20 @@ export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService<EnvironmentVariables, true>);
 
   app.setGlobalPrefix(API_PREFIX);
+  // Datos privados por usuario: ningún navegador ni proxy debe guardarlos.
+  // Evita que, tras cerrar sesión o cambiar de cuenta, una consulta periódica
+  // (alertas, bandeja) muestre respuestas de otra sesión. Las descargas fijan
+  // después su propia cabecera ('private, no-store').
+  app.use(
+    (
+      _req: unknown,
+      res: { setHeader(k: string, v: string): void },
+      next: () => void,
+    ) => {
+      res.setHeader('Cache-Control', 'no-store');
+      next();
+    },
+  );
   // IP del cliente detrás de un proxy inverso: solo se confía en el número
   // exacto de saltos configurado (0 por defecto: se ignora X-Forwarded-For).
   const trustProxyHops = config.get('TRUST_PROXY_HOPS', { infer: true });

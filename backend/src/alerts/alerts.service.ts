@@ -34,7 +34,11 @@ import type { DueItemKind } from '../due-dates/due-date.rules.js';
 import { resourcePath } from '../due-dates/resource-links.js';
 import { ALERT_TITLES, alertMessage } from './alert-rules.js';
 import { effectivelyActive, effectiveState } from './alert-sql.js';
-import type { AlertResponseDto, ListAlertsQueryDto } from './dto/alert.dto.js';
+import type {
+  AlertResponseDto,
+  AlertSummaryDto,
+  ListAlertsQueryDto,
+} from './dto/alert.dto.js';
 
 const COMPONENT = 'api.alerts';
 export const ALERT_NOT_FOUND = 'Alerta no encontrada';
@@ -116,6 +120,32 @@ export class AlertsService {
       page: query.page,
       pageSize: query.pageSize,
       total: total!.n,
+    };
+  }
+
+  /**
+   * Resumen ligero para la campana del frontend (consulta periódica): una
+   * sola fila agregada, sin paginar ni unir recursos. Mismo criterio que el
+   * dashboard: vigente = activa y con el recurso aún abierto.
+   */
+  async summary(user: AuthenticatedUser): Promise<AlertSummaryDto> {
+    const [row] = await this.db
+      .select({
+        active: sql<number>`count(*)::int`,
+        unread: sql<number>`(count(*) FILTER (WHERE ${alerts.readAt} IS NULL))::int`,
+        criticalUnread: sql<number>`(count(*) FILTER (WHERE ${alerts.readAt} IS NULL AND ${alerts.severity} = 'critical'))::int`,
+        latestCreatedAt: sql<Date | string | null>`max(${alerts.createdAt})`,
+      })
+      .from(alerts)
+      .where(and(eq(alerts.ownerId, user.profileId), effectivelyActive));
+    return {
+      active: Number(row?.active ?? 0),
+      unread: Number(row?.unread ?? 0),
+      criticalUnread: Number(row?.criticalUnread ?? 0),
+      latestCreatedAt: row?.latestCreatedAt
+        ? new Date(row.latestCreatedAt)
+        : null,
+      serverTime: new Date(),
     };
   }
 

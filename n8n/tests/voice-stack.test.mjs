@@ -598,13 +598,14 @@ try {
   }
 
   // ---------- 11. Regresiones: workflows 03 ya probados siguen igual (el contrato no cambió)
-  { const status = spawnSync('git', ['-C', REPO, 'status', '--porcelain', '--', 'n8n/workflows/01-prueba-de-conexion.json', 'n8n/workflows/02-procesamiento-documental.json', 'n8n/workflows/03-cierre-hitl.json', 'n8n/workflows/04-procesamiento-voz.json'], { encoding: 'utf8' });
+  // Etapa 7 modifica a propósito los workflows 02-04 (ruta programada y verificaciones); el 01 sigue intacto.
+  { const status = spawnSync('git', ['-C', REPO, 'status', '--porcelain', '--', 'n8n/workflows/01-prueba-de-conexion.json'], { encoding: 'utf8' });
     // El backend sí puede cambiar: esta suite lo ejercita de verdad. Lo que debe cumplirse es que
     // lo probado sea el compilado de las fuentes actuales, no uno anterior.
     const newest = (dir, re) => Math.max(0, ...readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile() && re.test(e.name)).map((e) => statSync(join(e.parentPath, e.name)).mtimeMs));
     const srcTime = newest(join(BACKEND, 'src'), /\.ts$/);
     const distTime = newest(join(BACKEND, 'dist'), /\.js$/);
-    check('Workflows 01-04 sin cambios, y el backend probado es el compilado de las fuentes actuales', status.status === 0 && status.stdout.trim() === '' && distTime >= srcTime, `${status.stdout} src=${new Date(srcTime).toISOString()} dist=${new Date(distTime).toISOString()}`);
+    check('Workflow 01 sin cambios, y el backend probado es el compilado de las fuentes actuales', status.status === 0 && status.stdout.trim() === '' && distTime >= srcTime, `${status.stdout} src=${new Date(srcTime).toISOString()} dist=${new Date(distTime).toISOString()}`);
   }
 } catch (e) {
   failed += 1;

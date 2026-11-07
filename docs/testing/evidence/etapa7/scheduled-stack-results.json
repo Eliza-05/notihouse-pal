@@ -1,0 +1,133 @@
+{
+  "startedAt": "2026-11-07T20:01:39.593Z",
+  "timings": {
+    "uploadToHitlByScheduleMs": 56328,
+    "alertsBySchedulerMs": 30155,
+    "decisionToClosureMs": 16095,
+    "restartRecoveryMs": 26533,
+    "totalMs": 263600
+  },
+  "checks": [
+    {
+      "name": "Versionado 02-procesamiento-documental.json: inactivo, disparador programado y AUTOMATIZACION_PROGRAMADA=false",
+      "ok": true
+    },
+    {
+      "name": "Versionado 03-cierre-hitl.json: inactivo, disparador programado y AUTOMATIZACION_PROGRAMADA=false",
+      "ok": true
+    },
+    {
+      "name": "Versionado 04-procesamiento-voz.json: inactivo, disparador programado y AUTOMATIZACION_PROGRAMADA=false",
+      "ok": true
+    },
+    {
+      "name": "Versionado 05-recepcion-gmail.json: inactivo, disparador programado y AUTOMATIZACION_PROGRAMADA=false",
+      "ok": true
+    },
+    {
+      "name": "Versionado 06-mantenimiento-programado.json: inactivo, disparador programado y AUTOMATIZACION_PROGRAMADA=false",
+      "ok": true
+    },
+    {
+      "name": "Workflow de laboratorio lab02DocSched001 publicado (activo)",
+      "ok": true
+    },
+    {
+      "name": "Workflow de laboratorio lab03HitlSched01 publicado (activo)",
+      "ok": true
+    },
+    {
+      "name": "Workflow de laboratorio lab06MaintSched1 publicado (activo)",
+      "ok": true
+    },
+    {
+      "name": "Cargas aceptadas (201) sin que n8n se ejecute a mano",
+      "ok": true
+    },
+    {
+      "name": "Disparador programado: los 3 trabajos se procesaron solos (56 s)",
+      "ok": true
+    },
+    {
+      "name": "Las reclamaciones las hizo el disparador (sin ejecución manual)",
+      "ok": true
+    },
+    {
+      "name": "Factura positiva → propuesta aplicable + HITL data_confirmation",
+      "ok": true
+    },
+    {
+      "name": "Inyección (el modelo obedece) → sin acción, alerta de seguridad, sin kill switch",
+      "ok": true
+    },
+    {
+      "name": "Dos montos → conflict_resolution con las dos alternativas",
+      "ok": true
+    },
+    {
+      "name": "Ninguna obligación ni período se creó por automatización",
+      "ok": true
+    },
+    {
+      "name": "Mantenimiento programado: alertas persistidas sin sesiones abiertas (30 s)",
+      "ok": true
+    },
+    {
+      "name": "Al iniciar sesión cada usuario recupera solo sus alertas (contador)",
+      "ok": true
+    },
+    {
+      "name": "Aprobación + aplicación explícitas del usuario (período pending)",
+      "ok": true
+    },
+    {
+      "name": "Workflow 03 programado cerró el caso (16 s)",
+      "ok": true
+    },
+    {
+      "name": "Con n8n apagado el trabajo espera intacto (pending, 0 intentos)",
+      "ok": true
+    },
+    {
+      "name": "Tras reiniciar n8n el trabajo pendiente se procesa solo (27 s)",
+      "ok": true
+    },
+    {
+      "name": "Kill switch activado (document_processing)",
+      "ok": true
+    },
+    {
+      "name": "Con el kill switch activo, los disparadores no procesan el trabajo (pending, 0 intentos)",
+      "ok": true
+    },
+    {
+      "name": "El usuario ve la función como temporalmente limitada",
+      "ok": true
+    },
+    {
+      "name": "Tras la reanudación controlada el trabajo se procesa en el siguiente ciclo",
+      "ok": true
+    },
+    {
+      "name": "Activación y reanudación auditadas",
+      "ok": true
+    },
+    {
+      "name": "429 de Gemini → fallo reintentable, el trabajo vuelve a pending",
+      "ok": true
+    },
+    {
+      "name": "Pausa por cuota: el workflow programado no reclama ni llama a Gemini",
+      "ok": true
+    },
+    {
+      "name": "Los demás workflows programados siguen funcionando durante la pausa",
+      "ok": true
+    }
+  ],
+  "n8nLogTail": "UNNERS_TASK_TIMEOUT -> The default for this variable will be reduced from 300 (5 minutes) to 60 (1 minute) in a future version. Set it explicitly to keep your current task timeout.\n - N8N_COMPRESSION_NODE_MAX_DECOMPRESSED_SIZE_BYTES -> The default for this variable will be reduced from 2 GiB to 256 MiB in a future version. Set it explicitly to keep your current limit.\n - N8N_COMPRESSION_NODE_MAX_ZIP_ENTRIES -> The default for this variable will be reduced from 5000 to 1000 in a future version. Set it explicitly to keep your current limit.\n\n[license SDK] Skipping renewal on init: license cert is not initialized\nInstance registered\nCluster aligned on version 2.46.6\nDiscovered 4 cluster checks\nRegistered runner \"JS Task Runner\" (aYR_K8zEp72ZMwAk3l6Dn) \nSandbox: enabled=false provider=n8n-sandbox (from env)\nVersion: 2.46.6\nBuilding workflow dependency index...\nScheduler started\nFinished building workflow dependency index. Processed 0 draft workflows, 0 published workflows.\n\nEditor is now accessible via:\nhttp://localhost:5678\nWarning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.\nWarning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.\nWarning: UnknownErrorException: Ensure that the `standardFontDataUrl` API parameter is provided.\nCuota o límite de Gemini alcanzado; se podrá reintentar más tarde con el mismo modelo\nCuota o límite de Gemini alcanzado; se podrá reintentar más tarde con el mismo modelo\n",
+  "result": {
+    "total": 29,
+    "failed": 0
+  }
+}

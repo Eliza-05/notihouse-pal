@@ -33,7 +33,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// ÚNICO interruptor de reclamación. Déjalo en false hasta autorizar una ejecución\n// real: con false, el workflow termina sin hacer ninguna solicitud.\nconst AUTORIZAR_RECLAMACION = false;\n\nreturn [{ json: {\n  authorized: AUTORIZAR_RECLAMACION,\n  apiBase: 'https://notihouse-pal-api.onrender.com/api/v1',\n  workerId: 'n8n-local-1',\n  leaseSeconds: 300,\n} }];"
+        "jsCode": "// ÚNICO interruptor de reclamación. Déjalo en false hasta autorizar una ejecución\n// real: con false, el workflow termina sin hacer ninguna solicitud.\nconst AUTORIZAR_RECLAMACION = false;\n\n// Etapa 7 — ejecución PROGRAMADA (disparador por intervalo). Exige además\n// AUTORIZAR_RECLAMACION. Con false, las ejecuciones programadas terminan sin\n// llamar a nada; la ejecución manual no cambia.\nconst AUTOMATIZACION_PROGRAMADA = false;\nconst scheduled = $input.first()?.json?.scheduled === true;\n\nreturn [{ json: {\n  authorized: AUTORIZAR_RECLAMACION,\n  scheduled,\n  scheduleEnabled: AUTOMATIZACION_PROGRAMADA,\n  // En la ruta programada no hay sondeo previo: Gemini solo se llama si hay un trabajo.\n  scheduledReady: scheduled && AUTORIZAR_RECLAMACION && AUTOMATIZACION_PROGRAMADA,\n  apiBase: 'https://notihouse-pal-api.onrender.com/api/v1',\n  workerId: 'n8n-local-1',\n  leaseSeconds: 300,\n} }];"
       }
     },
     {
@@ -339,6 +339,119 @@
         "errorType": "errorMessage",
         "errorMessage": "={{ $('Clasificar fallo').first().json.message }}"
       }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "e7030000-0000-4e70-8e70-000000000006",
+      "name": "Disparo programado",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -260
+      ],
+      "notes": "Cada 5 min mientras el workflow esté ACTIVO. Inactivo por defecto: activarlo requiere autorización."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Marca la ejecución como programada para la Configuracion.\nreturn [{ json: { scheduled: true } }];"
+      },
+      "id": "e7030000-0000-4e70-8e70-000000000007",
+      "name": "Marcar programado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        110,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "e7030000-0000-4e70-8e70-000000000008c",
+              "leftValue": "={{ $json.scheduled }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e7030000-0000-4e70-8e70-000000000008",
+      "name": "Ejecucion programada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        330,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "e7030000-0000-4e70-8e70-000000000009c",
+              "leftValue": "={{ $json.scheduledReady }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e7030000-0000-4e70-8e70-000000000009",
+      "name": "Programada habilitada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        550,
+        -260
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "e7030000-0000-4e70-8e70-000000000010",
+      "name": "Programada: inactiva o en pausa",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        770,
+        -400
+      ]
     }
   ],
   "connections": {
@@ -357,7 +470,7 @@
       "main": [
         [
           {
-            "node": "Autorizado?",
+            "node": "Ejecucion programada?",
             "type": "main",
             "index": 0
           }
@@ -503,6 +616,64 @@
         [
           {
             "node": "Terminar con error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disparo programado": {
+      "main": [
+        [
+          {
+            "node": "Marcar programado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar programado": {
+      "main": [
+        [
+          {
+            "node": "Configuracion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ejecucion programada?": {
+      "main": [
+        [
+          {
+            "node": "Programada habilitada?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Autorizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Programada habilitada?": {
+      "main": [
+        [
+          {
+            "node": "Health",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Programada: inactiva o en pausa",
             "type": "main",
             "index": 0
           }

@@ -137,6 +137,7 @@ No se copian montos, nombres ni datos del recurso: se consultan en la entidad or
 | Método | Ruta | Función |
 |---|---|---|
 | GET | `/api/v1/alerts` | Listar alertas propias |
+| GET | `/api/v1/alerts/summary` | Resumen para la campana: `active`, `unread`, `criticalUnread`, `latestCreatedAt`, `serverTime` (Etapa 7; consulta ligera para *polling*, no escribe ni audita) |
 | GET | `/api/v1/alerts/:id` | Consultar una alerta |
 | POST | `/api/v1/alerts/:id/read` | Marcar como leída (idempotente) |
 | POST | `/api/v1/alerts/:id/dismiss` | Descartar (idempotente; 409 si ya está resuelta) |
@@ -162,6 +163,8 @@ Reglas:
 - El propietario sale del JWT. Una alerta ajena responde **404** en lectura, `read` y `dismiss`, sin revelar si existe.
 - Leer o descartar **no** confirma pagos o cobros, no decide revisiones y no modifica contratos.
 - `alert.read` y `alert.dismiss` se auditan una vez (las repeticiones no generan eventos).
+- Todas las respuestas de la API llevan `Cache-Control: no-store` (Etapa 7): ninguna caché del navegador o de un proxy guarda datos de una sesión.
+- Contrato completo de la campana y del polling para el frontend: [CONTRATO_ETAPA8_NOTIFICACIONES_HITL.md](../frontend/CONTRATO_ETAPA8_NOTIFICACIONES_HITL.md).
 
 ### 2.5 Evaluación interna (token de servicio)
 
@@ -187,9 +190,10 @@ Respuesta:
 }
 ```
 
-### 2.6 Integración futura con n8n y notificaciones externas
+### 2.6 Integración con n8n y notificaciones externas
 
-- n8n podrá invocar `POST /internal/alerts/evaluate` con un *Schedule Trigger* (p. ej. cada hora o a las 6:00 de Bogotá), repitiendo con `nextCursor` mientras `complete` sea `false`. Repetir la llamada es seguro.
+- **Implementado en la Etapa 7:** el workflow `06-mantenimiento-programado` es el **único** scheduler. Cada 15 minutos vence las revisiones HITL y, como máximo una vez por hora, llama a `POST /internal/alerts/evaluate`, repitiendo con `nextCursor` mientras `complete` sea `false`. Está inactivo por defecto (`AUTORIZAR_MANTENIMIENTO` y `AUTOMATIZACION_PROGRAMADA` en `false`). Repetir la llamada es seguro. La ruta se detiene con el kill switch `alert_evaluation` (503).
+- Decisión del MVP: alertas internas web persistentes en lugar de FCM ([registro del ajuste](../architecture/ajuste-pdd-alertas-internas-web.md)).
 - Para futuras notificaciones push, el insumo natural son los eventos `alert.create` (o las alertas `active` y no leídas). El envío deberá registrar su propio estado de entrega en una estructura específica y respetar la idempotencia por `alert.id`; **no está implementado** y FCM **no** está conectado.
 - Los recordatorios a arrendatarios (terceros) requieren aprobación humana (`hitl_decision_type = reminder_approval`). Una alerta o una evaluación automática **nunca** autoriza enviar mensajes a terceros.
 

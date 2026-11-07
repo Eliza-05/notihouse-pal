@@ -23,6 +23,7 @@ import { AlertsService } from './alerts.service.js';
 import {
   AlertPageDto,
   AlertResponseDto,
+  AlertSummaryDto,
   ListAlertsQueryDto,
 } from './dto/alert.dto.js';
 
@@ -45,6 +46,17 @@ export class AlertsController {
     @Query() query: ListAlertsQueryDto,
   ) {
     return this.service.list(user, query);
+  }
+
+  @Get('summary')
+  @ApiOperation({
+    summary: 'Resumen para la campana (contador de no leídas)',
+    description:
+      'Consulta ligera pensada para polling cada 60 s mientras el dashboard está visible. No modifica nada.',
+  })
+  @ApiOkResponse({ type: AlertSummaryDto })
+  summary(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.summary(user);
   }
 
   @Get(':id')

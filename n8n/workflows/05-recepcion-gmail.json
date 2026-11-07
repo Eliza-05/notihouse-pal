@@ -26,6 +26,42 @@
     },
     {
       "id": "7a2c3b50-0002-4b00-8b00-000000000002",
+      "name": "Disparo programado",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -260
+      ],
+      "notes": "Cada 15 min mientras el workflow esté ACTIVO. Inactivo por defecto: activarlo requiere autorización.",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b50-0003-4b00-8b00-000000000003",
+      "name": "Marcar programado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        110,
+        -260
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Marca la ejecución como programada para la Configuracion.\nreturn [{ json: { scheduled: true } }];"
+      }
+    },
+    {
+      "id": "7a2c3b50-0004-4b00-8b00-000000000004",
       "name": "Configuracion",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -36,12 +72,12 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Interruptores: con ambos en false el workflow no llama a Google ni al backend.\n// LECTURA en true y INGESTA en false solo lista qué se procesaría, sin descargar adjuntos.\nconst AUTORIZAR_LECTURA_GMAIL = false;\nconst AUTORIZAR_INGESTA = false;\n\n// Alcance autorizado. Sin estos datos el workflow se detiene antes de llamar a Google.\nconst BUZON_AUTORIZADO = '';\nconst REMITENTES_AUTORIZADOS = [];\nconst ETIQUETA = 'notihouse-facturas-prueba';\n\n// Solo metadatos de partes: el cuerpo del correo nunca se descarga.\nconst part = 'partId,mimeType,filename,body(attachmentId,size)';\nconst nest = (depth) => (depth === 0 ? part : part + ',parts(' + nest(depth - 1) + ')');\n\nreturn [{ json: {\n  readAuthorized: AUTORIZAR_LECTURA_GMAIL === true,\n  ingestAuthorized: AUTORIZAR_LECTURA_GMAIL === true && AUTORIZAR_INGESTA === true,\n  mailbox: BUZON_AUTORIZADO.trim().toLowerCase(),\n  allowedSenders: REMITENTES_AUTORIZADOS.map((s) => s.trim().toLowerCase()),\n  label: ETIQUETA,\n  apiBase: 'https://notihouse-pal-api.onrender.com/api/v1',\n  gmailBase: 'https://gmail.googleapis.com',\n  maxMessages: 5,\n  maxAttachmentsPerMessage: 5,\n  // Mismo máximo inicial del backend para un PDF, que sigue siendo quien decide.\n  maxPdfBytes: 10 * 1024 * 1024,\n  messageFields: 'id,internalDate,payload(headers(name,value),' + nest(4) + ')',\n} }];"
+        "jsCode": "// Interruptores: con ambos en false el workflow no llama a Google ni al backend.\n// LECTURA en true y INGESTA en false solo lista qué se procesaría, sin descargar adjuntos.\nconst AUTORIZAR_LECTURA_GMAIL = false;\nconst AUTORIZAR_INGESTA = false;\n// Etapa 7 — ejecución PROGRAMADA (cada 15 min, objetivo del PDD). Exige además\n// los dos interruptores anteriores. Con false, una ejecución programada no\n// llama a Google ni al backend; la ejecución manual no cambia.\nconst AUTOMATIZACION_PROGRAMADA = false;\nconst scheduled = $input.first()?.json?.scheduled === true;\nconst allowedNow = !scheduled || AUTOMATIZACION_PROGRAMADA === true;\n\n// Alcance autorizado. Sin estos datos el workflow se detiene antes de llamar a Google.\nconst BUZON_AUTORIZADO = '';\nconst REMITENTES_AUTORIZADOS = [];\nconst ETIQUETA = 'notihouse-facturas-prueba';\n\n// Solo metadatos de partes: el cuerpo del correo nunca se descarga.\nconst part = 'partId,mimeType,filename,body(attachmentId,size)';\nconst nest = (depth) => (depth === 0 ? part : part + ',parts(' + nest(depth - 1) + ')');\n\nreturn [{ json: {\n  readAuthorized: AUTORIZAR_LECTURA_GMAIL === true && allowedNow,\n  ingestAuthorized: AUTORIZAR_LECTURA_GMAIL === true && AUTORIZAR_INGESTA === true && allowedNow,\n  scheduled,\n  mailbox: BUZON_AUTORIZADO.trim().toLowerCase(),\n  allowedSenders: REMITENTES_AUTORIZADOS.map((s) => s.trim().toLowerCase()),\n  label: ETIQUETA,\n  apiBase: 'https://notihouse-pal-api.onrender.com/api/v1',\n  gmailBase: 'https://gmail.googleapis.com',\n  maxMessages: 5,\n  maxAttachmentsPerMessage: 5,\n  // Mismo máximo inicial del backend para un PDF, que sigue siendo quien decide.\n  maxPdfBytes: 10 * 1024 * 1024,\n  messageFields: 'id,internalDate,payload(headers(name,value),' + nest(4) + ')',\n} }];"
       },
       "notes": "Interruptores y alcance autorizado. En false no se llama a Google ni al backend."
     },
     {
-      "id": "7a2c3b50-0003-4b00-8b00-000000000003",
+      "id": "7a2c3b50-0005-4b00-8b00-000000000005",
       "name": "Lectura autorizada?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -61,7 +97,7 @@
           "combinator": "and",
           "conditions": [
             {
-              "id": "7a2c3b50-0004-4b00-8b00-000000000004",
+              "id": "7a2c3b50-0006-4b00-8b00-000000000006",
               "leftValue": "={{ $('Configuracion').first().json.readAuthorized }}",
               "rightValue": "",
               "operator": {
@@ -75,7 +111,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0005-4b00-8b00-000000000005",
+      "id": "7a2c3b50-0007-4b00-8b00-000000000007",
       "name": "Detenido: sin autorizacion",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
@@ -86,7 +122,7 @@
       "parameters": {}
     },
     {
-      "id": "7a2c3b50-0006-4b00-8b00-000000000006",
+      "id": "7a2c3b50-0008-4b00-8b00-000000000008",
       "name": "Validar configuracion",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -101,7 +137,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0007-4b00-8b00-000000000007",
+      "id": "7a2c3b50-0009-4b00-8b00-000000000009",
       "name": "Perfil de Gmail",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -140,7 +176,7 @@
       "notes": "Solo lectura. Reintenta fallos pasajeros; un fallo definitivo detiene la ejecución sin registrar nada."
     },
     {
-      "id": "7a2c3b50-0008-4b00-8b00-000000000008",
+      "id": "7a2c3b50-0010-4b00-8b00-000000000010",
       "name": "Fallo de Gmail",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -155,7 +191,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0009-4b00-8b00-000000000009",
+      "id": "7a2c3b50-0011-4b00-8b00-000000000011",
       "name": "Verificar buzon",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -170,7 +206,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0010-4b00-8b00-000000000010",
+      "id": "7a2c3b50-0012-4b00-8b00-000000000012",
       "name": "Ingesta autorizada?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -190,7 +226,7 @@
           "combinator": "and",
           "conditions": [
             {
-              "id": "7a2c3b50-0011-4b00-8b00-000000000011",
+              "id": "7a2c3b50-0013-4b00-8b00-000000000013",
               "leftValue": "={{ $('Configuracion').first().json.ingestAuthorized }}",
               "rightValue": "",
               "operator": {
@@ -204,7 +240,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0012-4b00-8b00-000000000012",
+      "id": "7a2c3b50-0014-4b00-8b00-000000000014",
       "name": "Health",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -225,7 +261,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0013-4b00-8b00-000000000013",
+      "id": "7a2c3b50-0015-4b00-8b00-000000000015",
       "name": "Readiness",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -245,7 +281,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0014-4b00-8b00-000000000014",
+      "id": "7a2c3b50-0016-4b00-8b00-000000000016",
       "name": "Listar mensajes",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -292,7 +328,7 @@
       "notes": "Solo lectura. Reintenta fallos pasajeros; un fallo definitivo detiene la ejecución sin registrar nada."
     },
     {
-      "id": "7a2c3b50-0015-4b00-8b00-000000000015",
+      "id": "7a2c3b50-0017-4b00-8b00-000000000017",
       "name": "Preparar mensajes",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -307,7 +343,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0016-4b00-8b00-000000000016",
+      "id": "7a2c3b50-0018-4b00-8b00-000000000018",
       "name": "Leer mensaje",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -359,7 +395,7 @@
       "notes": "Un fallo no detiene los demás mensajes: se informa al final y reejecutar es seguro."
     },
     {
-      "id": "7a2c3b50-0017-4b00-8b00-000000000017",
+      "id": "7a2c3b50-0019-4b00-8b00-000000000019",
       "name": "Extraer adjuntos",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -374,7 +410,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0018-4b00-8b00-000000000018",
+      "id": "7a2c3b50-0020-4b00-8b00-000000000020",
       "name": "Descargable?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -394,7 +430,7 @@
           "combinator": "and",
           "conditions": [
             {
-              "id": "7a2c3b50-0019-4b00-8b00-000000000019",
+              "id": "7a2c3b50-0021-4b00-8b00-000000000021",
               "leftValue": "={{ $json.download === true }}",
               "rightValue": "",
               "operator": {
@@ -408,7 +444,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0020-4b00-8b00-000000000020",
+      "id": "7a2c3b50-0022-4b00-8b00-000000000022",
       "name": "Descargar adjunto",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -455,7 +491,7 @@
       "onError": "continueRegularOutput"
     },
     {
-      "id": "7a2c3b50-0021-4b00-8b00-000000000021",
+      "id": "7a2c3b50-0023-4b00-8b00-000000000023",
       "name": "Decodificar",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -470,7 +506,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0022-4b00-8b00-000000000022",
+      "id": "7a2c3b50-0024-4b00-8b00-000000000024",
       "name": "Decodificado?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
@@ -490,7 +526,7 @@
           "combinator": "and",
           "conditions": [
             {
-              "id": "7a2c3b50-0023-4b00-8b00-000000000023",
+              "id": "7a2c3b50-0025-4b00-8b00-000000000025",
               "leftValue": "={{ $json.decoded === true }}",
               "rightValue": "",
               "operator": {
@@ -504,7 +540,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0024-4b00-8b00-000000000024",
+      "id": "7a2c3b50-0026-4b00-8b00-000000000026",
       "name": "Enviar al backend",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -579,7 +615,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0025-4b00-8b00-000000000025",
+      "id": "7a2c3b50-0027-4b00-8b00-000000000027",
       "name": "Clasificar envio",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -594,7 +630,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0026-4b00-8b00-000000000026",
+      "id": "7a2c3b50-0028-4b00-8b00-000000000028",
       "name": "Reunir resultados",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
@@ -608,7 +644,7 @@
       }
     },
     {
-      "id": "7a2c3b50-0027-4b00-8b00-000000000027",
+      "id": "7a2c3b50-0029-4b00-8b00-000000000029",
       "name": "Resumen",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -625,6 +661,28 @@
   ],
   "connections": {
     "Ejecucion manual": {
+      "main": [
+        [
+          {
+            "node": "Configuracion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disparo programado": {
+      "main": [
+        [
+          {
+            "node": "Marcar programado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar programado": {
       "main": [
         [
           {

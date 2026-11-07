@@ -153,8 +153,10 @@ describe('Escenario J — alertas y dashboard en PostgreSQL real', () => {
       charge,
     ]);
     expect(row!.status).toBe('received');
-    // Un cobro sin confirmar jamás pasa a recibido por evaluarse.
-    const untouched = await h.charge(user, rental, addDays(today(), -3));
+    // Un cobro sin confirmar jamás pasa a recibido por evaluarse. Vence en otro
+    // mes: con "hoy − 3" el período coincidía con el del cobro anterior (mismo
+    // arriendo) los días 4 a 31 y el backend lo rechazaba, con razón, por solapado.
+    const untouched = await h.charge(user, rental, addDays(today(), -40));
     await evaluate();
     const [open] = await h.sql(
       `SELECT status, confirmed_at FROM rent_charges WHERE id = $1`,

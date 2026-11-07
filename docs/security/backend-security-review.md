@@ -325,3 +325,11 @@ Revisados en la Fase 4.2F.3 para el alcance real: demostración académica con d
 | Rate limit en memoria con varias instancias | REQUIERE DECISIÓN |
 | PDF no confiables sin antimalware | REQUIERE DECISIÓN (antes de Gmail) |
 | RLS | REQUIERE DECISIÓN (recomendado después del MVP) |
+
+## Actualización de la Etapa 7 (7-nov-2026)
+
+- **Kill switch** (SDD §6) implementado y probado: activación manual (workflow o responsable operativo), automática por 3 fallos críticos consecutivos o por una propuesta con una operación prohibida; reanudación solo por script del responsable y con evidencia de prueba. Detalle: [gobierno-agente-y-kill-switch.md](gobierno-agente-y-kill-switch.md).
+- **`Cache-Control: no-store`** en todas las respuestas de la API: ninguna caché guarda datos de una sesión (relevante para el polling del frontend y el cambio de cuenta).
+- **E12:** aplicar una propuesta se bloquea (409 `CONTRADICTING_SOURCE`) si otra fuente abierta del mismo usuario la contradice.
+- **Credenciales demo:** incidente de exposición en una transcripción local (no en Git), corrección técnica (`npm run demo:credentials:check`, salida por lista blanca) y procedimiento de rotación en [gobierno-agente-y-kill-switch.md §5](gobierno-agente-y-kill-switch.md#5-seguridad-de-credenciales-demo). La rotación sigue pendiente de autorización.
+- **Sin migraciones nuevas:** el estado del kill switch se deriva de `audit_events` (append-only).

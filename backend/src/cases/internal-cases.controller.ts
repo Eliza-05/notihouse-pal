@@ -32,6 +32,7 @@ import {
   ProposalResponseDto,
 } from './dto/process.dto.js';
 import { HitlService } from './hitl.service.js';
+import { Suspendable } from '../kill-switch/kill-switch.guard.js';
 
 /**
  * Escrituras del servicio de automatización sobre casos. Cada operación
@@ -129,6 +130,7 @@ export class InternalHitlController {
   constructor(private readonly service: HitlService) {}
 
   @Post('expire')
+  @Suspendable('hitl_expiry')
   @HttpCode(200)
   @ApiOperation({
     summary:

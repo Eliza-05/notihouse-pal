@@ -2,7 +2,7 @@
 
 **Hiperautomatización para la gestión de obligaciones del hogar, arriendos, contratos y vencimientos, con procesos asistidos por inteligencia artificial y supervisión humana.**
 
-> **Estado:** fotografía del **4 de noviembre de 2026**. El backend está desplegado y probado; el frontend está por construirse; varias automatizaciones siguen pendientes. Las secciones [Estado actual del MVP](#g-estado-actual-del-mvp) y [Limitaciones y próximos pasos](#o-limitaciones-conocidas-y-próximos-pasos) deben actualizarse a medida que avance el proyecto.
+> **Estado:** actualizado el **7 de noviembre de 2026** (Etapa 7). Backend desplegado en Render hasta la Etapa 6. Los cambios de la Etapa 7 (kill switch, automatización programada, verificaciones del agente, resumen de alertas) están probados en local y **pendientes de publicación controlada**. Frontend en desarrollo. Informe de la etapa: [docs/testing/etapa7-informe-final.md](docs/testing/etapa7-informe-final.md).
 
 ## Contenido
 
@@ -54,16 +54,17 @@ Estado a la fecha de la fotografía. "Probado" significa que el responsable del 
 | Contratos (solo metadatos y vigilancia de vencimiento) | Implementada en la API | Pantalla de frontend |
 | Dashboard | Implementado en la API | Pantalla de frontend |
 | Bandeja de atención | Implementada en la API (cálculo en vivo) | Pantalla de frontend |
-| Alertas internas | **Parcial:** API de consulta lista; la evaluación existe como ruta interna | Programar la evaluación periódica en n8n |
+| Alertas internas persistentes (sin push; ver [ajuste al PDD](docs/architecture/ajuste-pdd-alertas-internas-web.md)) | Implementadas; `GET /alerts/summary` para la campana; evaluación programada en el workflow 06 (probada en laboratorio) | Publicar la Etapa 7 y autorizar la activación de los disparadores |
 | Carga y descarga privada de documentos (PDF y audio) | Implementada; carga de PDF probada contra Render | Pantalla de frontend |
-| Procesamiento de facturas PDF con IA | Implementado y probado de extremo a extremo (workflow de ejecución manual) | Ejecución automática (Etapa 7) |
-| Procesamiento de notas de voz | **Parcial:** workflow escrito; ejecución real completa pendiente por la cuota diaria de Gemini | Validación completa (Etapa 5) |
+| Procesamiento de facturas PDF con IA | Implementado y probado de extremo a extremo; Etapa 7: anclaje determinístico de monto, fecha y proveedor, varios montos → alternativas, detección de inyección | Activar la ruta programada (requiere autorización) |
+| Procesamiento de notas de voz | Implementado y validado con servicios reales (Etapa 5); Etapa 7: abstención ante fragmentos inciertos, notas cortadas y fechas relativas | Activar la ruta programada (requiere autorización) |
 | Propuestas de IA | Implementadas y probadas | — |
 | Revisión y decisión HITL; aplicación de propuestas aprobadas | Implementadas y probadas de extremo a extremo | Pantalla de frontend |
-| Gmail (recepción de facturas por correo) | **Pendiente:** OAuth configurado en n8n, pero no existe recepción automática; la ruta interna del backend siempre responde 403 | Etapa 6 |
-| Automatizaciones periódicas (polling, alertas, vencimiento de revisiones) | **Pendiente:** los cuatro workflows existentes son de ejecución manual | Etapa 7 |
+| Gmail (recepción de facturas por correo) | Implementado y validado con servicios reales (Etapa 6); solo lectura | Activar la ruta programada cada 15 min (requiere autorización) |
+| Automatizaciones periódicas (polling, alertas, vencimiento de revisiones) | Implementadas en los workflows 02–06 (inactivas por defecto) y **probadas con disparadores reales en laboratorio** | Autorización para activarlas en el n8n operativo |
+| Kill switch (SDD §6) | Implementado y probado (manual, 3 fallos críticos, operación prohibida; reanudación controlada y auditada) | Publicar la Etapa 7 |
 | Entrada por texto libre ("Recuérdame pagar el agua") | **No existe** en el backend | Contrato nuevo de backend y workflow |
-| Notificaciones push (FCM) | **No implementadas** | — |
+| Notificaciones push (FCM) | **Pospuestas** (decisión del MVP: alertas internas web persistentes) | Versión posterior |
 | Frontend | **Por construir** (la carpeta solo tiene `.gitkeep`) | Diseño de referencia entregado por separado |
 
 ## C. Arquitectura general
@@ -132,7 +133,7 @@ notihouse-pal/
 | `frontend/` | Cliente web. **En preparación**: se construirá a partir de la [guía frontend](docs/frontend/GUIA_FRONTEND_NOTIHOUSE_PAL.md) y de un diseño de referencia entregado por separado |
 | `backend/` | API NestJS: módulos de autenticación, inmuebles, obligaciones, arriendos, contratos, dashboard, alertas, bandeja de atención, casos, HITL, ingesta de documentos, almacenamiento y rutas internas de n8n |
 | `database/` | Migraciones del esquema (18 tablas) y scripts administrativos SQL. **Las migraciones no se ejecutan desde Render** |
-| `n8n/` | Workflows de automatización (`01` prueba de conexión, `02` procesamiento documental, `03` cierre HITL, `04` procesamiento de voz) y datos de prueba ficticios |
+| `n8n/` | Workflows de automatización (`01` prueba de conexión, `02` procesamiento documental, `03` cierre HITL, `04` procesamiento de voz, `05` Gmail, `06` mantenimiento programado), pruebas (`n8n/tests/`) y datos de prueba ficticios |
 | `infra/` | Configuración de infraestructura: n8n en Docker, Blueprint de Render y entorno de pruebas de concurrencia |
 | `docs/` | Documentación técnica especializada ([sección N](#n-documentación-adicional)) |
 
@@ -241,7 +242,7 @@ Fotografía del **4 de noviembre de 2026**, basada en el código del repositorio
 | Propuestas de IA y revisión HITL (aprobar y rechazar), cierre de casos y aplicación de una propuesta | Probados de extremo a extremo |
 | Procesamiento de voz | Implementado; **ejecución real completa pendiente** por la cuota diaria del nivel gratuito de Gemini |
 | Gmail | OAuth configurado en n8n; **recepción automática pendiente** |
-| Polling, alertas programadas y demás automatizaciones | **Pendientes**; los workflows se ejecutan manualmente |
+| Polling, alertas programadas y demás automatizaciones | **Implementadas y probadas en laboratorio**; inactivas en el entorno operativo hasta autorización |
 | Frontend | **En desarrollo (por construir)**; **no desplegado** |
 
 ## H. Servicios y direcciones
@@ -323,7 +324,7 @@ Variables de entorno del backend (solo nombres): [sección J](#j-variables-de-en
 
 - **Papel:** orquesta el procesamiento con IA. Reclama trabajos de la API (polling HTTPS con el token de servicio), invoca a Gemini y devuelve propuestas y solicitudes de revisión; no accede a la base de datos.
 - **Infraestructura:** contenedor Docker definido en [`infra/n8n/docker-compose.yml`](infra/n8n/docker-compose.yml) (imagen n8n Community 2.46.6, accesible solo desde el propio equipo, sin reinicio automático: corre solo cuando alguien lo inicia).
-- **Workflows:** en [`n8n/workflows/`](n8n/workflows/): `01` prueba de conexión, `02` procesamiento documental, `03` cierre HITL, `04` procesamiento de voz. **Todos tienen disparador manual y están inactivos.**
+- **Workflows:** en [`n8n/workflows/`](n8n/workflows/): `01` prueba de conexión, `02` procesamiento documental, `03` cierre HITL, `04` procesamiento de voz, `05` recepción por Gmail y `06` mantenimiento programado (alertas y vencimientos HITL). Desde la Etapa 7, `02`–`06` tienen además un disparador programado, pero **todos están inactivos** y la ruta programada exige `AUTOMATIZACION_PROGRAMADA = true` (en el repositorio, `false`).
 - **Operación:** hoy se ejecuta con Docker en el equipo de la persona responsable. Ejecutar workflows, usar su cuota de Gemini o tocar su configuración **requiere coordinación con esa persona**. Las credenciales viven cifradas en el volumen de n8n, no en el repositorio.
 
 ## J. Variables de entorno y seguridad
@@ -420,6 +421,10 @@ Este README es el punto de entrada. Para quienes desarrollan React, la referenci
 | Despliegue del backend (demo del MVP) | [docs/deployment/mvp-demo-setup.md](docs/deployment/mvp-demo-setup.md) |
 | Preparación para Render | [docs/deployment/render-readiness.md](docs/deployment/render-readiness.md) |
 | Revisión de seguridad del backend | [docs/security/backend-security-review.md](docs/security/backend-security-review.md) |
+| Gobierno del agente, OWASP ASI y kill switch (Etapa 7) | [docs/security/gobierno-agente-y-kill-switch.md](docs/security/gobierno-agente-y-kill-switch.md) |
+| Contrato frontend de notificaciones y HITL (Etapa 8) | [docs/frontend/CONTRATO_ETAPA8_NOTIFICACIONES_HITL.md](docs/frontend/CONTRATO_ETAPA8_NOTIFICACIONES_HITL.md) |
+| Operación local y guion de sustentación | [docs/deployment/operacion-y-sustentacion.md](docs/deployment/operacion-y-sustentacion.md) |
+| Informe de la Etapa 7 (evaluación, KPI, GO/NO-GO) | [docs/testing/etapa7-informe-final.md](docs/testing/etapa7-informe-final.md) |
 | Plan y resultados de pruebas de concurrencia | [docs/testing/neon-concurrency-plan.md](docs/testing/neon-concurrency-plan.md), [docs/testing/postgres-concurrency-results.md](docs/testing/postgres-concurrency-results.md) |
 
 > **Aviso sobre documentación anterior:** algunos documentos de `docs/` se escribieron antes del despliegue (por ejemplo, `mvp-demo-setup.md` dice que aún no hay nada desplegado y `business-api.md` que no hay IA ni workflows). Donde contradigan el código, prevalece el código y la [guía frontend](docs/frontend/GUIA_FRONTEND_NOTIHOUSE_PAL.md#171-diferencias-entre-documentación-previa-y-código-prevalece-el-código), que registra esas diferencias.
@@ -432,7 +437,8 @@ Pendientes respaldados por el código o por la documentación auditada. No son c
 |---|---|
 | Validación completa de voz (Etapa 5) | El workflow existe; falta una ejecución real completa, limitada por la cuota diaria de Gemini. Los workflows de voz solo procesan audios de hasta 13 MiB, aunque el backend admite hasta 25 MiB por defecto |
 | Integración de Gmail (Etapa 6) | OAuth configurado en n8n; no existe recepción automática y la ruta interna del backend responde siempre 403 |
-| Polling, alertas y automatizaciones (Etapa 7) | Los workflows son manuales; las alertas solo se generan al ejecutar la evaluación interna |
+| Activación operativa de la automatización | Los disparadores están implementados y probados en laboratorio, pero inactivos en el n8n operativo; activarlos requiere autorización y que el equipo local esté encendido |
+| Rotación de las contraseñas demo | Comparten una contraseña que quedó expuesta en una transcripción local (no en Git); rotar con `db:demo:rotate-passwords` coordinando con frontend |
 | Desarrollo y despliegue del frontend | La carpeta está vacía; el despliegue en Vercel requiere autorización |
 | Ajuste de CORS para Vercel | Un único origen autorizado hoy; requiere cambio coordinado del backend |
 | Pruebas integradas finales | Dependen de n8n, Gemini y de coordinar las escrituras sobre la Neon compartida |

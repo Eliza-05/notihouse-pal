@@ -120,6 +120,24 @@ describe('Proposal application (e2e)', () => {
     return { c, job: job!, p, r };
   };
 
+  /**
+   * Defensa en profundidad. Desde la Etapa 7 el registro interno rechaza una
+   * propuesta con una operación prohibida (422) y activa el kill switch (ver
+   * kill-switch.e2e-spec.ts), así que ya no puede llegar guardada por esa vía.
+   * Para seguir comprobando que APLICAR también la rechaza si alguna vez
+   * existiera (dato heredado, otra vía de escritura), se guarda una propuesta
+   * válida, se aprueba con su revisión y luego se sustituye su contenido en
+   * la base, simulando esa propuesta ya almacenada.
+   */
+  const reviewedStored = async (proposedData: object) => {
+    const r = await reviewed(occurrenceAction());
+    await sql(`UPDATE case_proposals SET proposed_data = $1 WHERE id = $2`, [
+      JSON.stringify(proposedData),
+      r.p.id,
+    ]);
+    return r;
+  };
+
   const apply = (
     user: TestUser,
     caseId: string,
@@ -478,7 +496,7 @@ describe('Proposal application (e2e)', () => {
         { action: 'sql', data: { query: 'DELETE FROM audit_events' } },
       ],
     ])('rejects %s (400) without writing', async (_label, proposedData) => {
-      const { c, p } = await reviewed(proposedData);
+      const { c, p } = await reviewedStored(proposedData);
       const before = await sql(
         `SELECT (SELECT count(*) FROM obligation_occurrences) AS o, (SELECT count(*) FROM proposal_applications) AS a`,
       );
@@ -501,7 +519,7 @@ describe('Proposal application (e2e)', () => {
     });
 
     it('cannot mark periods paid, confirm income or renew contracts through data fields', async () => {
-      const paid = await reviewed(
+      const paid = await reviewedStored(
         occurrenceAction({ status: 'paid', confirmedBy: w.laura.profileId }),
       );
       const res = await apply(w.laura, paid.c.id, paid.p.id).expect(400);

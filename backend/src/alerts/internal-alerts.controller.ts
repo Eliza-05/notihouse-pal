@@ -13,6 +13,7 @@ import {
   EvaluateAlertsDto,
   EvaluateAlertsResponseDto,
 } from './dto/alert.dto.js';
+import { Suspendable } from '../kill-switch/kill-switch.guard.js';
 
 /** Evaluación determinística de alertas, para un workflow programado. */
 @ApiTags('internal: alerts')
@@ -25,6 +26,7 @@ export class InternalAlertsController {
   constructor(private readonly service: AlertEvaluationService) {}
 
   @Post('evaluate')
+  @Suspendable('alert_evaluation')
   @HttpCode(200)
   @ApiOperation({
     summary: 'Evaluar vencimientos y sincronizar alertas internas',

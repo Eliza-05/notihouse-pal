@@ -72,6 +72,8 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 | POST | `/api/v1/internal/cases/:id/fail` | Cerrar el caso como fallido |
 | POST | `/api/v1/internal/hitl-requests/expire` | Materializar vencimientos HITL |
 | POST | `/api/v1/internal/alerts/evaluate` | Evaluar vencimientos y sincronizar alertas internas (ver [alerts-and-dashboard.md](alerts-and-dashboard.md#25-evaluación-interna-token-de-servicio)) |
+| GET | `/api/v1/internal/kill-switch` | Estado del kill switch por alcance (Etapa 7) |
+| POST | `/api/v1/internal/kill-switch/activate` | Activar el kill switch de un alcance; **no existe ruta de reanudación** (Etapa 7) |
 
 No existe una ruta para crear trabajos libremente ni un PATCH genérico de estados. Las cuatro rutas `/internal/cases/:id/*` exigen `jobId` + `claimToken` de una **reclamación vigente de un trabajo de ese mismo caso**: el servicio solo escribe en casos que está procesando, y el propietario sale del caso en PostgreSQL.
 
@@ -380,3 +382,27 @@ Orden comprobado en PostgreSQL real:
 ### Alertas
 
 Un **único** scheduler llama a `POST /internal/alerts/evaluate`, como máximo una vez por hora. No lo dupliques en varios workflows.
+
+## Etapa 7: kill switch, automatización programada y contradicciones (7-nov-2026)
+
+**Kill switch** ([gobierno-agente-y-kill-switch.md](../security/gobierno-agente-y-kill-switch.md)). Con un alcance activo:
+
+- La reclamación omite los tipos de trabajo de ese componente (con `global`, no entrega nada). Los trabajos quedan `pending`, sin consumir intentos.
+- Las escrituras sobre un trabajo ya reclamado (`proposals`, `hitl-requests`, `cases/:id/complete`, `workflow-jobs/:id/complete`) responden **503** `KILL_SWITCH_ACTIVE`.
+- `fail` y `cases/:id/fail` siguen permitidos: detenerse de forma segura nunca se bloquea.
+- Activación automática: **3 fallos críticos consecutivos** del mismo componente (un error técnico que agotó los reintentos o un arrendamiento vencido en el último intento; el audit de `workflow_job.fail` lleva `critical`), o una **propuesta con una operación prohibida**, que responde 422, no se guarda y se audita como `case_proposal.prohibited_operation`.
+
+**Workflows programados.** 02, 03 y 04 tienen un disparador cada 5 min; 05 cada 15 min; 06 (nuevo) cada 15 min. Todos están inactivos y con `AUTOMATIZACION_PROGRAMADA = false`. La ruta programada de 02/04 no hace sondeo de Gemini y se pausa ante un 429 (datos estáticos del workflow) sin reclamar trabajos.
+
+**Interpretación determinística** (02/04). El modelo solo propone:
+
+- Monto, fecha y proveedor deben figurar en la fuente.
+- Varios montos posibles → `conflict_resolution` con alternativas y sin aplicación.
+- Instrucciones dirigidas al sistema → `alertaSeguridad` y revisión manual.
+- Contenido fuera de dominio → fallo permanente no crítico, sin revisión.
+- Voz con fragmentos inciertos, nota cortada o fecha relativa → revisión manual.
+- La revisión incluye siempre `context.consecuencias`.
+- Las URL de la fuente se omiten (R17).
+- `document.process` incluye `duplicateOfDocumentId` cuando el archivo es idéntico a otro del usuario (E3).
+
+**E12 al aplicar.** Si otra propuesta abierta del mismo usuario (otro caso, no `stt`, sin aplicar ni rechazar) describe la misma obligación y período con otro monto o fecha, `apply` responde **409** `CONTRADICTING_SOURCE` con ambas fuentes y no escribe nada.

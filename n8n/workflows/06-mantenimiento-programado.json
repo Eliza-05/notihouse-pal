@@ -1,0 +1,513 @@
+{
+  "id": "nhpMaintSched001",
+  "name": "NotiHouse-Pal - 06 - Mantenimiento programado (alertas y vencimientos HITL)",
+  "active": false,
+  "isArchived": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "tags": [],
+  "nodes": [
+    {
+      "id": "7a2c3b60-0001-4b00-8b00-000000000001",
+      "name": "Ejecucion manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "7a2c3b60-0002-4b00-8b00-000000000002",
+      "name": "Disparo programado",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -260
+      ],
+      "notes": "Cada 15 min mientras el workflow esté ACTIVO. Inactivo por defecto: activarlo requiere autorización.",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0003-4b00-8b00-000000000003",
+      "name": "Marcar programado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        110,
+        -260
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Marca la ejecución como programada para la Configuracion.\nreturn [{ json: { scheduled: true } }];"
+      }
+    },
+    {
+      "id": "7a2c3b60-0004-4b00-8b00-000000000004",
+      "name": "Configuracion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// ÚNICO interruptor de llamadas al backend. Con false no se llama a nada.\nconst AUTORIZAR_MANTENIMIENTO = false;\n// Ejecución PROGRAMADA (cada 15 min). Exige además el interruptor anterior.\nconst AUTOMATIZACION_PROGRAMADA = false;\n\nconst scheduled = $input.first()?.json?.scheduled === true;\n// Un único evaluador de alertas, como máximo una vez por hora (contrato del\n// backend). La ejecución manual siempre evalúa.\nconst ALERTS_EVERY_MS = 55 * 60 * 1000;\nlet lastAlertsAt = 0;\ntry { lastAlertsAt = Number($getWorkflowStaticData('global').lastAlertsAt ?? 0); } catch { /* sin datos estáticos */ }\n\nreturn [{ json: {\n  authorized: AUTORIZAR_MANTENIMIENTO === true && (!scheduled || AUTOMATIZACION_PROGRAMADA === true),\n  scheduled,\n  runAlerts: !scheduled || Date.now() - lastAlertsAt >= ALERTS_EVERY_MS,\n  lastAlertsAt: lastAlertsAt ? new Date(lastAlertsAt).toISOString() : null,\n  apiBase: 'https://notihouse-pal-api.onrender.com/api/v1',\n  workerId: 'n8n-scheduler',\n  maxEvaluationRounds: 20,\n} }];"
+      },
+      "notes": "Interruptores. En false no se llama al backend."
+    },
+    {
+      "id": "7a2c3b60-0005-4b00-8b00-000000000005",
+      "name": "Autorizado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7a2c3b60-0006-4b00-8b00-000000000006",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0007-4b00-8b00-000000000007",
+      "name": "Detenido: sin autorizacion",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        660,
+        260
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "7a2c3b60-0008-4b00-8b00-000000000008",
+      "name": "Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "notes": "Despierta Render (plan gratuito).",
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/health",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0009-4b00-8b00-000000000009",
+      "name": "Readiness",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/health/ready",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0010-4b00-8b00-000000000010",
+      "name": "Vencer revisiones",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nhpApiService001",
+          "name": "NotiHouse-Pal API (servicio)"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/internal/hitl-requests/expire",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workerId: $('Configuracion').first().json.workerId, limit: 100 }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0011-4b00-8b00-000000000011",
+      "name": "Evaluar alertas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7a2c3b60-0012-4b00-8b00-000000000012",
+              "leftValue": "={{ $('Configuracion').first().json.runAlerts }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0013-4b00-8b00-000000000013",
+      "name": "Alertas: esperar a la proxima hora",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        260
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "7a2c3b60-0014-4b00-8b00-000000000014",
+      "name": "Evaluar alertas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nhpApiService001",
+          "name": "NotiHouse-Pal API (servicio)"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/internal/alerts/evaluate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workerId: $('Configuracion').first().json.workerId, ...($json.nextCursor ? { cursor: $json.nextCursor } : {}) }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0015-4b00-8b00-000000000015",
+      "name": "Evaluacion incompleta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7a2c3b60-0016-4b00-8b00-000000000016",
+              "leftValue": "={{ $json.complete === false && $runIndex < $('Configuracion').first().json.maxEvaluationRounds }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0017-4b00-8b00-000000000017",
+      "name": "Registrar evaluacion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const r = $input.first().json;\ntry { $getWorkflowStaticData('global').lastAlertsAt = Date.now(); } catch { /* ejecución manual */ }\nreturn [{ json: {\n  evaluationDate: r.evaluationDate,\n  created: r.created, reactivated: r.reactivated, resolved: r.resolved, unchanged: r.unchanged,\n  correlationId: r.correlationId,\n} }];"
+      }
+    },
+    {
+      "id": "7a2c3b60-0018-4b00-8b00-000000000018",
+      "name": "Clasificar fallo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        500
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const item = $input.first().json;\nconst step = $prevNode.name;\nconst detail = item.error ?? item;\nconst text = JSON.stringify(item);\nconst code = Number(detail?.httpCode ?? /^(\\d{3})\\b/.exec(String(detail?.cause?.message ?? detail?.message ?? ''))?.[1] ?? 0);\nconst killSwitch = /KILL_SWITCH_ACTIVE/.test(text) || code === 503;\n// Mensajes fijos: nunca se copia la respuesta (no hay secretos en ella, pero\n// tampoco aporta nada a quien opera).\nconst message = killSwitch\n  ? 'Kill switch activo o backend no disponible (503) en \"' + step + '\": mantenimiento detenido sin escribir nada.'\n  : code === 401\n    ? 'Token de servicio rechazado (401): revisa la credencial.'\n    : 'Fallo en \"' + step + '\"' + (code ? ' (HTTP ' + code + ')' : '') + '. Se reintentará en la siguiente ejecución programada.';\nreturn [{ json: { message } }];"
+      }
+    },
+    {
+      "id": "7a2c3b60-0019-4b00-8b00-000000000019",
+      "name": "Terminar con error",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        500
+      ],
+      "parameters": {
+        "errorMessage": "={{ $json.message }}"
+      }
+    }
+  ],
+  "connections": {
+    "Ejecucion manual": {
+      "main": [
+        [
+          {
+            "node": "Configuracion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disparo programado": {
+      "main": [
+        [
+          {
+            "node": "Marcar programado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar programado": {
+      "main": [
+        [
+          {
+            "node": "Configuracion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuracion": {
+      "main": [
+        [
+          {
+            "node": "Autorizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Autorizado?": {
+      "main": [
+        [
+          {
+            "node": "Health",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Detenido: sin autorizacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health": {
+      "main": [
+        [
+          {
+            "node": "Readiness",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Readiness": {
+      "main": [
+        [
+          {
+            "node": "Vencer revisiones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vencer revisiones": {
+      "main": [
+        [
+          {
+            "node": "Evaluar alertas?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clasificar fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluar alertas?": {
+      "main": [
+        [
+          {
+            "node": "Evaluar alertas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alertas: esperar a la proxima hora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluar alertas": {
+      "main": [
+        [
+          {
+            "node": "Evaluacion incompleta?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clasificar fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluacion incompleta?": {
+      "main": [
+        [
+          {
+            "node": "Evaluar alertas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar evaluacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clasificar fallo": {
+      "main": [
+        [
+          {
+            "node": "Terminar con error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

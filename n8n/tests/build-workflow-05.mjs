@@ -17,6 +17,12 @@ const config = String.raw`// Interruptores: con ambos en false el workflow no ll
 // LECTURA en true y INGESTA en false solo lista qué se procesaría, sin descargar adjuntos.
 const AUTORIZAR_LECTURA_GMAIL = false;
 const AUTORIZAR_INGESTA = false;
+// Etapa 7 — ejecución PROGRAMADA (cada 15 min, objetivo del PDD). Exige además
+// los dos interruptores anteriores. Con false, una ejecución programada no
+// llama a Google ni al backend; la ejecución manual no cambia.
+const AUTOMATIZACION_PROGRAMADA = false;
+const scheduled = $input.first()?.json?.scheduled === true;
+const allowedNow = !scheduled || AUTOMATIZACION_PROGRAMADA === true;
 
 // Alcance autorizado. Sin estos datos el workflow se detiene antes de llamar a Google.
 const BUZON_AUTORIZADO = '';
@@ -28,8 +34,9 @@ const part = 'partId,mimeType,filename,body(attachmentId,size)';
 const nest = (depth) => (depth === 0 ? part : part + ',parts(' + nest(depth - 1) + ')');
 
 return [{ json: {
-  readAuthorized: AUTORIZAR_LECTURA_GMAIL === true,
-  ingestAuthorized: AUTORIZAR_LECTURA_GMAIL === true && AUTORIZAR_INGESTA === true,
+  readAuthorized: AUTORIZAR_LECTURA_GMAIL === true && allowedNow,
+  ingestAuthorized: AUTORIZAR_LECTURA_GMAIL === true && AUTORIZAR_INGESTA === true && allowedNow,
+  scheduled,
   mailbox: BUZON_AUTORIZADO.trim().toLowerCase(),
   allowedSenders: REMITENTES_AUTORIZADOS.map((s) => s.trim().toLowerCase()),
   label: ETIQUETA,
@@ -199,6 +206,8 @@ const retried = { retryOnFail: true, maxTries: 3, waitBetweenTries: 3000, onErro
 
 const nodes = [
   { id: nid(), name: 'Ejecucion manual', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, position: pos(0), parameters: {} },
+  { id: nid(), name: 'Disparo programado', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: pos(0, -260), notes: 'Cada 15 min mientras el workflow esté ACTIVO. Inactivo por defecto: activarlo requiere autorización.', parameters: { rule: { interval: [{ field: 'minutes', minutesInterval: 15 }] } } },
+  code('Marcar programado', 0.5, -260, '// Marca la ejecución como programada para la Configuracion.\nreturn [{ json: { scheduled: true } }];'),
   code('Configuracion', 1, 0, config, { notes: 'Interruptores y alcance autorizado. En false no se llama a Google ni al backend.' }),
   gate('Lectura autorizada?', 2, 0, `={{ ${CFG}.readAuthorized }}`),
   { id: nid(), name: 'Detenido: sin autorizacion', type: 'n8n-nodes-base.noOp', typeVersion: 1, position: pos(3, 300), parameters: {} },
@@ -253,6 +262,8 @@ const nodes = [
 const link = (name, index = 0, type = 'main') => ({ node: name, type, index });
 const connections = {
   'Ejecucion manual': { main: [[link('Configuracion')]] },
+  'Disparo programado': { main: [[link('Marcar programado')]] },
+  'Marcar programado': { main: [[link('Configuracion')]] },
   Configuracion: { main: [[link('Lectura autorizada?')]] },
   'Lectura autorizada?': { main: [[link('Validar configuracion')], [link('Detenido: sin autorizacion')]] },
   'Validar configuracion': { main: [[link('Perfil de Gmail')]] },

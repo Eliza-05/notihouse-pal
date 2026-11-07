@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service.js';
@@ -24,6 +25,11 @@ import {
   hitlRequests,
 } from '../database/schema/index.js';
 import { WorkflowJobsService } from '../integrations/workflow-jobs.service.js';
+import {
+  detectProhibitedOperation,
+  scopeOfJobType,
+} from '../kill-switch/kill-switch.scopes.js';
+import { KillSwitchService } from '../kill-switch/kill-switch.service.js';
 import {
   type CaseRow,
   hasPendingHitl,
@@ -60,6 +66,7 @@ export class CaseProcessService {
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly audit: AuditService,
     private readonly jobs: WorkflowJobsService,
+    private readonly killSwitch: KillSwitchService,
   ) {}
 
   /**
@@ -72,6 +79,8 @@ export class CaseProcessService {
     caseId: string,
     dto: CreateProposalDto,
   ): Promise<{ created: boolean; proposal: ProposalResponseDto }> {
+    const prohibited = detectProhibitedOperation(dto.proposedData);
+    if (prohibited) await this.rejectProhibited(caseId, dto, prohibited);
     return this.db.transaction(async (tx) => {
       const { caseRow, actor } = await this.openCase(tx, caseId, dto);
       if (dto.documentId) {
@@ -309,7 +318,7 @@ export class CaseProcessService {
     dto: ClaimReferenceDto,
   ): Promise<CaseResponseDto> {
     return this.db.transaction(async (tx) => {
-      const { caseRow, actor } = await this.lockedCase(tx, caseId, dto);
+      const { caseRow, actor } = await this.lockedCase(tx, caseId, dto, true);
       if (caseRow.status === 'completed') return toCaseResponse(caseRow);
       if (isTerminalCase(caseRow.status)) {
         throw new ConflictException(
@@ -350,11 +359,66 @@ export class CaseProcessService {
     });
   }
 
+  /**
+   * K3 (SDD §6): una propuesta que pide una operación prohibida no se guarda,
+   * se audita como denegada y activa el kill switch del componente que la
+   * envió, en una transacción propia que se confirma aunque la solicitud
+   * termine en 422. Solo cuenta si viene de una reclamación vigente.
+   */
+  private async rejectProhibited(
+    caseId: string,
+    dto: CreateProposalDto,
+    reason: string,
+  ): Promise<never> {
+    await this.db.transaction(async (tx) => {
+      const claim = await this.jobs.verifyActiveClaim(
+        tx,
+        dto.jobId,
+        dto.claimToken,
+        caseId,
+      );
+      await recordProcessEvent(
+        this.audit,
+        tx,
+        { kind: 'workflow', workerId: claim.workerId },
+        {
+          ownerId: claim.ownerId,
+          correlationId: claim.correlationId,
+          component: COMPONENT,
+          action: 'case_proposal.prohibited_operation',
+          resource: 'case',
+          resourceId: caseId,
+          result: 'failure',
+          details: { jobId: dto.jobId, jobType: claim.jobType, reason },
+        },
+      );
+      await this.killSwitch.activate(
+        {
+          scope: scopeOfJobType(claim.jobType),
+          trigger: 'prohibited_operation',
+          reason: `Propuesta con operación prohibida (${reason})`,
+          actor: `n8n:${claim.workerId}`,
+          actorType: 'workflow',
+          evidence: {
+            caseId,
+            jobId: dto.jobId,
+            correlationId: claim.correlationId,
+          },
+        },
+        tx,
+      );
+    });
+    throw new UnprocessableEntityException(
+      'La propuesta pide una operación prohibida: no se registró y el componente quedó detenido por el kill switch',
+    );
+  }
+
   /** Reclamación vigente del trabajo + caso bloqueado (orden trabajo → caso). */
   private async lockedCase(
     tx: DbTransaction,
     caseId: string,
     claim: ClaimReferenceDto,
+    write = false,
   ): Promise<{ caseRow: CaseRow; actor: ProcessActor }> {
     const verified = await this.jobs.verifyActiveClaim(
       tx,
@@ -362,6 +426,8 @@ export class CaseProcessService {
       claim.claimToken,
       caseId,
     );
+    // Las escrituras se detienen con el kill switch; cerrar como fallido no.
+    if (write) await this.killSwitch.assertJobTypeActive(verified.jobType, tx);
     const caseRow = await lockCase(tx, caseId);
     if (!caseRow) throw new NotFoundException(CASE_NOT_FOUND);
     await this.jobs.assertLeaseStillLive(tx, claim.jobId);
@@ -377,7 +443,7 @@ export class CaseProcessService {
     caseId: string,
     claim: ClaimReferenceDto,
   ) {
-    const locked = await this.lockedCase(tx, caseId, claim);
+    const locked = await this.lockedCase(tx, caseId, claim, true);
     if (isTerminalCase(locked.caseRow.status)) {
       throw new ConflictException(
         `El caso está cerrado como "${locked.caseRow.status}"`,

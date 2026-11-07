@@ -34,6 +34,7 @@ import {
   type DbTransaction,
 } from '../database/database.constants.js';
 import { cases, workflowJobs as jobs } from '../database/schema/index.js';
+import { KillSwitchService } from '../kill-switch/kill-switch.service.js';
 import {
   type ClaimedJobDto,
   type ClaimJobsDto,
@@ -123,6 +124,7 @@ export class WorkflowJobsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly audit: AuditService,
+    private readonly killSwitch: KillSwitchService,
   ) {}
 
   /**
@@ -174,6 +176,10 @@ export class WorkflowJobsService {
     // el del lote.
     await this.db.transaction((tx) => this.failExhaustedLeases(tx));
     return this.db.transaction(async (tx) => {
+      // Kill switch: con el global activo no se entrega nada; con un alcance
+      // concreto se omiten sus tipos de trabajo (siguen pendientes, intactos).
+      const excluded = await this.killSwitch.claimExclusions(tx);
+      if (excluded === null) return [];
       const candidates = await tx
         .select({ id: jobs.id, caseId: jobs.caseId, status: jobs.status })
         .from(jobs)
@@ -191,6 +197,12 @@ export class WorkflowJobsService {
             notInArray(cases.status, [...TERMINAL_CASE_STATUSES]),
             dto.jobTypes?.length
               ? inArray(jobs.jobType, dto.jobTypes)
+              : undefined,
+            excluded.jobTypes.length
+              ? notInArray(jobs.jobType, excluded.jobTypes)
+              : undefined,
+            excluded.casePrefix
+              ? sql`${jobs.jobType} NOT LIKE 'case.%'`
               : undefined,
           ),
         )
@@ -318,6 +330,7 @@ export class WorkflowJobsService {
         );
       }
       if (!job.leaseActive) throw new ConflictException(LEASE_EXPIRED);
+      await this.killSwitch.assertJobTypeActive(job.jobType, tx);
 
       const [row] = await tx
         .update(jobs)
@@ -378,6 +391,9 @@ export class WorkflowJobsService {
       if (!job.leaseActive) throw new ConflictException(LEASE_EXPIRED);
 
       const retry = dto.retryable !== false && job.attempts < job.maxAttempts;
+      // Crítico: error técnico (reintentable) que agotó los intentos. Un
+      // rechazo por contenido (`retryable: false`) no compromete la integridad.
+      const critical = !retry && dto.retryable !== false;
       const lastError = sanitizeErrorMessage(dto.error);
       const [row] = await tx
         .update(jobs)
@@ -409,10 +425,14 @@ export class WorkflowJobsService {
           attempts: job.attempts,
           maxAttempts: job.maxAttempts,
           willRetry: retry,
+          critical,
         },
       });
       if (!retry) {
         await this.failCaseOf(tx, job.caseId, actor, job.jobType);
+        if (critical) {
+          await this.killSwitch.evaluateCriticalStreak(tx, job.jobType, 'api');
+        }
       }
       return toDto((await this.selectJob(tx, id))!);
     });
@@ -498,9 +518,11 @@ export class WorkflowJobsService {
           jobType: job.jobType,
           reason: 'lease_expired_no_attempts_left',
           willRetry: false,
+          critical: true,
         },
       });
       await this.failCaseOf(tx, job.caseId, actor, job.jobType);
+      await this.killSwitch.evaluateCriticalStreak(tx, job.jobType, 'api');
     }
   }
 

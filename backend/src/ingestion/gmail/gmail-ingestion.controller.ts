@@ -36,6 +36,7 @@ import {
   GmailAttachmentNoticeDto,
   type GmailMailboxResolver,
 } from './gmail.contract.js';
+import { Suspendable } from '../../kill-switch/kill-switch.guard.js';
 
 export const GMAIL_NOT_LINKED =
   'El buzón no está vinculado a ningún usuario verificado: la ingesta de Gmail no está habilitada';
@@ -74,6 +75,7 @@ export class GmailIngestionController {
   ) {}
 
   @Post('attachments')
+  @Suspendable('gmail_ingestion')
   @UseInterceptors(ReceiveUpload('pdf'))
   @ApiOperation({
     summary: 'Registrar un adjunto PDF de un buzón de Gmail vinculado',

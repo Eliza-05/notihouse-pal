@@ -308,6 +308,10 @@ export class IngestionService {
             sizeBytes: file.size,
             caseType: spec.caseType,
             ...(subject ? { [subject.field]: subject.id } : {}),
+            // E3: mismo contenido que otro documento del usuario. El worker lo
+            // muestra en la revisión humana; el backend sigue impidiendo, al
+            // aplicar, la obligación o el período duplicados.
+            ...(previous ? { duplicateOfDocumentId: previous.id } : {}),
           },
         });
         return toResponse(

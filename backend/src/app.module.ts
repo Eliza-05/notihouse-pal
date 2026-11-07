@@ -16,6 +16,7 @@ import { StorageModule } from './storage/storage.module.js';
 import { AlertsModule } from './alerts/alerts.module.js';
 import { AttentionModule } from './attention/attention.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
+import { KillSwitchModule } from './kill-switch/kill-switch.module.js';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
       validate: validateEnv,
     }),
     DatabaseModule,
+    KillSwitchModule,
     StorageModule,
     HealthModule,
     AuthModule,

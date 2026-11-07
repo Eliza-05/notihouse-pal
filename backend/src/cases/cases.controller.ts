@@ -36,6 +36,7 @@ import {
   ProposalApplicationResponseDto,
 } from './dto/proposal-application.dto.js';
 import { ProposalApplicationService } from './proposal-application.service.js';
+import { Suspendable } from '../kill-switch/kill-switch.guard.js';
 
 /** Casos del usuario autenticado. Sin DELETE ni cambios de estado manuales. */
 @ApiTags('cases')
@@ -113,6 +114,7 @@ export class CasesController {
   }
 
   @Post(':caseId/proposals/:proposalId/apply')
+  @Suspendable('proposal_application')
   @ApiOperation({
     summary: 'Aplicar una propuesta aprobada (acciones permitidas)',
     description:

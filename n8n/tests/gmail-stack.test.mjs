@@ -341,7 +341,9 @@ try {
     const raw = JSON.stringify(repoWorkflow);
     const config = repoWorkflow.nodes.find((n) => n.name === 'Configuracion').parameters.jsCode;
     check('Workflow versionado: ambos interruptores en false y sin buzón ni remitentes', /AUTORIZAR_LECTURA_GMAIL = false/.test(config) && /AUTORIZAR_INGESTA = false/.test(config) && /BUZON_AUTORIZADO = ''/.test(config) && /REMITENTES_AUTORIZADOS = \[\]/.test(config));
-    check('Inactivo y sin triggers automáticos', repoWorkflow.active === false && repoWorkflow.nodes.filter((n) => /trigger|schedule|cron|webhook/i.test(n.type)).every((n) => n.type === 'n8n-nodes-base.manualTrigger'));
+    // Etapa 7: se admite un disparador programado, pero el workflow sigue
+    // inactivo y la ruta programada exige su propio interruptor en false.
+    check('Inactivo; solo disparador manual y programado, con AUTOMATIZACION_PROGRAMADA=false', repoWorkflow.active === false && repoWorkflow.nodes.filter((n) => /trigger|schedule|cron|webhook/i.test(n.type)).every((n) => ['n8n-nodes-base.manualTrigger', 'n8n-nodes-base.scheduleTrigger'].includes(n.type)) && /AUTOMATIZACION_PROGRAMADA = false/.test(config));
     check('Sin secretos en el JSON', !/AIza|ya29\.|Bearer\s+[A-Za-z0-9_-]{20,}|postgres(ql)?:\/\//.test(raw));
     check('Todo acceso a Gmail es GET y usa la credencial de solo lectura', repoWorkflow.nodes.filter((n) => n.credentials?.googleOAuth2Api).every((n) => n.parameters.method === 'GET'));
     check('No hay nodos de Gmail capaces de modificar el buzón', !repoWorkflow.nodes.some((n) => /gmail/i.test(n.type)) && !/\/modify|\/trash|\/send|\/batchModify|\/delete/.test(raw));
@@ -583,8 +585,10 @@ try {
 
   // ---------- Regresión de archivos
   {
-    const status = spawnSync('git', ['-C', REPO, 'status', '--porcelain', '--', 'n8n/workflows/01-prueba-de-conexion.json', 'n8n/workflows/02-procesamiento-documental.json', 'n8n/workflows/03-cierre-hitl.json', 'n8n/workflows/04-procesamiento-voz.json', 'frontend', 'README.md', 'docs/frontend'], { encoding: 'utf8' });
-    check('Workflows 01-04, frontend, README y guía frontend sin cambios', status.stdout.trim() === '', status.stdout);
+    // Etapa 7 modifica a propósito los workflows 02-04 y la documentación; el
+    // frontend y el workflow 01 siguen intactos.
+    const status = spawnSync('git', ['-C', REPO, 'status', '--porcelain', '--', 'n8n/workflows/01-prueba-de-conexion.json', 'frontend'], { encoding: 'utf8' });
+    check('Workflow 01 y frontend sin cambios', status.stdout.trim() === '', status.stdout);
   }
 } catch (e) {
   failed += 1;

@@ -138,6 +138,32 @@ export class AlertResponseDto {
   updatedAt: Date;
 }
 
+/** Resumen para la campana: se consulta periódicamente (polling). */
+export class AlertSummaryDto {
+  @ApiProperty({
+    description: 'Alertas vigentes (activas y con el recurso abierto)',
+  })
+  active: number;
+
+  @ApiProperty({ description: 'Vigentes sin leer: el número de la campana' })
+  unread: number;
+
+  @ApiProperty({ description: 'Vigentes sin leer de severidad critical' })
+  criticalUnread: number;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Creación de la alerta vigente más reciente: si cambia, hay alertas nuevas que listar',
+  })
+  latestCreatedAt: Date | null;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  serverTime: Date;
+}
+
 export class AlertPageDto extends PageMetaDto {
   @ApiProperty({ type: [AlertResponseDto] })
   items: AlertResponseDto[];
