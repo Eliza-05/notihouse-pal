@@ -1,0 +1,280 @@
+/*
+ * Landing Page — NotiHouse Pal.
+ *
+ * Tokens de color/identidad deliberadamente ESCOPADOS a .landing-page (no en
+ * :root): la paleta y tipografía de esta pantalla (Inter, rojo #E82127) son
+ * una decisión específica del prompt de diseño de la landing y todavía no
+ * son la identidad del resto de la app, que porta su propio sistema desde
+ * housepal_mvp.html (Manrope/Public Sans, rojo/ámbar) en otra rama. Cuando
+ * se reconcilien ambas paletas, este bloque es el único lugar que cambia.
+ */
+.landing-page {
+  --landing-primary: #e82127;
+  --landing-primary-dark: #b5121b;
+  --landing-dark: #0a0a0c;
+  --landing-light: #f5f5f7;
+  --landing-white: #ffffff;
+  --landing-gray: #86868b;
+  --landing-text: #1d1d1f;
+
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  background: var(--landing-dark);
+  color: var(--landing-white);
+  min-height: 100dvh;
+  /* Contenedor de posicionamiento para el header absoluto (flota sobre el Hero). */
+  position: relative;
+}
+
+/* Respeta la preferencia del sistema: ninguna transición/hover-shift se anima. */
+@media (prefers-reduced-motion: reduce) {
+  .landing-page * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Header                                                                  */
+/* ---------------------------------------------------------------------- */
+
+.landing-header {
+  /* Flota, transparente, sobre la imagen del Hero (que ocupa el 100dvh
+     completo) en vez de empujarla hacia abajo con una barra sólida. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 72px;
+  /* Mismo max-width/padding que .landing-hero__content: Header y Hero deben
+     alinearse exactamente. Ampliado desde 1200/32 para aprovechar más el
+     espacio negativo izquierdo del fondo en escritorio ancho. */
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 56px;
+}
+
+.landing-header__brand {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--landing-white);
+}
+
+.landing-header__login {
+  display: inline-flex;
+  align-items: center;
+  height: 46px;
+  padding: 0 24px;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 35%);
+  background: transparent;
+  color: var(--landing-white);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background-color 250ms ease,
+    filter 250ms ease;
+}
+
+.landing-header__login:hover {
+  background: rgb(255 255 255 / 12%);
+  filter: brightness(1.15);
+}
+
+.landing-header__login:focus-visible {
+  outline: 2px solid var(--landing-white);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Hero                                                                    */
+/* ---------------------------------------------------------------------- */
+
+.landing-hero {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  /* Despeja el header absoluto en viewports muy bajos en altura, sin romper
+     el centrado vertical del contenido en el caso normal. */
+  padding-top: 72px;
+  overflow: hidden;
+}
+
+.landing-hero__image {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* "right" prioriza los objetos (llaves, calculadora, libreta): es la parte
+     de la composición que debe conservarse visible a toda resolución. */
+  object-position: right center;
+}
+
+/* Degradado adicional muy sutil hacia la izquierda: protege la legibilidad
+   del texto sin alterar la identidad de la imagen (el fondo ya trae su
+   propio degradado rojo/negro integrado). */
+.landing-hero__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(90deg, rgb(10 10 12 / 55%) 0%, rgb(10 10 12 / 10%) 45%, transparent 65%);
+  pointer-events: none;
+}
+
+.landing-hero__content {
+  position: relative;
+  z-index: 1;
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 56px;
+}
+
+.landing-hero__title {
+  margin: 0 0 24px;
+  font-size: 60px;
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -2.2px;
+}
+
+.landing-hero__title-line {
+  display: block;
+}
+
+.landing-hero__title-line--fade {
+  /* Tratamiento tipo Apple: la segunda línea se funde hacia una opacidad
+     menor en vez de cortar abruptamente a blanco sólido. */
+  background: linear-gradient(90deg, #fff 0%, rgb(255 255 255 / 70%) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.landing-hero__description {
+  max-width: 640px;
+  margin: 0 0 40px;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: rgb(255 255 255 / 85%);
+}
+
+.landing-more-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 60px;
+  padding: 0 32px;
+  border: none;
+  border-radius: 999px;
+  background: var(--landing-white);
+  color: var(--landing-text);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 250ms ease,
+    transform 250ms ease;
+}
+
+.landing-more-info:hover {
+  background: #f0f0f0;
+  transform: translateX(2px);
+}
+
+.landing-more-info:focus-visible {
+  outline: 2px solid var(--landing-white);
+  outline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Responsive — breakpoints del prompt de diseño (§8): 1200 / 768          */
+/* ---------------------------------------------------------------------- */
+
+@media (max-width: 1199px) {
+  .landing-hero__title {
+    font-size: 46px;
+    letter-spacing: -1.6px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  /* A este ancho (viewport alto y angosto), `cover` siempre deja algún
+     objeto detrás del bloque de texto sin importar el encuadre — intentar
+     "esconderlo" con zoom solo lo empeoraba (quedaba un objeto distinto,
+     más grande, en el mismo lugar). Se prioriza la legibilidad con un
+     degradado diagonal más fuerte sobre esa franja en vez de perseguir un
+     encuadre imposible; los objetos quedan visibles pero atenuados, igual
+     que se resuelve en mobile. */
+  .landing-hero__scrim {
+    background: linear-gradient(
+      135deg,
+      rgb(10 10 12 / 35%) 0%,
+      rgb(10 10 12 / 80%) 38%,
+      rgb(10 10 12 / 92%) 60%,
+      rgb(10 10 12 / 95%) 100%
+    );
+  }
+}
+
+@media (max-width: 767px) {
+  .landing-header {
+    padding: 0 20px;
+  }
+
+  .landing-header__brand {
+    font-size: 19px;
+  }
+
+  .landing-header__login {
+    height: 40px;
+    padding: 0 16px;
+    font-size: 14px;
+  }
+
+  .landing-hero {
+    align-items: flex-end;
+    padding-bottom: 56px;
+  }
+
+  .landing-hero__image {
+    /* En un ancho tan angosto, el objeto se deja parcialmente visible como
+       textura de fondo en vez de intentar recortarlo del todo: el degradado
+       inferior (más abajo) es lo que garantiza la legibilidad real. */
+    object-position: 68% center;
+  }
+
+  .landing-hero__scrim {
+    background: linear-gradient(180deg, rgb(10 10 12 / 35%) 0%, rgb(10 10 12 / 75%) 55%, rgb(10 10 12 / 92%) 100%);
+  }
+
+  .landing-hero__title {
+    font-size: 34px;
+    letter-spacing: -1px;
+  }
+
+  .landing-hero__description {
+    font-size: 15px;
+    max-width: 100%;
+  }
+
+  .landing-more-info {
+    width: 100%;
+    justify-content: center;
+    height: 56px;
+  }
+}
