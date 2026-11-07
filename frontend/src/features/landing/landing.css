@@ -35,6 +35,8 @@
 @media (prefers-reduced-motion: reduce) {
   .landing-page * {
     transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 
@@ -70,23 +72,111 @@
 }
 
 .landing-header__login {
+  position: relative;
   display: inline-flex;
   align-items: center;
+  /* "Iniciar Sesión" (Landing) y "Volver" (Login) comparten este botón, y sus
+     anchos de contenido difieren (~146px vs ~96px, medido). Sin un min-width
+     que cubra la etiqueta más larga, la píldora encogía de golpe en el
+     instante del cambio de ruta — un "parpadeo" del borde, no una animación,
+     porque el ancho del botón no participa de ningún transition (solo lo
+     hace la opacity de la etiqueta de adentro). Fijar el min-width a la
+     etiqueta más larga mantiene el borde del botón estable en ambas
+     pantallas, sin necesidad de animar el ancho. */
+  min-width: 150px;
+  justify-content: center;
   height: 46px;
   padding: 0 24px;
   border-radius: 999px;
-  border: 1px solid rgb(255 255 255 / 35%);
+  /* Base previa al montaje: mismo color de borde que siempre tuvo, pero con
+     alpha 0 — así el botón "nace" junto con su etiqueta en vez de aparecer
+     ya con un borde sólido desde el primer frame. Se anima border-color (no
+     la opacity de todo el botón) a propósito: el destello (más abajo) es un
+     span hijo con su propia animación de opacity, y si el botón entero
+     también fuera a opacity 0 ambas se multiplicarían, apagando el destello
+     justo en su punto más brillante. Animando solo el color del borde, el
+     "contorno" entra/sale igual que el texto sin tocar el destello. */
+  border: 1px solid rgb(255 255 255 / 0%);
   background: transparent;
   color: var(--landing-white);
   font-size: 15px;
   font-weight: 500;
+  font-family: inherit;
   text-decoration: none;
+  cursor: pointer;
   transition:
     background-color 250ms ease,
-    filter 250ms ease;
+    filter 250ms ease,
+    border-color 320ms ease 60ms;
 }
 
-.landing-header__login:hover {
+.landing-header__login:disabled {
+  cursor: default;
+}
+
+.landing-header--mounted .landing-header__login {
+  border-color: rgb(255 255 255 / 35%);
+}
+
+/* Encadenado por la misma razón que el resto de los pares mounted/leaving de
+   este archivo y de login.css: "mounted" nunca se retira mientras se sale,
+   así que sin combinar ambas clases el orden de la hoja (no la intención)
+   decide cuál gana. */
+.landing-header--mounted.landing-header--leaving .landing-header__login {
+  border-color: rgb(255 255 255 / 0%);
+}
+
+/* Etiqueta del botón ("Iniciar Sesión" en Landing, "Volver" en Login: ambas
+   comparten esta misma clase vía landing-header__login-label). Antes el
+   texto cambiaba de golpe en el instante exacto del cambio de ruta — con el
+   fundido entrada/salida impulsado por `.landing-header--mounted`/
+   `--leaving` (el mismo mecanismo que .login-screen__form, nunca
+   @keyframes+forwards) ya no hay ningún instante en el que el texto nuevo
+   aparezca a opacity:1 sin transición. */
+.landing-header__login-label {
+  display: inline-block;
+  opacity: 0;
+  transition: opacity 320ms ease 60ms;
+}
+
+.landing-header--mounted .landing-header__login-label {
+  opacity: 1;
+}
+
+.landing-header--mounted.landing-header--leaving .landing-header__login-label {
+  opacity: 0;
+}
+
+/* Destello del botón: nace del propio control (sin coordenadas fijas, así
+   queda correcto en cualquier viewport) y solo se anima cuando arranca la
+   transición hacia /login. Disparado por el propio header (no por la página
+   completa): el mismo estado que ya desvanece la etiqueta. */
+.landing-header--leaving .landing-header__login-flash {
+  animation: landing-login-flash 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes landing-login-flash {
+  0% {
+    opacity: 0;
+    transform: scale(0.25);
+  }
+
+  35% {
+    opacity: 1;
+    transform: scale(1.4);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+/* :not(:disabled) por consistencia con .login-screen__submit:hover:not(:disabled)
+   en login.css: sin el guard, el resaltado de hover podía seguir disparando
+   mientras el botón está deshabilitado (p. ej. durante "leaving"), aunque ya
+   no sea clicable. */
+.landing-header__login:hover:not(:disabled) {
   background: rgb(255 255 255 / 12%);
   filter: brightness(1.15);
 }
@@ -121,6 +211,15 @@
   /* "right" prioriza los objetos (llaves, calculadora, libreta): es la parte
      de la composición que debe conservarse visible a toda resolución. */
   object-position: right center;
+  /* Punto de anclaje del zoom de /login (sección "Transición cinematográfica"
+     más abajo): zona roja despejada justo debajo del botón "Iniciar Sesión"
+     (verificado con capturas reales — más cerca del llavero, a esta escala,
+     el llavero queda visible en vez de desaparecer). Expresado en % de la
+     propia caja, no en px, para seguir siendo el mismo punto visual al
+     cambiar de viewport. En móvil cambia (ver breakpoint ≤767px): el
+     object-position distinto de esa franja mapea esta zona a otra parte de
+     la foto, con el llavero ahí en su lugar. */
+  transform-origin: 98% 2%;
 }
 
 /* Degradado adicional muy sutil hacia la izquierda: protege la legibilidad
@@ -202,6 +301,63 @@
 }
 
 /* ---------------------------------------------------------------------- */
+/* Transición cinematográfica Landing → Login                              */
+/*                                                                          */
+/* Estrategia (sin librería de animación, sin segunda imagen): el mismo     */
+/* LandingBackground.png se reutiliza tal cual en /login (LoginPage importa */
+/* este archivo); aquí solo se anima su salida con transform+opacity sobre  */
+/* el mismo transform-origin que usa el fondo de Login, para que el cambio  */
+/* de ruta (que ocurre cuando esta animación ya terminó, ver LandingPage)   */
+/* no produzca ningún salto visual.                                        */
+/* ---------------------------------------------------------------------- */
+
+.landing-hero__image,
+.landing-hero__scrim {
+  transition:
+    transform 820ms cubic-bezier(0.65, 0, 0.35, 1),
+    opacity 420ms ease,
+    filter 820ms ease;
+}
+
+.landing-hero--leaving .landing-hero__image {
+  transform: scale(4.5);
+  filter: saturate(1.1) brightness(0.95);
+}
+
+.landing-hero--leaving .landing-hero__scrim {
+  opacity: 0;
+}
+
+/* Título + descripción + botón "Más información": antes no tenían ningún
+   estado de entrada propio (aparecían a opacity:1 desde el primer frame),
+   así que al volver desde /login con "Volver" el contenido "aparecía de
+   golpe" en vez de con transición — el mismo fundido+translateY que ya usa
+   .login-screen__form en login.css, con idéntico timing, para que ambas
+   pantallas se sientan como una sola coreografía. */
+.landing-hero__content {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 420ms ease 120ms,
+    transform 420ms ease 120ms;
+}
+
+.landing-hero--mounted .landing-hero__content {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Encadenado por la misma razón que .login-screen--mounted.login-screen--leaving
+   en login.css: "mounted" nunca se retira mientras se sale, así que sin
+   combinar ambas clases el orden de la hoja (no la intención) decide cuál
+   gana. */
+.landing-hero--mounted.landing-hero--leaving .landing-hero__content {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.97);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------- */
 /* Responsive — breakpoints del prompt de diseño (§8): 1200 / 768          */
 /* ---------------------------------------------------------------------- */
 
@@ -241,6 +397,9 @@
   }
 
   .landing-header__login {
+    /* Mismo motivo que el min-width base: ~124px vs ~77px medido a este
+       ancho/tipografía. */
+    min-width: 128px;
     height: 40px;
     padding: 0 16px;
     font-size: 14px;
@@ -256,6 +415,11 @@
        textura de fondo en vez de intentar recortarlo del todo: el degradado
        inferior (más abajo) es lo que garantiza la legibilidad real. */
     object-position: 68% center;
+    /* object-position distinto → el mismo 96%/8% de escritorio cae sobre
+       el llavero en vez de la zona roja despejada. Verificado con capturas
+       reales a 390×844 (igual que el resto de valores responsive de este
+       archivo: ninguno sale de una fórmula, todos están comprobados). */
+    transform-origin: 50% 0%;
   }
 
   .landing-hero__scrim {

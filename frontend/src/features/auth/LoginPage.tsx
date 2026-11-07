@@ -1,21 +1,30 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { z } from 'zod'
+import landingBackground from '../../assets/backgrounds/LandingBackground.png'
 import { ApiError, isNetworkError } from '../../lib/api/errors'
 import { useAuth } from '../../lib/auth/useAuth'
+import { transitionClassName } from '../landing/transitionClassName'
+// Reutiliza los tokens de color/tipografía (.landing-page) y la imagen de
+// fondo de la Landing a propósito: Login es el mismo lienzo visual, solo con
+// la cámara acercada (ver "Transición cinematográfica" en landing.css y
+// login.css). Nada de esto duplica estilos; login.css solo añade lo propio
+// de esta pantalla (el formulario y el tratamiento del fondo).
+import '../landing/landing.css'
+import './login.css'
 
 /**
- * Placeholder FUNCIONAL, sin diseño todavía (eso se decide en el paso 3,
- * portando la identidad visual del mockup). Lo que ya es real aquí:
- * - POST /auth/login real contra la API (sin Google, sin registro: el
- *   backend solo tiene login con las cuentas demo existentes, ver §B del
- *   README y §7.1 de la guía — no hay más mecanismos de auth que crear).
- * - Validación igual a la que exige el backend (§8.1): correo válido ≤254,
+ * Login real (no una maqueta): mismo mecanismo de auth que ya existía antes
+ * de esta pantalla (lib/auth, lib/api) — el backend solo soporta login con
+ * las cuentas demo existentes, sin registro, sin recuperación de contraseña
+ * ni proveedores externos (ver docs/architecture/authentication.md §1), así
+ * que esta pantalla no incluye ni simula nada de eso.
+ * - Validación igual a la que exige el backend: correo válido ≤254,
  *   contraseña no vacía ≤256, sin reglas de complejidad propias.
- * - Errores 400/401/429/red diferenciados (§11.6).
- * - Aviso de arranque en frío de Render tras ~4s (§8.1, §11.8).
+ * - Errores 400/401/429/red diferenciados.
+ * - Aviso de arranque en frío de Render tras ~4s.
  */
 
 const schema = z.object({
@@ -25,12 +34,28 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>
 
+// Debe coincidir con el `transition` de salida más largo en login.css
+// (.login-screen--leaving .login-screen__image).
+const LEAVE_ANIMATION_MS = 820
+
 export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [serverError, setServerError] = useState<string | null>(null)
   const [wakingUp, setWakingUp] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  // Controla la entrada del formulario por transición de React (no por
+  // @keyframes): una animación con `forwards` deja su valor final de
+  // opacity "ganando" sobre cualquier transition posterior en la misma
+  // propiedad, lo que rompía el fundido de salida de handleBack. Con
+  // transition para ambos sentidos no hay ese conflicto.
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setMounted(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
 
   const {
     register,
@@ -63,32 +88,97 @@ export function LoginPage() {
     }
   }
 
+  function handleBack() {
+    if (leaving) return
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReducedMotion) {
+      navigate('/')
+      return
+    }
+
+    setLeaving(true)
+    window.setTimeout(() => navigate('/'), LEAVE_ANIMATION_MS)
+  }
+
   return (
-    <main className="app-shell">
-      <form onSubmit={handleSubmit(onSubmit)} noValidate style={{ display: 'grid', gap: '0.75rem', width: 'min(320px, 100%)' }}>
-        <h1>NotiHouse-Pal — Iniciar sesión</h1>
+    <div className={`landing-page ${transitionClassName('login-screen', { mounted, leaving })}`}>
+      {/* Mismo recurso que la Landing, sin segunda imagen (§4 del prompt de
+          diseño): el acercamiento se logra solo con transform+filter sobre
+          este <img>, anclado al mismo transform-origin que el Hero. */}
+      <img src={landingBackground} alt="" className="login-screen__image" aria-hidden="true" />
+      <div className="login-screen__vignette" aria-hidden="true" />
 
-        <label htmlFor="email">Correo</label>
-        <input id="email" type="email" autoComplete="email" {...register('email')} aria-invalid={!!errors.email} />
-        {errors.email && <span role="alert">{errors.email.message}</span>}
-
-        <label htmlFor="password">Contraseña</label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          {...register('password')}
-          aria-invalid={!!errors.password}
-        />
-        {errors.password && <span role="alert">{errors.password.message}</span>}
-
-        {serverError && <p role="alert">{serverError}</p>}
-        {wakingUp && <p className="app-shell__status">Despertando el servidor, puede tardar hasta un minuto…</p>}
-
-        <button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Entrando…' : 'Entrar'}
+      <header className={transitionClassName('landing-header', { mounted, leaving })}>
+        <span className="landing-header__brand">NotiHouse Pal</span>
+        <button type="button" className="landing-header__login" onClick={handleBack} disabled={leaving}>
+          {/* Misma clase `landing-header__login-label` que usa el botón
+              "Iniciar Sesión" de la Landing (landing.css): entra/sale con
+              fundido en vez de cambiar de texto de golpe en el instante del
+              cambio de ruta. */}
+          <span className="landing-header__login-label">Volver</span>
         </button>
-      </form>
-    </main>
+      </header>
+
+      <main className="login-screen__main">
+        <form className="login-screen__form" onSubmit={handleSubmit(onSubmit)} noValidate>
+          <h1 className="login-screen__title">Iniciar Sesión</h1>
+          <p className="login-screen__subtitle">Bienvenido de vuelta</p>
+
+          <div className="login-screen__field">
+            <label htmlFor="email" className="login-screen__label">
+              Correo electrónico
+            </label>
+            <input
+              id="email"
+              type="email"
+              placeholder="Ingresa tu correo electrónico"
+              autoComplete="email"
+              className="login-screen__input"
+              aria-invalid={!!errors.email}
+              aria-describedby={errors.email ? 'email-error' : undefined}
+              {...register('email')}
+            />
+            {errors.email && (
+              <span id="email-error" role="alert" className="login-screen__error">
+                {errors.email.message}
+              </span>
+            )}
+          </div>
+
+          <div className="login-screen__field">
+            <label htmlFor="password" className="login-screen__label">
+              Contraseña
+            </label>
+            <input
+              id="password"
+              type="password"
+              placeholder="Ingresa tu contraseña"
+              autoComplete="current-password"
+              className="login-screen__input"
+              aria-invalid={!!errors.password}
+              aria-describedby={errors.password ? 'password-error' : undefined}
+              {...register('password')}
+            />
+            {errors.password && (
+              <span id="password-error" role="alert" className="login-screen__error">
+                {errors.password.message}
+              </span>
+            )}
+          </div>
+
+          {serverError && (
+            <p role="alert" className="login-screen__server-error">
+              {serverError}
+            </p>
+          )}
+          {wakingUp && <p className="login-screen__status">Despertando el servidor, puede tardar hasta un minuto…</p>}
+
+          <button type="submit" className="login-screen__submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Entrando…' : 'Iniciar sesión'}
+          </button>
+        </form>
+      </main>
+    </div>
   )
 }
