@@ -247,7 +247,7 @@ writeFileSync(join(WORK, 'creds.json'), JSON.stringify([
   { id: 'nhpApiService001', name: 'NotiHouse-Pal API (servicio)', type: 'httpHeaderAuth', data: { name: 'Authorization', value: `Bearer ${serviceToken}` } },
   { id: 'badService000001', name: 'Token incorrecto', type: 'httpHeaderAuth', data: { name: 'Authorization', value: `Bearer ${randomBytes(48).toString('base64url')}` } },
   { id: 'V3F6GYNAb2ExkptK', name: 'Google Gemini(PaLM) Api account', type: 'googlePalmApi', data: { host: REMOTE, apiKey: 'clave-falsa' } },
-  { id: 'nhpGmailRead0001', name: 'NotiHouse Gmail (solo lectura)', type: 'googleOAuth2Api', data: { clientId: 'falso', clientSecret: 'falso', scope: READONLY, oauthTokenData: { access_token: FAKE_ACCESS_TOKEN, refresh_token: 'falso', token_type: 'Bearer', expires_in: 3600, scope: READONLY } } },
+  { id: 'nhpGmailRead0001', name: 'NotiHouse Gmail', type: 'googleOAuth2Api', data: { clientId: 'falso', clientSecret: 'falso', scope: READONLY, oauthTokenData: { access_token: FAKE_ACCESS_TOKEN, refresh_token: 'falso', token_type: 'Bearer', expires_in: 3600, scope: READONLY } } },
 ]));
 docker('rm', '-f', N8N_NAME);
 docker('run', '-d', '--name', N8N_NAME, '--add-host', 'host.docker.internal:host-gateway', '-e', 'NODE_TLS_REJECT_UNAUTHORIZED=0', ...['accounts.google.com', 'oauth2.googleapis.com', 'gmail.googleapis.com', 'generativelanguage.googleapis.com'].flatMap((h) => ['--add-host', `${h}:127.0.0.1`]), '-e', 'N8N_DIAGNOSTICS_ENABLED=false', '-v', `${WORK.replace(/\\/g, '/')}:/work:ro`, '--entrypoint', 'sh', IMAGE, '-c', 'sleep 7200');

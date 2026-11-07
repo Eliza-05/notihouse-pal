@@ -112,7 +112,7 @@
       "credentials": {
         "googleOAuth2Api": {
           "id": "nhpGmailRead0001",
-          "name": "NotiHouse Gmail (solo lectura)"
+          "name": "NotiHouse Gmail"
         }
       },
       "parameters": {
@@ -256,7 +256,7 @@
       "credentials": {
         "googleOAuth2Api": {
           "id": "nhpGmailRead0001",
-          "name": "NotiHouse Gmail (solo lectura)"
+          "name": "NotiHouse Gmail"
         }
       },
       "parameters": {
@@ -318,7 +318,7 @@
       "credentials": {
         "googleOAuth2Api": {
           "id": "nhpGmailRead0001",
-          "name": "NotiHouse Gmail (solo lectura)"
+          "name": "NotiHouse Gmail"
         }
       },
       "parameters": {
@@ -419,7 +419,7 @@
       "credentials": {
         "googleOAuth2Api": {
           "id": "nhpGmailRead0001",
-          "name": "NotiHouse Gmail (solo lectura)"
+          "name": "NotiHouse Gmail"
         }
       },
       "parameters": {

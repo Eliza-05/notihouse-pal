@@ -8,7 +8,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '../workflows/05-recepcion-gmail.json');
-const GMAIL_CRED = { googleOAuth2Api: { id: 'nhpGmailRead0001', name: 'NotiHouse Gmail (solo lectura)' } };
+// Id MARCADOR: el id real de la credencial lo genera cada instalación de n8n y no se versiona.
+// n8n/tools/import-workflow.mjs lo sustituye al importar (ver docs/api/ingestion-api.md).
+const GMAIL_CRED = { googleOAuth2Api: { id: 'nhpGmailRead0001', name: 'NotiHouse Gmail' } };
 const API_CRED = { httpHeaderAuth: { id: 'nhpApiService001', name: 'NotiHouse-Pal API (servicio)' } };
 
 const config = String.raw`// Interruptores: con ambos en false el workflow no llama a Google ni al backend.

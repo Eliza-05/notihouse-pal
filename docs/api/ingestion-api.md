@@ -255,9 +255,17 @@ Un adjunto PDF de un buzón de Gmail **vinculado** sigue el mismo flujo de §6, 
 
 **Puesta en marcha del workflow 05** (ver los comentarios de su nodo `Configuracion`):
 
-1. Crear en n8n una credencial `Google OAuth2 API` llamada `NotiHouse Gmail (solo lectura)` con el alcance `https://www.googleapis.com/auth/gmail.readonly`. No reutilizar la credencial de tipo Gmail de n8n: pide acceso total al correo.
+1. Crear en n8n una credencial `Google OAuth2 API` llamada `NotiHouse Gmail` con el alcance `https://www.googleapis.com/auth/gmail.readonly`. No reutilizar la credencial de tipo Gmail de n8n: pide acceso total al correo.
+1b. **Importar el workflow resolviendo la credencial por nombre.** El JSON versionado lleva un id marcador (`nhpGmailRead0001`) porque el id real de la credencial lo genera cada instalación de n8n y no debe guardarse en Git. Para importarlo en un n8n local:
+
+   ```bash
+   node n8n/tools/import-workflow.mjs n8n/workflows/05-recepcion-gmail.json --dry-run   # muestra la sustitución
+   node n8n/tools/import-workflow.mjs n8n/workflows/05-recepcion-gmail.json             # importa
+   ```
+
+   La herramienta busca en n8n (`--container`, por defecto `notihouse-n8n`) exactamente una credencial `NotiHouse Gmail` de tipo `googleOAuth2Api` y otra `NotiHouse-Pal API (servicio)`, sustituye los ids en una copia, rechaza workflows activos o con interruptores en `true`, importa y comprueba que los nodos quedaron con el id real. Solo lee id, nombre y tipo de las credenciales; no las descifra ni imprime secretos. Importar sobre un workflow ya vinculado es seguro porque vuelve a resolver los mismos ids. Si importas a mano (`n8n import:workflow`) sin la herramienta, los cuatro nodos de Google quedan sin credencial válida y hay que reasignarla en la interfaz.
 2. Definir `GMAIL_MAILBOX_LINKS` en el servidor.
-3. Completar `BUZON_AUTORIZADO` y `REMITENTES_AUTORIZADOS`, y crear en el buzón la etiqueta `notihouse-facturas-prueba`.
+3. Completar `BUZON_AUTORIZADO` y `REMITENTES_AUTORIZADOS` **solo en tu n8n**, sin escribirlos en el repo: define `N8N_GMAIL_MAILBOX` y `N8N_GMAIL_SENDERS` (separados por comas) en la terminal al ejecutar `n8n/tools/import-workflow.mjs`, que los inserta en la copia que importa y los muestra parcialmente ocultos. Además, y crear en el buzón la etiqueta `notihouse-facturas-prueba`.
 4. `AUTORIZAR_LECTURA_GMAIL = true` lista lo que se procesaría, sin descargar adjuntos ni escribir nada. `AUTORIZAR_INGESTA = true` además los registra.
 
 El workflow comprueba con `users.getProfile` que la credencial corresponde al buzón autorizado, pide solo metadatos de las partes (nunca el cuerpo) y hace únicamente solicitudes GET a Gmail: no modifica, borra, responde ni marca mensajes. Reejecutarlo es seguro.
@@ -335,6 +343,8 @@ Los temporales multipart se eliminan siempre al terminar la solicitud, con éxit
 | `test/ingestion-worker.e2e-spec.ts` | Acceso del worker (válido, sin credenciales, JWT, token incorrecto, arrendamiento vencido, otro caso, otro propietario, tipo no autorizado); fallo de almacenamiento, de PostgreSQL y de compensación |
 | `test/gmail-ingestion.e2e-spec.ts` | Recepción de Gmail: vínculo, contrato, validación del PDF, idempotencia (repetición, concurrencia, conflicto, archivo idéntico), aislamiento, auditoría y fallos |
 | `n8n/tests/gmail-stack.test.mjs` | Workflow 05 real con backend real, base desechable y Gmail y Gemini simulados, hasta los workflows 02 y 03 |
+| `n8n/tests/voice-stack.test.mjs` | Workflow 04 (voz) y su cierre por el 03, con backend real, base desechable, Gemini simulado y audios ficticios de `n8n/test-data/audio/`; requiere ffmpeg (`FFMPEG` o PATH) |
+| `n8n/tools/import-workflow.mjs` | Importa un workflow en n8n local resolviendo credenciales por nombre y tipo (ver §11) |
 | `test/ingestion-http.e2e-spec.ts` | Servidor real en un puerto TCP con `fetch` + `FormData`: login, cargas válidas e inválidas, descarga, usuario ajeno, worker, idempotencia, casos y trabajos, sin escrituras financieras |
 
 Todas las escrituras usan PGlite y directorios temporales aislados por archivo de pruebas, que se eliminan al terminar. Ninguna prueba escribe en Neon.
