@@ -29,6 +29,8 @@ export interface AutomatedAuditEvent {
   resource: string;
   resourceId: string;
   details?: Record<string, unknown>;
+  /** `failure` registra un intento fallido (por ejemplo, de almacenamiento). */
+  result?: 'success' | 'failure';
 }
 
 /**
@@ -68,7 +70,7 @@ export class AuditService {
       actorId: event.actorId,
       component: event.component,
       action: event.action,
-      result: 'success',
+      result: event.result ?? 'success',
       metadata: {
         resource: event.resource,
         resourceId: event.resourceId,

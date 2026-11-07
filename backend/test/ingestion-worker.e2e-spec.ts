@@ -21,10 +21,10 @@ import { createTestApp, type TestApp } from './support/test-app.js';
 
 /**
  * Acceso del worker a archivos (solo con reclamación vigente de un trabajo
- * autorizado del mismo caso), contrato no operativo de Gmail y tratamiento
+ * autorizado del mismo caso) y tratamiento
  * de fallos del almacenamiento y de PostgreSQL con compensación.
  */
-describe('Worker file access, Gmail contract and failures (e2e)', () => {
+describe('Worker file access and failures (e2e)', () => {
   let w: ProcessWorld;
   const { sql, drainQueue, claim, expireLease } = processHelpers(() => w);
   const STORAGE = process.env.STORAGE_LOCAL_PATH!;
@@ -208,58 +208,6 @@ describe('Worker file access, Gmail contract and failures (e2e)', () => {
           [up.caseId, job.id, w.andresCharge],
         ),
       ).toEqual(before);
-    });
-  });
-
-  describe('Gmail contract (not operational)', () => {
-    const notice = () => ({
-      mailbox: 'facturas.hogar@example.com',
-      messageId: '18c2f5a9b0e4d1f2',
-      attachmentId: 'ANGjdJ8abc',
-      receivedAt: '2026-11-03T14:05:00Z',
-      from: 'facturacion@proveedor.example',
-      subject: 'Factura de noviembre',
-      fileName: 'factura.pdf',
-      mimeType: 'application/pdf',
-      sha256: 'a'.repeat(64),
-      sizeBytes: 1024,
-    });
-    const post = (
-      body: object,
-      auth = `Bearer ${process.env.N8N_SERVICE_TOKEN}`,
-    ) =>
-      request(w.h.app.getHttpServer())
-        .post('/api/v1/internal/gmail/attachments')
-        .set('Authorization', auth)
-        .send(body);
-
-    it('rejects every mailbox while no verified OAuth link exists', async () => {
-      const fetchSpy = vi.spyOn(globalThis, 'fetch');
-      const before = await counts();
-      const res = await post(notice()).expect(403);
-      expect(res.body.message).toMatch(/no está vinculado/);
-      expect(await counts()).toEqual(before);
-      expect(fetchSpy).not.toHaveBeenCalled();
-      fetchSpy.mockRestore();
-    });
-
-    it.each([
-      ['client ownerId', { ownerId: randomUUID() }],
-      ['client caseId', { caseId: randomUUID() }],
-      ['OAuth token in body', { accessToken: 'ya29.fake' }],
-      ['bad message id', { messageId: '../x' }],
-      ['non PDF attachment', { mimeType: 'text/html' }],
-      ['bad hash', { sha256: 'xyz' }],
-      ['bad mailbox', { mailbox: 'not-an-email' }],
-      ['bad date', { receivedAt: 'yesterday' }],
-    ])('validates the contract (%s → 400)', async (_c, override) => {
-      await post({ ...notice(), ...override }).expect(400);
-    });
-
-    it('rejects oversized attachments and non-service callers', async () => {
-      await post({ ...notice(), sizeBytes: 50 * 1024 * 1024 }).expect(413);
-      await post(notice(), '').expect(401);
-      await post(notice(), `Bearer ${w.h.tokenFor(w.laura)}`).expect(401);
     });
   });
 

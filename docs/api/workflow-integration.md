@@ -147,7 +147,7 @@ Las respuestas nunca incluyen `ownerId`. Las internas tampoco exponen datos pers
 2. **Idempotencia:** con `requestId`, la clave del trabajo es `case-request:<propietario>:<requestId>` (única en la tabla). Repetirla devuelve el mismo caso con 200. Dos solicitudes simultáneas producen un solo caso. Reutilizar la clave con otros datos responde 409.
 3. La primera reclamación de un trabajo pasa el caso a `processing`.
 4. Solo se aceptan entidades propias (una ajena responde 404, igual que una inexistente).
-5. Los casos de origen `document`, `gmail` o `voice` se crearán con los flujos de ingesta de fases posteriores.
+5. Los casos de origen `document`, `gmail` o `voice` los crean los flujos de ingesta ([ingestion-api.md](ingestion-api.md)).
 
 ## 7. Flujo de una propuesta
 
@@ -311,7 +311,7 @@ Cada transición y su auditoría se escriben en la misma transacción; si la aud
 - **`locked_by` con dos funciones:** guarda la huella de la última reclamación también después de completar o fallar. Es seguro y no requiere migración. Una columna dedicada (`claim_token_hash`) sería una mejora opcional de claridad.
 - **Aplicación de propuestas aprobadas (Fase 4.2E):** solo la ejecuta el usuario autenticado con `POST /cases/:caseId/proposals/:proposalId/apply`, para una lista cerrada de acciones y exactamente una vez ([proposal-application.md](proposal-application.md)). El trabajo `hitl.decision` sigue siendo solo informativo: completarlo no aplica datos.
 - **Sin cancelación de casos por el usuario:** existe el estado `cancelled`, pero no tiene endpoint.
-- **Ingesta:** desde la Fase 4.2D existen los casos de origen `document` y `voice`, con los trabajos `document.process` y `voice.transcribe` y la lectura de archivos por el worker ([ingestion-api.md](ingestion-api.md)). El origen `gmail` sigue sin habilitar porque no hay vínculos OAuth verificados.
+- **Ingesta:** desde la Fase 4.2D existen los casos de origen `document` y `voice`, con los trabajos `document.process` y `voice.transcribe` y la lectura de archivos por el worker ([ingestion-api.md](ingestion-api.md)). El origen `gmail` solo se admite para los buzones vinculados en `GMAIL_MAILBOX_LINKS` (§11 de ese documento).
 - **Sin workflows de n8n:** no hay archivos de workflows, Docker ni conexión con IA o FCM.
 - **Credencial compartida:** el token de servicio es único. La rotación requiere reiniciar el backend con el nuevo valor.
 - **Rol de base de datos:** la API sigue usando `neondb_owner`. La activación de `notihouse_app` está en [mvp-demo-setup.md](../deployment/mvp-demo-setup.md#3-neon).

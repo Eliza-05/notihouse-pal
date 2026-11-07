@@ -22,6 +22,8 @@ export const CASE_TYPE_FOR_DOCUMENT: Record<PdfDocumentType, CaseType> = {
 /** Trabajos que crea la ingesta; ningún cliente elige el tipo. */
 export const INGESTION_JOB_TYPES = {
   document: 'document.process',
+  // Un adjunto de Gmail se procesa igual que una factura cargada a mano.
+  gmail: 'document.process',
   voice: 'voice.transcribe',
 } as const;
 

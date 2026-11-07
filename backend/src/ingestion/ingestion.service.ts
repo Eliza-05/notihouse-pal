@@ -10,6 +10,10 @@ import { and, eq, ne } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { AuditService } from '../audit/audit.service.js';
+import {
+  type ProcessActor,
+  recordProcessEvent,
+} from '../audit/process-actor.js';
 import type { AuthenticatedUser } from '../auth/authenticated-user.js';
 import type { CaseRow } from '../cases/case-lifecycle.js';
 import { type CaseSubject, CasesService } from '../cases/cases.service.js';
@@ -17,6 +21,12 @@ import type { CaseType } from '../cases/dto/case.dto.js';
 import { findDatabaseError } from '../common/database-exception.filter.js';
 import { DRIZZLE, type Database } from '../database/database.constants.js';
 import { cases, documents, workflowJobs } from '../database/schema/index.js';
+import {
+  GMAIL_INTAKE_WORKER,
+  type GmailAttachmentNoticeDto,
+  gmailDeduplicationKey,
+  gmailExternalId,
+} from './gmail/gmail.contract.js';
 import { WorkflowJobsService } from '../integrations/workflow-jobs.service.js';
 import {
   FILE_STORAGE,
@@ -43,11 +53,17 @@ type DocumentType = (typeof documents.$inferInsert)['type'];
 
 interface IngestionSpec {
   kind: UploadKind;
-  source: 'document' | 'voice';
+  source: 'document' | 'voice' | 'gmail';
   documentType: DocumentType;
   caseType: CaseType;
   refs: Partial<Record<'obligationId' | 'rentalId' | 'contractId', string>>;
   requestId?: string;
+  /** Actor auditado si no es el propietario (recepción automática). */
+  actor?: ProcessActor;
+  /** Clave ya calculada; sustituye a la derivada de `requestId`. */
+  idempotencyKey?: string;
+  externalMessageId?: string;
+  auditDetails?: Record<string, unknown>;
 }
 
 /** Lo que identifica una carga a efectos de idempotencia. */
@@ -116,6 +132,36 @@ export class IngestionService {
     });
   }
 
+  /**
+   * Adjunto de Gmail: mismo flujo que una factura manual. `owner` lo resolvió
+   * el vínculo del buzón; el actor auditado es el workflow, no el usuario.
+   */
+  ingestGmail(
+    owner: AuthenticatedUser,
+    file: ReceivedFile | undefined,
+    notice: GmailAttachmentNoticeDto,
+  ) {
+    return this.ingest(owner, file, {
+      kind: 'pdf',
+      source: 'gmail',
+      documentType: 'invoice',
+      caseType: CASE_TYPE_FOR_DOCUMENT.invoice,
+      refs: {},
+      actor: { kind: 'workflow', workerId: GMAIL_INTAKE_WORKER },
+      idempotencyKey: gmailDeduplicationKey(notice),
+      externalMessageId: gmailExternalId(notice),
+      auditDetails: {
+        source: 'gmail',
+        gmailMessageId: notice.messageId,
+        gmailPartId: notice.partId,
+        receivedAt: notice.receivedAt,
+        ...(notice.workflowRunId
+          ? { workflowRunId: notice.workflowRunId }
+          : {}),
+      },
+    });
+  }
+
   private async ingest(
     user: AuthenticatedUser,
     file: ReceivedFile | undefined,
@@ -144,9 +190,15 @@ export class IngestionService {
       caseType: spec.caseType,
       subject,
     };
-    const idempotencyKey = spec.requestId
-      ? `ingest:${spec.source}:${user.profileId}:${spec.requestId}`
-      : null;
+    const actor: ProcessActor = spec.actor ?? {
+      kind: 'user',
+      profileId: user.profileId,
+    };
+    const idempotencyKey =
+      spec.idempotencyKey ??
+      (spec.requestId
+        ? `ingest:${spec.source}:${user.profileId}:${spec.requestId}`
+        : null);
     if (idempotencyKey) {
       const existing = await this.findIngestion(user, idempotencyKey);
       if (existing) {
@@ -168,12 +220,18 @@ export class IngestionService {
       this.logger.warn(
         `Fallo del almacenamiento: ${(error as Error).constructor.name}`,
       );
-      await this.recordFailure(user, 'document.store_failed', storageKey, {
-        source: spec.source,
-        documentType: spec.documentType,
-        sizeBytes: file.size,
-        sha256: file.sha256,
-      });
+      await this.recordFailure(
+        user,
+        actor,
+        'document.store_failed',
+        storageKey,
+        {
+          source: spec.source,
+          documentType: spec.documentType,
+          sizeBytes: file.size,
+          sha256: file.sha256,
+        },
+      );
       throw new ServiceUnavailableException(
         'No fue posible almacenar el archivo. Intenta más tarde.',
       );
@@ -201,6 +259,7 @@ export class IngestionService {
           type: spec.caseType,
           source: spec.source,
           subject,
+          actor,
         });
         const [document] = await tx
           .insert(documents)
@@ -213,10 +272,11 @@ export class IngestionService {
             fileName: accepted.fileName,
             storageKey,
             sha256: file.sha256,
+            externalMessageId: spec.externalMessageId ?? null,
           })
           .returning({ id: documents.id });
-        await this.audit.recordUserAction(tx, {
-          profileId: user.profileId,
+        await recordProcessEvent(this.audit, tx, actor, {
+          ownerId: user.profileId,
           correlationId: caseRow.correlationId,
           component: COMPONENT,
           action:
@@ -230,29 +290,26 @@ export class IngestionService {
             sizeBytes: file.size,
             sha256: file.sha256,
             duplicateContent: previous !== undefined,
+            ...spec.auditDetails,
           },
         });
         const jobType = INGESTION_JOB_TYPES[spec.source];
-        await this.jobs.enqueue(
-          tx,
-          { kind: 'user', profileId: user.profileId },
-          {
-            caseId: caseRow.id,
-            ownerId: user.profileId,
-            correlationId: caseRow.correlationId,
-            jobType,
-            idempotencyKey:
-              idempotencyKey ?? `${spec.source}-intake:${document!.id}`,
-            payload: {
-              documentId: document!.id,
-              documentType: spec.documentType,
-              mimeType: accepted.mimeType,
-              sizeBytes: file.size,
-              caseType: spec.caseType,
-              ...(subject ? { [subject.field]: subject.id } : {}),
-            },
+        await this.jobs.enqueue(tx, actor, {
+          caseId: caseRow.id,
+          ownerId: user.profileId,
+          correlationId: caseRow.correlationId,
+          jobType,
+          idempotencyKey:
+            idempotencyKey ?? `${spec.source}-intake:${document!.id}`,
+          payload: {
+            documentId: document!.id,
+            documentType: spec.documentType,
+            mimeType: accepted.mimeType,
+            sizeBytes: file.size,
+            caseType: spec.caseType,
+            ...(subject ? { [subject.field]: subject.id } : {}),
           },
-        );
+        });
         return toResponse(
           caseRow,
           {
@@ -268,7 +325,7 @@ export class IngestionService {
       return { created: true, result };
     } catch (error) {
       // PostgreSQL no confirmó: el objeto recién creado no debe quedar suelto.
-      await this.compensate(user, storageKey);
+      await this.compensate(user, actor, storageKey);
       if (
         idempotencyKey &&
         findDatabaseError(error)?.constraint ===
@@ -332,6 +389,7 @@ export class IngestionService {
 
   private async compensate(
     user: AuthenticatedUser,
+    actor: ProcessActor,
     storageKey: string,
   ): Promise<void> {
     try {
@@ -340,7 +398,13 @@ export class IngestionService {
       this.logger.error(
         'No se pudo retirar un objeto tras un fallo de PostgreSQL; queda registrado como huérfano',
       );
-      await this.recordFailure(user, 'document.orphaned', storageKey, {});
+      await this.recordFailure(
+        user,
+        actor,
+        'document.orphaned',
+        storageKey,
+        {},
+      );
     }
   }
 
@@ -352,14 +416,15 @@ export class IngestionService {
    */
   private async recordFailure(
     user: AuthenticatedUser,
+    actor: ProcessActor,
     action: string,
     storageKey: string,
     details: Record<string, unknown>,
   ): Promise<void> {
     try {
       await this.db.transaction((tx) =>
-        this.audit.recordUserAction(tx, {
-          profileId: user.profileId,
+        recordProcessEvent(this.audit, tx, actor, {
+          ownerId: user.profileId,
           correlationId: randomUUID(),
           component: COMPONENT,
           action,

@@ -8,6 +8,10 @@ import {
 import { and, asc, count, desc, eq, type SQL } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
+import {
+  type ProcessActor,
+  recordProcessEvent,
+} from '../audit/process-actor.js';
 import type { AuthenticatedUser } from '../auth/authenticated-user.js';
 import { findDatabaseError } from '../common/database-exception.filter.js';
 import { offsetOf, type Page } from '../common/pagination.js';
@@ -232,7 +236,13 @@ export class CasesService {
   async insertCase(
     tx: DbTransaction,
     user: AuthenticatedUser,
-    input: { type: CaseType; source: CaseSource; subject: CaseSubject | null },
+    input: {
+      type: CaseType;
+      source: CaseSource;
+      subject: CaseSubject | null;
+      /** Quién lo crea, si no es el propio usuario (p. ej. la recepción de Gmail). */
+      actor?: ProcessActor;
+    },
   ): Promise<CaseRow> {
     const correlationId = randomUUID();
     const [created] = await tx
@@ -250,8 +260,12 @@ export class CasesService {
           input.subject?.field === 'contractId' ? input.subject.id : null,
       })
       .returning(caseColumns);
-    await this.audit.recordUserAction(tx, {
+    const actor = input.actor ?? {
+      kind: 'user' as const,
       profileId: user.profileId,
+    };
+    await recordProcessEvent(this.audit, tx, actor, {
+      ownerId: user.profileId,
       correlationId,
       component: COMPONENT,
       action: 'case.create',

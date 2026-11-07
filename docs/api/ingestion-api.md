@@ -1,10 +1,10 @@
-# API de ingesta: facturas PDF, notas de voz y preparación de Gmail (Fase 4.2D)
+# API de ingesta: facturas PDF, notas de voz y recepción por Gmail
 
 El backend recibe archivos, los guarda de forma privada, registra sus metadatos y crea el caso y el trabajo que los workflows de n8n procesarán más adelante.
 
 > **Qué NO hace esta fase:**
 > - No extrae texto de PDF, no hace OCR ni transcribe audio.
-> - No llama a modelos de IA, no conecta Gmail OAuth y no ejecuta workflows.
+> - No llama a modelos de IA ni a Gmail, y no ejecuta workflows: eso lo hace n8n.
 > - Cargar un archivo **no** crea obligaciones ni modifica pagos, cobros o contratos.
 > - "Recibido" significa almacenado y encolado, no procesado.
 
@@ -226,25 +226,41 @@ curl http://localhost:3000/api/v1/internal/documents/<id>/content \
 
 Los tipos de trabajo los fija el backend; el cliente no los elige. Los estados son los existentes, sin estados nuevos. La primera reclamación pasa el caso a `processing`, igual que en la 4.2C.
 
-## 11. Preparación de Gmail
+## 11. Recepción de facturas por Gmail
 
-**Gmail OAuth y la lectura de mensajes no están implementados.**
+Un adjunto PDF de un buzón de Gmail **vinculado** sigue el mismo flujo de §6, con origen `gmail`: documento privado, caso y trabajo `document.process`, que consume el workflow 02. No crea propuestas ni obligaciones. El workflow que lo usa es `n8n/workflows/05-recepcion-gmail.json`, manual e inactivo.
 
-**Qué está preparado:**
+**`POST /api/v1/internal/gmail/attachments`** (`multipart/form-data`)
 
-- **Contrato `GmailAttachmentNoticeDto`:** `mailbox`, `messageId`, `attachmentId`, `receivedAt`, `from`, `subject`, `fileName`, `mimeType` (solo `application/pdf`), `sha256`, `sizeBytes` y opcionalmente `workflowRunId`. Sin `ownerId`; cualquier propiedad extra, incluidos tokens, responde 400.
-- **`gmailDeduplicationKey`:** `gmail:<sha256(buzón normalizado)[:32]>:<messageId>:<sha256(attachmentId)[:32]>`. La dirección del buzón no se guarda en claro, el nombre del archivo no interviene, y el mismo adjunto en dos buzones produce dos claves distintas.
-- **`gmailExternalId`:** `gmail:<messageId>`, para `documents.external_message_id`.
-- **Interfaz `GmailMailboxResolver`:** la relación verificable buzón → usuario. La implementación actual, `NoVerifiedMailboxes`, **no reconoce ningún buzón**.
-- **Ruta `POST /api/v1/internal/gmail/attachments`:** protegida con el token de servicio y **no operativa**. Valida el contrato, responde 413 si el tamaño se excede, y responde **403** a cualquier buzón porque no hay vínculos verificados. No crea registros ni llama a Google.
+- **Autenticación:** token de servicio. Un JWT de usuario o la falta de token responden 401, antes de escribir en disco.
+- **Campos:** `file` (el PDF), `mailbox`, `messageId`, `partId`, `receivedAt` y, opcional, `workflowRunId`. Cualquier otro campo, como `ownerId` o `caseId`, responde 400.
+- **Archivo:** la misma política y el mismo límite que una factura cargada a mano (§4).
 
-**Cómo se asociará un mensaje a su usuario (fase posterior):**
+| Respuesta | Significado |
+|---|---|
+| 201 | Registrado (mismo cuerpo que una ingesta manual) |
+| 200 | Repetición del mismo buzón, mensaje y parte: nada nuevo |
+| 400 | Contrato inválido, archivo ausente o PDF mal formado |
+| 401 | Token de servicio ausente o inválido |
+| 403 | Buzón sin vínculo, o vinculado a una cuenta inexistente o desactivada |
+| 409 | El mismo mensaje y parte llegó con otro contenido, o el buzón se vinculó a otro propietario después de registrarlo |
+| 413 / 415 | Adjunto demasiado grande / no es un PDF admitido |
+| 429 / 503 | Demasiadas subidas simultáneas / almacenamiento no disponible; se puede repetir |
 
-1. El usuario autoriza su cuenta Google con OAuth desde la aplicación (con JWT).
-2. El backend guarda el vínculo verificado en una tabla nueva (migración aditiva futura), con los tokens OAuth cifrados y nunca en n8n.
-3. `GmailMailboxResolver` consulta ese vínculo. Solo entonces la ingesta usará el mismo flujo de §6 con origen `gmail` y la clave de deduplicación como idempotencia.
+**Asociación buzón → propietario.** La define el operador en la variable de servidor `GMAIL_MAILBOX_LINKS` (`buzon@dominio=<uuid del perfil>`, separados por comas). Ninguna solicitud puede elegir el propietario ni crear un vínculo. Sin la variable, todo buzón responde 403, sin guardar nada. Este mecanismo sirve para un buzón de demostración; una versión para muchos usuarios necesitará que cada persona autorice su cuenta desde la aplicación y una tabla de vínculos.
 
-Mientras no exista esa tabla, ningún token de servicio puede decidir el propietario de un mensaje. Por eso **no se creó ninguna migración** en esta fase.
+**Idempotencia.** La clave es `gmail:<sha256(buzón normalizado)[:32]>:<messageId>:<partId>`, guardada en `workflow_jobs.idempotency_key`. Se usa `partId` porque Google lo documenta como identificador inmutable de la parte; `attachmentId` solo sirve para descargar y no se usa en la clave porque Google no garantiza que sea estable entre lecturas. La dirección del buzón no se guarda en claro. El nombre del archivo y su contenido no intervienen, así que un correo nuevo con un archivo idéntico es un caso nuevo, con `duplicateContent: true`.
+
+**Auditoría.** Los eventos llevan actor `workflow` (`n8n:gmail-intake`) y, en `document.receive`, el identificador del mensaje, la parte y la fecha. No se guardan remitente, asunto ni cuerpo.
+
+**Puesta en marcha del workflow 05** (ver los comentarios de su nodo `Configuracion`):
+
+1. Crear en n8n una credencial `Google OAuth2 API` llamada `NotiHouse Gmail (solo lectura)` con el alcance `https://www.googleapis.com/auth/gmail.readonly`. No reutilizar la credencial de tipo Gmail de n8n: pide acceso total al correo.
+2. Definir `GMAIL_MAILBOX_LINKS` en el servidor.
+3. Completar `BUZON_AUTORIZADO` y `REMITENTES_AUTORIZADOS`, y crear en el buzón la etiqueta `notihouse-facturas-prueba`.
+4. `AUTORIZAR_LECTURA_GMAIL = true` lista lo que se procesaría, sin descargar adjuntos ni escribir nada. `AUTORIZAR_INGESTA = true` además los registra.
+
+El workflow comprueba con `users.getProfile` que la credencial corresponde al buzón autorizado, pide solo metadatos de las partes (nunca el cuerpo) y hace únicamente solicitudes GET a Gmail: no modifica, borra, responde ni marca mensajes. Reejecutarlo es seguro.
 
 ## 12. Deduplicación
 
@@ -254,7 +270,7 @@ Mientras no exista esa tabla, ningún token de servicio puede decidir el propiet
 | Mismo `requestId` con otro archivo, tipo o referencia | 409 |
 | Nueva carga intencional del mismo archivo (sin `requestId` o con otro) | Nuevo documento y caso; la respuesta indica `duplicateContent: true` |
 | Dos usuarios con el mismo contenido | Registros independientes; nunca se comparten documentos por coincidir el hash (`duplicateContent` solo mira los documentos propios) |
-| Gmail (futuro) | Clave por buzón + mensaje + adjunto (§11) |
+| Mismo correo de Gmail repetido | Clave por buzón + mensaje + parte: 200 sin crear nada (§11) |
 
 El hash **no** identifica por sí solo una solicitud de negocio. La idempotencia se basa en `requestId`.
 
@@ -296,7 +312,6 @@ Los temporales multipart se eliminan siempre al terminar la solicitud, con éxit
 |---|---|
 | 201 | Ingesta creada |
 | 200 | Repetición idempotente, consulta o descarga |
-| 202 | Reservado para la ingesta Gmail cuando esté habilitada (hoy responde 403) |
 | 400 | Archivo ausente o vacío, PDF mal formado, campos no permitidos (`ownerId`, `propertyId`…), multipart fuera de límites, faltan cabeceras de reclamación |
 | 401 | Sin JWT, JWT inválido o token de servicio en una ruta de usuario; JWT de usuario en una ruta interna |
 | 403 | Tipo de trabajo no autorizado para el documento; buzón de Gmail no vinculado |
@@ -315,9 +330,11 @@ Los temporales multipart se eliminan siempre al terminar la solicitud, con éxit
 | `src/storage/s3-file-storage.spec.ts` | Contrato S3 con un doble del cliente (sin red): `IfNoneMatch`, sin ACL, mapeo 412/404, errores sin credenciales, delete de compensación |
 | `src/ingestion/audio-structure.spec.ts` | Estructura de grabaciones reales (WebM normal y live, M4A con marca `M4A `/`isom`/`mp42`, Ogg Opus/Vorbis, MP3, WAV); rechazo de video (WebM, MP4, Theora), archivos truncados, aleatorios o falsificados, CRC Ogg alterado, códec inesperado, cajas desbordadas y basura tras las tramas MP3 |
 | `src/ingestion/file-policy.spec.ts` | Firmas de los 6 formatos, 12 discrepancias, PDF vacío, truncado o con JavaScript, escaneo por fragmentos, saneamiento de nombres |
-| `src/ingestion/upload-receiver.spec.ts`, `gmail/gmail.contract.spec.ts`, `config/env.validation.spec.ts` | Límite de concurrencia; claves de deduplicación de Gmail; configuración de almacenamiento (local rechazado en producción, S3 incompleto, endpoint inseguro) |
+| `src/ingestion/upload-receiver.spec.ts`, `gmail/gmail.contract.spec.ts`, `config/env.validation.spec.ts` | Límite de concurrencia; claves de deduplicación y vínculos de Gmail; configuración de almacenamiento (local rechazado en producción, S3 incompleto, endpoint inseguro) |
 | `test/ingestion.e2e-spec.ts` | PDF y voz de punta a punta, validaciones, referencias ajenas, idempotencia (secuencial, concurrente, conflicto), privacidad entre usuarios, documentos privados y descarga, ausencia de rutas públicas |
-| `test/ingestion-worker.e2e-spec.ts` | Acceso del worker (válido, sin credenciales, JWT, token incorrecto, arrendamiento vencido, otro caso, otro propietario, tipo no autorizado); contrato Gmail (400/401/403/413, sin `fetch`); fallo de almacenamiento, de PostgreSQL y de compensación |
+| `test/ingestion-worker.e2e-spec.ts` | Acceso del worker (válido, sin credenciales, JWT, token incorrecto, arrendamiento vencido, otro caso, otro propietario, tipo no autorizado); fallo de almacenamiento, de PostgreSQL y de compensación |
+| `test/gmail-ingestion.e2e-spec.ts` | Recepción de Gmail: vínculo, contrato, validación del PDF, idempotencia (repetición, concurrencia, conflicto, archivo idéntico), aislamiento, auditoría y fallos |
+| `n8n/tests/gmail-stack.test.mjs` | Workflow 05 real con backend real, base desechable y Gmail y Gemini simulados, hasta los workflows 02 y 03 |
 | `test/ingestion-http.e2e-spec.ts` | Servidor real en un puerto TCP con `fetch` + `FormData`: login, cargas válidas e inválidas, descarga, usuario ajeno, worker, idempotencia, casos y trabajos, sin escrituras financieras |
 
 Todas las escrituras usan PGlite y directorios temporales aislados por archivo de pruebas, que se eliminan al terminar. Ninguna prueba escribe en Neon.
@@ -331,7 +348,7 @@ La Fase 4.2F.2 repitió la idempotencia, la compensación, la descarga privada y
 - **Tamaño no persistido:** `documents` no tiene columna de tamaño; queda en el payload del trabajo y en la auditoría.
 - **Límite de concurrencia por proceso:** con varias instancias habrá que llevarlo a un almacén compartido.
 - **Objetos huérfanos:** se registran, pero no hay limpieza automática.
-- **Gmail no operativo:** sin OAuth ni tabla de vínculos.
+- **Gmail para un buzón de demostración:** el vínculo es una variable de servidor; no hay autorización de cuentas desde la aplicación.
 - **Adaptador S3 sin proveedor elegido:** se probó contra MinIO local, no contra el proveedor final ni en Render.
 
 ## 19. Antes del despliegue en Render
@@ -354,6 +371,6 @@ La Fase 4.2F.2 repitió la idempotencia, la compensación, la descarga privada y
 5. `POST /internal/cases/:caseId/proposals` con `source: "ocr" | "llm" | "stt"`, `documentId` y los datos propuestos.
 6. Si hay ambigüedad, `POST /internal/cases/:caseId/hitl-requests`.
 7. `POST /internal/workflow-jobs/:id/complete` o `/fail`.
-8. Gmail, cuando exista el vínculo OAuth: `POST /internal/gmail/attachments` con `GmailAttachmentNoticeDto`. Hoy responde 403.
+8. Gmail: el workflow 05 envía cada adjunto a `POST /internal/gmail/attachments` (§11), que crea el trabajo `document.process` del paso 1.
 
 Todas las rutas internas exigen el token de servicio. Las que tocan un caso o un archivo exigen además la reclamación vigente de un trabajo de ese caso. Detalles en [workflow-integration.md](workflow-integration.md).

@@ -50,6 +50,37 @@ export interface EnvironmentVariables {
    * Nunca `true`: confiar en todos permitiría falsificar la IP.
    */
   TRUST_PROXY_HOPS: number;
+  /**
+   * Vínculos buzón de Gmail → perfil propietario (`buzon@x.com=<uuid>,...`).
+   * Los define el operador en el servidor; sin ellos, la ruta de Gmail
+   * responde 403 a todo buzón.
+   */
+  GMAIL_MAILBOX_LINKS?: string;
+}
+
+const MAILBOX_LINK =
+  /^[^\s=,@]+@[^\s=,@]+\.[^\s=,@]+=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Interpreta `GMAIL_MAILBOX_LINKS`. El error nunca incluye el valor. */
+export function parseMailboxLinks(
+  raw: string | undefined,
+): Map<string, string> {
+  const links = new Map<string, string>();
+  for (const entry of (raw ?? '').split(',')) {
+    const link = entry.trim().toLowerCase();
+    if (link === '') continue;
+    if (!MAILBOX_LINK.test(link)) {
+      throw new Error(
+        'GMAIL_MAILBOX_LINKS debe tener la forma buzon@dominio=<uuid del perfil>, separados por comas',
+      );
+    }
+    const [mailbox, profileId] = link.split('=') as [string, string];
+    if (links.has(mailbox)) {
+      throw new Error('GMAIL_MAILBOX_LINKS repite un buzón');
+    }
+    links.set(mailbox, profileId);
+  }
+  return links;
 }
 
 export const STORAGE_DRIVERS = ['local', 's3'] as const;
@@ -169,6 +200,13 @@ export function validateEnv(
     errors.push('N8N_SERVICE_TOKEN es obligatoria en producción');
   }
 
+  const gmailLinks = readString(config, 'GMAIL_MAILBOX_LINKS');
+  try {
+    parseMailboxLinks(gmailLinks);
+  } catch (error) {
+    errors.push((error as Error).message);
+  }
+
   const rawHops = readString(config, 'TRUST_PROXY_HOPS') ?? '0';
   const trustProxyHops = Number(rawHops);
   if (!/^\d$/.test(rawHops) || trustProxyHops > MAX_TRUST_PROXY_HOPS) {
@@ -193,6 +231,7 @@ export function validateEnv(
     DATABASE_URL: databaseUrl,
     JWT_SECRET: jwtSecret,
     N8N_SERVICE_TOKEN: serviceToken,
+    GMAIL_MAILBOX_LINKS: gmailLinks,
     TRUST_PROXY_HOPS: Number.isInteger(trustProxyHops) ? trustProxyHops : 0,
     ...storage,
     ...dueDates,

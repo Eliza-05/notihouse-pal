@@ -36,6 +36,8 @@ services:
         sync: false
       - key: N8N_SERVICE_TOKEN
         sync: false
+      - key: GMAIL_MAILBOX_LINKS
+        sync: false # buzon@dominio=<uuid del perfil>; sin ella, Gmail responde 403
       - key: TRUST_PROXY_HOPS
         sync: false # 1 para empezar; medir según mvp-demo-setup.md
       - key: STORAGE_DRIVER

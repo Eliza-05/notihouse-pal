@@ -18,6 +18,7 @@ export interface ProcessEvent {
   resource: string;
   resourceId: string;
   details?: Record<string, unknown>;
+  result?: 'success' | 'failure';
 }
 
 /** Registra el evento con el tipo de actor correcto, dentro de `tx`. */

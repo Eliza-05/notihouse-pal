@@ -170,7 +170,7 @@ src/
 ├── contracts/      # Metadatos de contratos y vencimientos
 ├── cases/          # Casos, propuestas y revisiones HITL
 ├── integrations/   # Cola de trabajos para n8n (rutas internas)
-├── ingestion/      # Carga de PDF y voz, documentos privados, acceso del worker, contrato Gmail
+├── ingestion/      # Carga de PDF y voz, documentos privados, acceso del worker, recepción de Gmail
 ├── storage/        # FileStorage: adaptadores local (desarrollo) y S3-compatible (producción)
 ├── audit/          # AuditService: eventos transaccionales en audit_events (implementado)
 ├── app.module.ts   # Módulo raíz

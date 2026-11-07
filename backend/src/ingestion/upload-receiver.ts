@@ -178,8 +178,8 @@ function toHttpError(error: unknown, maxBytes: number): HttpException {
 }
 
 /**
- * Interceptor de recepción: se ejecuta después del guard JWT (un usuario no
- * autenticado nunca llega a escribir en disco), aplica los límites de tamaño
+ * Interceptor de recepción: se ejecuta después del guard (nadie sin JWT o token
+ * de servicio válido llega a escribir en disco), aplica los límites de tamaño
  * en el propio flujo HTTP y garantiza que el temporal se elimine al terminar
  * la solicitud, con éxito o con error.
  */
@@ -201,7 +201,8 @@ export function ReceiveUpload(kind: UploadKind): Type<NestInterceptor> {
       const http = context.switchToHttp();
       const req = http.getRequest<AuthenticatedRequest>();
       const res = http.getResponse<Response>();
-      const release = this.slots.acquire(req.user!.profileId);
+      // En las rutas internas no hay usuario: el guard ya autenticó al servicio.
+      const release = this.slots.acquire(req.user?.profileId ?? 'service:n8n');
       const maxBytes = this.config.get(
         kind === 'pdf' ? 'STORAGE_MAX_PDF_BYTES' : 'STORAGE_MAX_AUDIO_BYTES',
         { infer: true },
