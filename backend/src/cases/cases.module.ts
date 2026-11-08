@@ -5,6 +5,7 @@ import { IntegrationsModule } from '../integrations/integrations.module.js';
 import { ObligationsModule } from '../obligations/obligations.module.js';
 import { RecurrenceModule } from '../recurrence/recurrence.module.js';
 import { RentalsModule } from '../rentals/rentals.module.js';
+import { AssistantResolveService } from './assistant/assistant-resolve.service.js';
 import { CaseProcessService } from './case-process.service.js';
 import { CasesController } from './cases.controller.js';
 import { CasesService } from './cases.service.js';
@@ -37,6 +38,7 @@ import {
     HitlService,
     CaseProcessService,
     ProposalApplicationService,
+    AssistantResolveService,
   ],
   exports: [CasesService],
 })
