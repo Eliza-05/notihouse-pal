@@ -4,7 +4,11 @@
 > **Fecha de la auditoría:** 2026-11-04. **Base:** rama `develop`, último commit `3541965`, más los archivos aún sin versionar de `n8n/` e `infra/n8n/`.
 > **Regla de oro de este documento:** todo lo que aquí figura como "existe" se comprobó leyendo el código del repositorio (rutas, DTO, guards, servicios) o, cuando se indica, con una lectura de solo lectura contra la API pública. Lo que no se pudo comprobar está marcado como **No verificado** o **Pendiente**. Si el código y este documento difieren, **manda el código**: avisa a quien mantiene el backend.
 
-> **Fotografía del 4 de noviembre de 2026.** Este documento describe el estado del repositorio **en esa fecha**; no es una especificación del producto terminado. Deberá **actualizarse** cuando terminen: **Etapa 5** (procesamiento de voz), **Etapa 6** (recepción automática de Gmail) y **Etapa 7** (polling, alertas y automatizaciones). Mientras tanto, **ninguna función pendiente debe tratarse como terminada**: se puede trabajar con **mocks tipados en desarrollo**, pero **no se debe fingir que las integraciones funcionan en producción**.
+> **Fotografía del 4 de noviembre de 2026, con actualizaciones del 7 de noviembre.** Los contratos de endpoints, DTO y ejemplos de §4–§7 siguen vigentes. Las partes sobre el **estado** de n8n, Gmail, voz, alertas y del propio frontend se corrigieron (las Etapas 5, 6 y 7 terminaron; ver §13 y §17.1). **Ninguna función pendiente debe tratarse como terminada**: se puede trabajar con **mocks tipados en desarrollo**, pero **no se debe fingir que las integraciones funcionan en producción**.
+>
+> **Nuevo alcance aprobado (7-nov-2026):** asistente de **texto y voz**, **recurrencias automáticas** de períodos y cobros, **modificación supervisada** de recurrencias, **búsquedas** y dashboard por urgencia/inmueble. **Todo es *propuesto*: no existe aún en el backend.** Está en la **§19** de esta guía y, con el detalle técnico, en la [guía de integración](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md). El backend de esas funciones lo desarrolla el **integrador**; **los workflows de n8n los adapta solo la responsable del proyecto**. Al terminar, el equipo frontend entrega `docs/frontend/INFORME_FINAL_FRONTEND.md` (§20).
+>
+> **Decisiones cerradas y ramas:** las decisiones técnicas D1–D18 están **aprobadas** ([guía de integración §21](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md#21-decisiones-técnicas-cerradas-del-mvp-d1d18)). `develop` y `main` permanecen intactas; el código se consolida en la rama `integration/mvp-final` (§14.2). Sustentación: sábado 14-nov-2026 a primera hora.
 >
 > **Diseño visual:** el equipo ya cuenta con un diseño previo (demo o video) que la persona responsable entrega por separado. Esta guía **no define ni impone** paleta, tipografía, identidad ni disposición visual; sus requisitos de calidad (§10) se aplican **sobre ese diseño**.
 
@@ -16,8 +20,8 @@
 
 No necesitas Docker, n8n, Neon ni ejecutar el backend: basta Node.js y la API de Render (detalle en §12).
 
-1. **Rama propia.** Con el directorio de trabajo limpio: `git switch develop`, `git pull origin develop`, `git switch -c feature/frontend-nombre` (§14.2). **No se desarrolla sobre `develop` ni `main`.**
-2. **Crear el proyecto** (solo si `frontend/` sigue vacía): `npm create vite@latest . -- --template react-ts` dentro de `frontend/` (§12.2).
+1. **Rama propia.** Con el directorio de trabajo limpio y tras `git fetch --all`, crea tu rama a partir de la más avanzada del frontend (`feature/login-transition`) salvo que su dueño continúe en ella (`git switch -c feature/frontend-app origin/feature/login-transition`). **`develop` y `main` no se tocan**; la entrega se consolida en `integration/mvp-final` (§14.2).
+2. **No crees otro proyecto Vite.** Ya existe un scaffold (Vite + React + TS, capa de API y sesión) en `origin/feature/frontend-base`, y trabajo apilado en `origin/feature/frontend-landing` y `origin/feature/login-transition` (§12.2). Parte de esas ramas coordinándote con quien las mantiene.
 3. **Instalar dependencias:** `npm install`. No asumas scripts que no existan: revisa el `package.json` generado.
 4. **Definir la variable:** crea `frontend/.env.local` (no se versiona) con `VITE_API_BASE_URL=https://notihouse-pal-api.onrender.com/api/v1` (§12.3). Es una URL pública, no un secreto.
 5. **Iniciar Vite en el puerto 5173** con `strictPort` (`npm run dev`, §12.4). Es el único origen que la API admite hoy.
@@ -26,6 +30,8 @@ No necesitas Docker, n8n, Neon ni ejecutar el backend: basta Node.js y la API de
 8. **Credenciales demo:** solicítalas al responsable **por un canal privado**. Nunca las pongas en archivos, variables `VITE_*` ni en el repositorio (§12.8).
 9. **Probar login y consultas sin modificar datos:** `POST /auth/login` y solo `GET` (clase A/B de §12.8).
 10. **Antes de cualquier escritura** (crear, editar, confirmar, subir, decidir, aplicar) o de probar el procesamiento con n8n/Gemini, **pide coordinación al responsable** (clases C y D de §12.8).
+11. **Funciones nuevas (asistente de texto/voz, recurrencias, búsquedas):** léelas en la §19. Son *propuestas*: hasta que el integrador publique cada contrato, usa mocks rotulados y no las presentes como integradas.
+12. **Coordina con el integrador** (conecta y desarrolla el backend de §19) y **no toques n8n**: solo la responsable lo modifica (§14.3).
 
 ---
 
@@ -51,6 +57,8 @@ No necesitas Docker, n8n, Neon ni ejecutar el backend: basta Node.js y la API de
 16. [Prompt recomendado para desarrollar el frontend con Claude](#16-prompt-recomendado-para-desarrollar-el-frontend-con-claude)
 17. [Discrepancias, límites y puntos a coordinar](#17-discrepancias-límites-y-puntos-a-coordinar)
 18. [Registro de validación](#18-registro-de-validación)
+19. [Asistente de texto y voz, recurrencias, búsquedas y dashboard organizado](#19-asistente-de-texto-y-voz-recurrencias-búsquedas-y-dashboard-organizado-funcionalidades-nuevas-aprobadas)
+20. [Informe final obligatorio del equipo frontend](#20-informe-final-obligatorio-del-equipo-frontend)
 
 ---
 
@@ -58,16 +66,16 @@ No necesitas Docker, n8n, Neon ni ejecutar el backend: basta Node.js y la API de
 
 | # | Hallazgo (verificado) | Consecuencia para el frontend |
 |---|---|---|
-| 1 | La carpeta `frontend/` está **vacía** (solo `.gitkeep`). No hay `package.json`, ni Vite, ni código. | Se parte de cero. No hay comandos reales que "ya existan": se crean con la plantilla de Vite (§12). |
+| 1 | En `develop`, `frontend/` solo tiene `.gitkeep`, pero **existe un scaffold y trabajo en ramas remotas apiladas** (`feature/frontend-base` → `feature/frontend-landing` → `feature/login-transition`: cliente HTTP, sesión, landing y login). Ninguna pantalla de negocio está conectada y ninguna rama está fusionada en `develop`. | Parte de esas ramas (§12.2). Todavía no hay script `test`: se crea. |
 | 2 | La API usa **un único JWT de acceso de 30 minutos** (HS256). **No hay refresh token, ni cookies, ni endpoint de logout.** | La sesión caduca sola a los 30 min; el cliente debe guardar `expiresIn`, detectar el 401 y volver a pedir login (§7). |
 | 3 | CORS permite **un solo origen** (`FRONTEND_URL`), solo `GET, POST, PATCH` y las cabeceras `Authorization`, `Content-Type`, `X-Correlation-Id`. Sin credenciales. | Al auditar, Render respondía con `Access-Control-Allow-Origin: http://localhost:5173`. El servidor local de Vite **debe usar el puerto 5173** (`strictPort`). El dominio de Vercel solo podrá llamar a la API cuando el responsable lo autorice; con un único origen admitido, convivir con `localhost` exige un cambio coordinado de backend (§12.4, §17.2). |
 | 4 | Los **dinero van como texto** (`"145000.00"`), las **fechas de calendario como `YYYY-MM-DD`** y los instantes como ISO 8601. | Nunca convertir dinero a `number` para calcular; usar texto o una librería decimal (§4). |
 | 5 | Los **filtros y cuerpos son estrictos**: cualquier campo o parámetro de query no declarado devuelve **400**. | No enviar `ownerId`, ni campos "extra", ni parámetros de query inventados (§4). |
 | 6 | Las rutas `/internal/*` son **exclusivas de n8n** (token de servicio). Un JWT de usuario recibe 401 allí. | El navegador nunca las llama (§5.3). |
-| 7 | **Los cuatro workflows de n8n existentes son de ejecución manual** (`active: false`, disparador manual). No hay polling ni programación automática. | Tras subir un PDF o un audio, el caso **permanece en cola** hasta que alguien ejecute el workflow en n8n. La interfaz debe explicarlo, no mostrar un spinner eterno (§8.11, §11.9). |
-| 8 | **No existe entrada de texto libre** ("Recuérdame pagar el agua"). No hay endpoint que reciba texto para interpretar. Solo existen archivo PDF, nota de voz (audio) y formularios CRUD. | Esa función es **dependencia pendiente del backend**; no se simula (§8.12, §17). |
-| 9 | La **recepción de correos de Gmail no está operativa**: la ruta interna existe como contrato y responde 403 siempre. | No hay pantalla de Gmail en el MVP. |
-| 10 | Las **alertas** solo existen si se ejecuta `POST /internal/alerts/evaluate` (n8n, aún no programado). Dashboard y bandeja de atención se calculan en vivo y **sí funcionan sin n8n**. Las alertas son **internas**: **no hay notificaciones push (FCM)**, WebSockets ni tiempo real. | Es **requisito** construir la experiencia de notificaciones internas (campana, no leídas, lista, acciones, aviso de alerta nueva solo si la API la devuelve) según la referencia visual (§8.7); estado vacío honesto; la bandeja y el dashboard son la fuente fiable hoy. |
+| 7 | Los workflows 02–06 de n8n tienen **disparador programado** (cada 5–15 min) pero están **versionados inactivos** y con sus interruptores en `false`; solo la responsable los activa, y corren en su equipo local. Sin ellos, un PDF o audio **permanece en cola**. | La interfaz debe explicarlo («En cola»), no mostrar un spinner eterno ni prometer tiempos (§8.11, §11.9, §19.2). |
+| 8 | **Hoy no existe entrada de texto libre** (ni endpoint ni procesamiento): solo PDF, voz y formularios. **Está aprobada para desarrollo** (7-nov-2026): el integrador construirá `POST /ingestions/text` y la responsable adaptará n8n. | Construir la interfaz del asistente (§19) con mocks rotulados «propuesto»; **no simular** respuestas ni presentarla como funcionando hasta que exista el contrato. |
+| 9 | La recepción de Gmail existe como **ingesta interna** (workflow 05, un buzón demo ligado a una cuenta, validada con servicios reales en la Etapa 6) y **no tiene pantalla** en el MVP. | Sin pantalla de Gmail. Los casos con `source: gmail` aparecen en «Casos» como cualquier otro. |
+| 10 | Las **alertas** las genera el workflow 06 (≤ 1 vez por hora, cuando la responsable lo active) mediante `POST /internal/alerts/evaluate`; dashboard y bandeja se calculan en vivo sin n8n. Son **internas**: sin FCM, WebSockets ni tiempo real. Contrato vigente de la campana y del *polling*: [CONTRATO_ETAPA8](CONTRATO_ETAPA8_NOTIFICACIONES_HITL.md). | Construir la campana según ese contrato (§8.7); estado vacío honesto; la bandeja y el dashboard son la fuente fiable. |
 | 11 | Una revisión HITL **vence a las 24 horas** (valor por defecto en la base). Vencida, ya no puede aprobarse ni rechazarse (409). | Mostrar cuenta regresiva y bloquear botones cuando `overdue = true` (§8.10). |
 | 12 | Los workflows de voz solo aceptan audios de **hasta 13 MiB** aunque el backend admita 25 MiB. | Limitar la grabación en el cliente (§8.12). |
 | 13 | En producción **Swagger está desactivado** (`/api/docs` devuelve 404 en Render, comprobado). | Este documento es el contrato de referencia; pedir al backend exportar un OpenAPI si se necesita (§17). |
@@ -80,15 +88,15 @@ No necesitas Docker, n8n, Neon ni ejecutar el backend: basta Node.js y la API de
 
 | Elemento | Ruta | Resultado |
 |---|---|---|
-| Frontend | [frontend/](../../frontend/) | Solo `.gitkeep`. Sin código. |
-| Controllers | `backend/src/**/*.controller.ts` (18 archivos) | 62 rutas en total: 49 para navegador, 13 internas (§5). |
+| Frontend | [frontend/](../../frontend/) | En `develop`, solo `.gitkeep`. En `origin/feature/login-transition`: scaffold, `lib/api` (cliente, errores, tipos de autenticación), `lib/auth` (sesión en `sessionStorage`), landing y login; `DashboardPage` es un *placeholder*. |
+| Controllers | `backend/src/**/*.controller.ts` y `kill-switch/kill-switch.controllers.ts` (19 archivos) | **66 rutas en total: 51 para navegador (3 públicas + 48 con JWT) y 15 internas** (§5). *(El 4-nov eran 62: 49 + 13; la Etapa 7 añadió `GET /alerts/summary`, `GET /system/status` y 2 rutas internas del kill switch.)* |
 | DTO y validación | `backend/src/**/dto/*.ts`, `backend/src/common/*.ts` | `ValidationPipe` global con `whitelist`, `forbidNonWhitelisted`, `transform`. |
 | Guard y autenticación | [jwt-auth.guard.ts](../../backend/src/auth/jwt-auth.guard.ts), [auth.constants.ts](../../backend/src/auth/auth.constants.ts) | Guard global: rutas de servicio, públicas y JWT de usuario. |
 | CORS y prefijo | [app.setup.ts](../../backend/src/app.setup.ts) | Prefijo `api/v1`, un origen, sin credenciales. |
 | Variables de entorno | [env.validation.ts](../../backend/src/config/env.validation.ts) | Solo variables de backend; el frontend necesita una (§12.3). |
 | Ingesta | [ingestion.controller.ts](../../backend/src/ingestion/ingestion.controller.ts), [file-policy.ts](../../backend/src/ingestion/file-policy.ts) | PDF y audio, multipart. |
 | Casos, propuestas y HITL | [cases.controller.ts](../../backend/src/cases/cases.controller.ts), [hitl.controller.ts](../../backend/src/cases/hitl.controller.ts) | Contratos completos. |
-| Workflows de n8n | [n8n/workflows/](../../n8n/workflows/) | 4 JSON, todos inactivos y con disparador manual. |
+| Workflows de n8n | [n8n/workflows/](../../n8n/workflows/) | **6 JSON (01–06), todos con `active: false`.** El 01 es la prueba de conexión (solo manual); el 02, 03, 04, 05 y 06 incorporan un **disparador programado** (5–15 min) protegido por interruptores en `false` (`AUTORIZAR_*` y `AUTOMATIZACION_PROGRAMADA`). Por defecto **no se ejecutan solos**: solo la responsable los activa o ejecuta. |
 | Documentación previa | [docs/api/](../api/), [docs/architecture/authentication.md](../architecture/authentication.md) | Útil, pero con partes desactualizadas (§17.1). |
 
 ### 2.2 API pública verificada (solo lectura, 2026-11-05 00:42 UTC)
@@ -193,7 +201,7 @@ Los valores de la izquierda son los únicos que devuelve la API ([enums.ts](../.
 
 Prefijo común: `/api/v1`. En las tablas, la ruta se escribe sin prefijo. **"JWT"** = cabecera `Authorization: Bearer <accessToken>`.
 
-Conteo verificado contra los controllers: **49 rutas de navegador (3 públicas + 46 con JWT) y 13 rutas internas**.
+Conteo verificado contra los controllers (actualizado el 7-nov-2026, tras la Etapa 7): **51 rutas de navegador (3 públicas + 48 con JWT) y 15 internas**. Respecto al 4-nov se añadieron `GET /alerts/summary` y `GET /system/status` (navegador) y las dos rutas internas del kill switch. Las rutas **propuestas** (texto, generación recurrente, etc.) están en §5.4 y **no** se incluyen en ese conteo.
 
 ### 5.1 Rutas públicas (sin autenticación)
 
@@ -242,6 +250,8 @@ Todas devuelven **401** si el token falta, es inválido o expiró, y **503** si 
 | GET | `/alerts/:id` | Detalle de alerta | 200 | 404 | Alertas |
 | POST | `/alerts/:id/read` | Marcar leída (idempotente) | **200** | 404 | Alertas |
 | POST | `/alerts/:id/dismiss` | Descartar aviso (idempotente) | **200** | 404 · 409 ya resuelta | Alertas |
+| GET | `/alerts/summary` | **Contador de la campana** (ligero, para *polling*; Etapa 7; 404 si Render es anterior) | 200 | 401 | Campana |
+| GET | `/system/status` | Funciones limitadas por el kill switch (Etapa 7; 404 si Render es anterior) | 200 | 401 | Aviso global |
 | GET | `/cases` | Listar casos | 200 | 400 | Casos |
 | GET | `/cases/:id` | Detalle / estado de procesamiento | 200 | 404 | Casos, Documentos |
 | POST | `/cases` | Crear caso manual (⚠ sin workflow que lo procese, ver nota) | 201 / 200 repetido | 400 · 404 · 409 | **No exponer en el MVP** |
@@ -278,9 +288,29 @@ Estas rutas están marcadas `@ServiceRoute()`: solo aceptan `Authorization: Bear
 | POST | `/internal/hitl-requests/expire` | Materializar revisiones vencidas |
 | POST | `/internal/alerts/evaluate` | Evaluar vencimientos y generar alertas |
 | GET | `/internal/documents/:id/content` | Leer el archivo de un trabajo reclamado |
-| POST | `/internal/gmail/attachments` | Contrato de Gmail; **no operativo** (siempre 403) |
+| POST | `/internal/gmail/attachments` | Ingesta de adjuntos de Gmail (workflow 05; operativa desde la Etapa 6) |
 
 **Consecuencia práctica:** el usuario nunca puede crear propuestas de IA, crear solicitudes HITL ni cerrar casos desde la aplicación. Esos pasos los hace n8n; la aplicación **muestra** su resultado y registra la **decisión humana**.
+
+
+### 5.4 Contratos propuestos (NO existen todavía)
+
+> Etiqueta obligatoria en el código y las pantallas que los usen: **propuesto**. Detalle: [guía de integración §20](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md#20-contratos-nuevos-propuestos).
+
+| ID | Contrato | Para qué | Pantalla |
+|---|---|---|---|
+| N1 | `POST /ingestions/text` (JWT, JSON) | Enviar un mensaje escrito al asistente | Asistente |
+| N2 *(opcional)* | `GET /ingestions/text/:caseId` | Recuperar el texto enviado | Asistente / Casos |
+| N3 *(obligatoria)* | `q` en `GET /properties` (nombre) y `GET /obligations` (proveedor y concepto) | Búsqueda de texto | Inmuebles, Obligaciones |
+| N3b *(opcional)* | `q` en `GET /rentals` y `GET /contracts` | Búsqueda adicional; **no bloquea la entrega** | Arriendos, Contratos |
+| N4 *(recomendada)* | `unassigned=true` en `GET /obligations` | «Sin inmueble asignado» | Obligaciones, Dashboard |
+| N5 *(DESCARTADA, D13)* | `propertyId` en `GET /attention` y `GET /dashboard/summary` | **No se implementa**: el dashboard y los pendientes por inmueble se organizan en el frontend con las APIs existentes | Dashboard |
+| N6 | `autoGenerate` en obligaciones y arriendos | Generación automática de períodos/cobros | Formularios |
+| N7 | Acciones aplicables nuevas en `POST …/apply`: `create_recurring_obligation`, `update_obligation_schedule`, `update_occurrence_details`, `create_recurring_rental` | Crear/modificar recurrencias con HITL | Revisión HITL |
+| N8 *(recomendado)* | `GET /obligations/:id/upcoming`, `GET /rentals/:id/upcoming` | «Próximos períodos» calculados por el backend | Obligaciones, Arriendos |
+| N9 *(OPCIONAL, ampliación D17; no bloquea)* | `POST /cases/:caseId/continuations` (JWT) | Continuar tras elegir entre obligaciones ambiguas | Asistente / Revisión HITL |
+
+Las rutas internas propuestas (`POST /internal/recurrence/generate`, `POST /internal/cases/:id/assistant/resolve`) son de n8n/servicio: **el navegador no las usa**.
 
 ---
 
@@ -909,8 +939,8 @@ Convenciones comunes a todas:
 | Vacío | Usuario sin datos: ceros y listas vacías ("Aún no tienes obligaciones. Crea la primera o sube una factura") |
 | Responsive | Según la referencia visual; en celular lo más urgente debe verse primero y los indicadores no deben exigir scroll horizontal |
 | Validación | No aplica |
-| Dependencias | Ninguna de n8n. `alerts` valdrá 0 hasta que se ejecuten evaluaciones |
-| Nota | Mostrar `money.note`. No presentar totales como saldo bancario. Mostrar cada moneda por separado |
+| Dependencias | Ninguna de n8n para los KPI. `alerts` se llena cuando el workflow 06 (responsable) evalúa; hasta entonces valdrá 0 |
+| Nota | Mostrar `money.note`. No presentar totales como saldo bancario. Mostrar cada moneda por separado. **Organización por urgencia, casos en procesamiento y vista por inmueble:** §19.7 |
 
 ### 8.3 Inmuebles
 
@@ -924,6 +954,7 @@ Convenciones comunes a todas:
 | Vacío | "Registra tu primer inmueble" |
 | Responsive | Según la referencia visual; en celular la lista debe ser legible sin scroll horizontal |
 | Validación | `name` obligatorio ≤ 120; `address` ≤ 300; `description` ≤ 1000 |
+| Búsqueda *(propuesta N3, **obligatoria**)* | Barra «Buscar por nombre» (`q`), con debounce y paginación del servidor (§19.6) |
 | Nota | No hay borrado. Confirmar con modal antes de archivar: "Un inmueble inactivo no admite nuevas obligaciones ni arriendos" |
 
 ### 8.4 Obligaciones y períodos
@@ -940,6 +971,8 @@ Convenciones comunes a todas:
 | Validación | `providerName` ≤ 120, `concept` ≤ 160, `category` de la lista, dinero con patrón, `dueDay` 1–31, `reminderDaysBefore` 0–60; períodos: `periodEnd ≥ periodStart` (validar en el cliente: el servidor también lo rechaza) |
 | Confirmación | Modal: "Declaras que **pagaste** esta obligación. NotiHouse-Pal no realiza ni verifica pagos." con campo `reference` opcional (≤ 200). Botón deshabilitado durante el envío |
 | Notas | No hay lista global de períodos: se consultan **por obligación**. Para "qué vence pronto" usar la bandeja. Cambiar la moneda no es posible tras crear |
+| Recurrencia *(propuesta)* | Frecuencia, día, anticipación e interruptor «Generar períodos automáticamente» (N6); «Próximos períodos» (N8). Hoy los períodos **no se generan solos**: se crean a mano (O7) o aplicando una propuesta. Ver §19.5 |
+| Búsqueda y filtros | Existentes: inmueble, categoría, estado. *Propuestos:* `q` por proveedor/concepto (N3, **obligatoria**) y «Sin inmueble asignado» (N4, recomendada). Ver §19.6 |
 
 ### 8.5 Arriendos y cobros
 
@@ -955,6 +988,7 @@ Convenciones comunes a todas:
 | Validación | `expectedAmount` > 0; `dueDay` 1–31; `startsOn` obligatorio; `endsOn ≥ startsOn`; `tenantAlias` ≤ 120 (sugerir alias, no nombres reales) |
 | Confirmación | Modal con campo **obligatorio** `evidence` (≤ 500): "Declaras que recibiste este pago…" |
 | Nota | `ended` es final: confirmar con modal |
+| Recurrencia *(propuesta)* | `autoGenerate` para generar cobros **esperados** del ciclo; no se cobra ni se envía ningún mensaje al arrendatario (§19.5) |
 
 ### 8.6 Contratos
 
@@ -981,7 +1015,7 @@ Convenciones comunes a todas:
 | Objetivo | Que la persona vea de un vistazo qué requiere su atención (alertas, vencimientos próximos y vencidos, revisiones HITL pendientes) y pueda actuar |
 | Endpoints (todos existentes, §5.2) | `GET /dashboard/summary` (contadores), `GET /alerts`, `GET /alerts/:id`, `POST /alerts/:id/read`, `POST /alerts/:id/dismiss`, `GET /attention`, `GET /hitl-requests` |
 | Errores | 409 al descartar una alerta ya resuelta; 401 (sesión vencida, §7.4); red/503 (§11.8) |
-| Dependencias | **Las alertas se crean al ejecutar `POST /internal/alerts/evaluate` (n8n), aún no programado.** La bandeja (`/attention`) y el dashboard **no** dependen de n8n y muestran vencimientos y HITL pendientes en vivo |
+| Dependencias | **Las alertas las crea el workflow 06** (≤ 1 vez por hora, cuando la responsable lo active). La bandeja (`/attention`) y el dashboard **no** dependen de n8n. Contrato vigente de campana, *polling* y kill switch: [CONTRATO_ETAPA8](CONTRATO_ETAPA8_NOTIFICACIONES_HITL.md) (`GET /alerts/summary`, `GET /system/status`) |
 
 #### 8.7.1 Elementos que deben existir
 
@@ -1058,7 +1092,7 @@ Tipos de alerta (`type`) y severidad (`severity`) con texto de apoyo, a adaptar 
 | Endpoints | `GET /cases`, `GET /cases/:id`, `GET /cases/:id/proposals`, `GET /hitl-requests?caseId=`, `GET /documents?caseId=` |
 | Estados | `received` "En cola de procesamiento"; `processing` "Procesando"; `awaiting_human` "Esperando tu decisión"; `completed`; `failed` (+ `statusReason`) |
 | Vacío | "Aún no has enviado documentos ni notas de voz" |
-| Dependencias | Que n8n ejecute los workflows (hoy manual). Un caso en `received` puede permanecer así mucho tiempo |
+| Dependencias | Que n8n procese los trabajos (workflows 02/04/03, activados por la responsable). Un caso en `received` puede permanecer así mucho tiempo |
 | Nota | Rotular toda propuesta como "Sugerencia de IA — no es información definitiva" y mostrar `confidence` solo si no es `null` |
 
 ### 8.10 Aprobación y rechazo HITL
@@ -1092,7 +1126,7 @@ Tipos de alerta (`type`) y severidad (`severity`) con texto de apoyo, a adaptar 
 | Responsive | Según la referencia visual; selector de archivo con objetivo táctil amplio y acceso al sistema de archivos en celular y tableta |
 | Validación en cliente | Solo `.pdf`, tipo `application/pdf`, tamaño ≤ 10 MiB (aviso, no garantía: manda el servidor), un archivo a la vez |
 | Reglas | Generar `requestId = crypto.randomUUID()` por **envío**, reutilizarlo si el usuario reintenta el mismo envío, y crear uno nuevo para otro archivo. Para el MVP ofrecer solo `documentType = invoice` (los workflows actuales están pensados para facturas; no está verificado el resto) |
-| Dependencias | El procesamiento requiere n8n encendido y el workflow 02 ejecutado (hoy manual). La carga, el almacenamiento y la descarga **no** dependen de n8n |
+| Dependencias | El procesamiento requiere n8n encendido y el workflow 02 activo (lo activa la responsable). La carga, el almacenamiento y la descarga **no** dependen de n8n |
 
 ### 8.12 Grabación y carga de notas de voz
 
@@ -1105,16 +1139,16 @@ Tipos de alerta (`type`) y severidad (`severity`) con texto de apoyo, a adaptar 
 | Errores | Permiso de micrófono denegado, navegador sin soporte, 413/415/429/503 |
 | Responsive | Según la referencia visual, **pensada para celular**: grabar debe poder hacerse con un solo gesto y con estados claros (§10.8) |
 | Validación | Máx. ~13 MiB y duración sugerida de 2 minutos; formato según el navegador (§10.8) |
-| Dependencias | Procesar la nota (transcripción e interpretación) requiere workflow 04, que **aún no tiene ejecución real validada** y está limitado por la cuota diaria de Gemini. La carga sí funciona |
+| Dependencias | Procesar la nota (transcripción e interpretación) lo hace el workflow 04 (validado con servicios reales en la Etapa 5; activación a cargo de la responsable) y consume la cuota diaria de Gemini. La carga siempre funciona. La grabación comparte pantalla con el mensaje de texto: ver §19.2 |
 | Nota | Decir al usuario qué se hará: "Se transcribirá y se te pedirá confirmar antes de registrar nada" |
 
-### 8.13 Entrada por texto libre — **PENDIENTE (no existe en el backend)**
+### 8.13 Asistente de texto y voz — **PROPUESTO (aprobado; no existe aún en el backend)**
 
-La verificación fue exhaustiva: no hay controller, DTO, ruta ni workflow que reciba un texto como "Recuérdame pagar el agua". `POST /cases` solo acepta `type`, una entidad y `requestId`; los endpoints de ingesta solo aceptan archivos.
+Antes esta sección decía «no implementar». **Esa instrucción quedó sin efecto** (decisión del 7-nov-2026). El asistente (campo de texto + micrófono) es ahora parte del alcance: especificación completa en la **§19**; contratos y arquitectura en la [guía de integración](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md) (§19–§20).
 
-- **No simular** esta función ni dejar un campo de texto que "parezca" funcionar.
-- Si el equipo quiere anticiparla, puede dejar la sección marcada como "Próximamente" **si la referencia visual la contempla**, sin lógica.
-- Para habilitarla, el backend necesitaría un contrato nuevo (p. ej. un endpoint de ingesta de texto que cree un caso y un trabajo) y un workflow que lo procese. Registrar la necesidad en §17.2.
+- Hoy **no existe** el endpoint de texto ni el procesamiento de texto en n8n: trabajar con **mocks rotulados «propuesto»** y no presentarlo como integrado.
+- No es un chatbot ni una conversación en tiempo real: cada mensaje es una **solicitud asincrónica** que produce una propuesta, una aclaración o un rechazo.
+- El backend lo desarrolla el integrador; la adaptación de n8n es de la responsable.
 
 ---
 
@@ -1202,7 +1236,7 @@ sequenceDiagram
   R->>A: decisión y aplicar, igual que el flujo D
 ```
 
-> **Validación pendiente:** la integración real de voz (workflow 04) **todavía no tiene una ejecución completa verificada**; está detenida por la cuota diaria del nivel gratuito de Gemini. El frontend puede construir y probar la grabación y la **carga** ahora; la parte "transcribir → proponer → revisar" depende de terminar esas pruebas.
+> **Estado de la voz:** el ciclo real de voz (workflow 04) se validó con servicios reales en la Etapa 5 (2026-11-07) y su automatización programada se demostró en laboratorio (Etapa 7); en el n8n operativo sigue **inactivo** hasta que la responsable lo active y está sujeto a la cuota diaria del nivel gratuito de Gemini. El frontend construye la grabación y la **carga** ahora; "transcribir → proponer → revisar" depende de que n8n esté activo.
 
 ### Flujo D — HITL
 
@@ -1230,7 +1264,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-  EV["n8n: POST internal alerts evaluate<br/>(aún no programado)"] --> AL[("alertas")]
+  EV["n8n: POST internal alerts evaluate<br/>(workflow 06: programado, inactivo hasta que la responsable lo active)"] --> AL[("alertas")]
   AL --> L["GET /alerts"]
   L --> S{"state efectivo"}
   S -- "active" --> V["Vigente: requiere atención"]
@@ -1654,9 +1688,9 @@ useQuery({
 
 - Detener en estado terminal. `awaiting_human` también es un buen punto de parada: mostrar el botón "Revisar" y consultar `GET /hitl-requests?caseId=&status=pending`.
 - Pausar con la pestaña oculta (`document.visibilityState`) y al cerrar sesión.
-- **Tope:** tras ~5 minutos sin cambio, dejar de consultar de forma agresiva y mostrar: "Tu archivo está en cola. Se procesará cuando se ejecute el procesamiento automático." + botón "Actualizar" manual. Hoy los workflows son **manuales**, así que esta espera puede ser larga.
+- **Tope:** tras ~5 minutos sin cambio, dejar de consultar de forma agresiva y mostrar: "Tu archivo está en cola. Se procesará cuando se ejecute el procesamiento automático." + botón "Actualizar" manual. Los workflows están **inactivos por defecto** (los activa o ejecuta la responsable, y solo funcionan mientras su equipo y Docker estén encendidos), así que esta espera puede ser larga.
 - En listados y dashboard no hacer polling: refrescar al volver a la pestaña (`refetchOnWindowFocus`) o con botón.
-- **Única excepción: el indicador de notificaciones (§8.7).** Puede refrescarse al volver a la pestaña, con botón y, opcionalmente, con una consulta de **baja frecuencia** (intervalo largo, p. ej. ≥ 60 s) a `GET /dashboard/summary` **solo mientras la pestaña esté visible y la sesión vigente**; se detiene con un 401, al cerrar sesión y al ocultar la pestaña, y nunca acumula peticiones en vuelo. Esto **no es tiempo real** ni sustituye a push: el aviso de "alerta nueva" aparece únicamente cuando una consulta realmente devuelve una alerta que no estaba antes. Mantener el costo bajo: Render Free y Neon son compartidos.
+- **Única excepción: el indicador de notificaciones (§8.7).** Puede refrescarse al volver a la pestaña, con botón y, opcionalmente, con una consulta de **baja frecuencia** (intervalo largo, p. ej. ≥ 60 s) a `GET /alerts/summary` (contrato vigente: [CONTRATO_ETAPA8 §2.3](CONTRATO_ETAPA8_NOTIFICACIONES_HITL.md); si responde 404 porque Render es anterior a la Etapa 7, usar `GET /dashboard/summary`) **solo mientras la pestaña esté visible y la sesión vigente**; se detiene con un 401, al cerrar sesión y al ocultar la pestaña, y nunca acumula peticiones en vuelo. Esto **no es tiempo real** ni sustituye a push: el aviso de "alerta nueva" aparece únicamente cuando una consulta realmente devuelve una alerta que no estaba antes. Mantener el costo bajo: Render Free y Neon son compartidos.
 - Con varias cargas, no abrir un intervalo por cada una sin límite: consultar el listado `GET /cases?status=received` / `processing` en una sola petición.
 - Una sola petición en vuelo por recurso; sin acumulación si la anterior no terminó.
 
@@ -1699,7 +1733,7 @@ useQuery({
 
 ### 12.2 Estado de `frontend/` y cómo crearlo
 
-`frontend/` solo contiene `.gitkeep`; **no hay `package.json`, así que no existen todavía comandos reales**. Si continúa vacía, crear el proyecto con la plantilla oficial **en tu propia rama** (§14.2), revisando la versión vigente de Vite al momento de hacerlo:
+En `develop`, `frontend/` solo contiene `.gitkeep`, pero **ya existe un scaffold** (Vite + React + TypeScript, capa de API y sesión) en `origin/feature/frontend-base`, con landing y login apilados en `origin/feature/frontend-landing` y `origin/feature/login-transition`. **No crear otro proyecto Vite**: partir de esas ramas, coordinando con quien las mantiene (`git fetch --all`, `git branch -r --no-merged develop`). Scripts verificados en el `package.json` de la rama de login: `dev`, `build` (`tsc -b && vite build`), `lint` (oxlint) y `preview`; **no existe `test`**. Solo si esas ramas no estuvieran disponibles, crear el proyecto con la plantilla oficial **en tu propia rama** (§14.2), revisando la versión vigente de Vite:
 
 ```bash
 # Parte de un directorio de trabajo limpio y de develop actualizado (ver §14.2)
@@ -1759,6 +1793,8 @@ export default defineConfig({ plugins: [react()], server: { port: 5173, strictPo
 2. **Micrófono:** el navegador solo permite `getUserMedia` en HTTPS o `localhost`, tras un gesto del usuario y con permiso explícito (§10.8).
 3. **Origen autorizado en CORS:** el origen real desde el que se carga la app (dominio de Vercel, URL del túnel o IP del equipo) **debe estar autorizado por el responsable del backend**. Sin eso, el navegador mostrará errores de CORS aunque la API funcione.
 
+**Comprobación obligatoria de CORS para el dominio definitivo de Vercel (decisión D18, aprobada).** El backend admitirá **orígenes explícitos** —el frontend local autorizado (`http://localhost:5173`) y el dominio definitivo de Vercel—, **sin comodines**, sin desactivar restricciones y sin exponer credenciales; el integrador desarrolla y prueba el cambio de código si hace falta, y **la responsable autoriza y ejecuta** la configuración y el despliegue reales en Render. Antes de la entrega se verifican el preflight, el bloqueo de un origen ajeno y un flujo real en el navegador (login, consulta, carga de PDF, descarga). Procedimiento y pruebas: [guía de integración §14.6](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md#146-comprobación-obligatoria-de-cors-para-el-dominio-definitivo-de-vercel-d18). El equipo frontend **no** modifica CORS y registra el resultado en `INFORME_FINAL_FRONTEND.md`.
+
 ### 12.5 Render Free: cómo despertarlo
 
 Render Free **duerme el servicio tras ~15 minutos sin tráfico** y tarda cerca de **un minuto** en despertar (fuente: [mvp-demo-setup.md](../deployment/mvp-demo-setup.md)).
@@ -1773,7 +1809,7 @@ Ambas rutas son públicas y de solo lectura; consultarlas es seguro (usarlas con
 
 ### 12.6 Qué se puede probar sin n8n y qué no
 
-n8n corre hoy en **Docker en el computador del responsable** y **todos sus workflows son manuales** (se ejecutan por orden del responsable). Render/Neon/Tigris no dependen de ese computador.
+n8n corre hoy en **Docker en el computador de la responsable**; sus workflows están **versionados inactivos** (con disparadores programados que ella activa cuando lo decide). Nadie más ejecuta ni modifica workflows. Render/Neon/Tigris no dependen de ese computador.
 
 | Funcionalidad | ¿Requiere n8n encendido? |
 |---|---|
@@ -1921,27 +1957,30 @@ Criterio: "probado" solo si hay evidencia (descrita por el responsable del backe
 | Render + Neon + Tigris trabajando juntos | **Implementado y probado contra Render** | Informado; `/health` responde 200 |
 | API de negocio (inmuebles, obligaciones, períodos, arriendos, cobros, contratos) | **Implementado**; pruebas automatizadas en el repositorio | Suites de backend; contra Render solo se informó login y consultas |
 | Dashboard, bandeja de atención, alertas (lectura) | **Implementado**; probado localmente | Documentado en [alerts-and-dashboard.md](../api/alerts-and-dashboard.md) |
-| Alertas con contenido (evaluación) | **Parcialmente integrado** | La ruta interna existe; ningún workflow/programación la ejecuta |
+| Alertas con contenido (evaluación) | **Implementado y probado en laboratorio** (workflow 06 con disparadores reales, Etapa 7) | Inactivo por defecto; activación a cargo de la responsable |
 | Experiencia de notificaciones internas (campana, no leídas, lista, acciones, aviso de alerta nueva) | **Pendiente de frontend (requisito del MVP, §8.7)** | Toda la API necesaria existe; las alertas con contenido dependen de la evaluación interna |
 | Notificaciones push (FCM), WebSockets, tiempo real | **No implementadas** (ni backend ni integración) | Fuera del MVP actual; no simular |
 | Ingesta de PDF y voz (carga, almacenamiento) | **Implementado**; carga de PDF **probada contra Render** | Informado; sin evidencia propia de la carga de voz contra Render |
-| Procesamiento de facturas PDF con Gemini | **Implementado y probado de extremo a extremo** | Informado; workflow 02 en el repositorio (ejecución manual) |
+| Procesamiento de facturas PDF con Gemini | **Implementado y probado de extremo a extremo** | Informado; workflow 02 en el repositorio (inactivo por defecto; ejecución a cargo de la responsable) |
 | HITL aprobado/rechazado y cierre de casos | **Implementado y probado de extremo a extremo** | Informado; workflow 03 en el repositorio |
 | Aplicar propuesta (obligación + período) | **Implementado y probado** (ciclo completo de una factura ficticia) | Informado; ruta `apply` en el backend |
-| Procesamiento de voz | **Parcialmente integrado**: workflow 04 escrito, **sin ejecución real completa validada** | Pendiente por cuota diaria de Gemini |
-| Gmail (recepción de correos) | **Pendiente de integración** | OAuth configurado en n8n, pero la ruta interna siempre responde 403 y no hay workflow de recepción |
-| Automatizaciones periódicas (alertas, vencimientos de HITL, polling) | **Pendiente de integración** | Los 4 workflows son manuales y están inactivos |
-| Entrada de texto libre | **Pendiente de backend** | No existe contrato |
-| Frontend | **Pendiente de frontend (carpeta vacía)** | — |
+| Procesamiento de voz | **Implementado y validado con servicios reales** (Etapa 5) | Sujeto a la cuota de Gemini (20/día); falta la **pantalla** de grabación |
+| Gmail (recepción de correos) | **Implementado y validado con servicios reales** (Etapa 6; un buzón demo) | Sin pantalla; OAuth en modo *Testing* (refresh token a 7 días) |
+| Automatizaciones periódicas (alertas, vencimientos de HITL, polling) | **Implementadas y demostradas en laboratorio** (Etapa 7); **inactivas** en el n8n operativo | Las activa la responsable; kill switch implementado |
+| Entrada de texto libre (asistente) | **Propuesto — aprobado para desarrollo** | Backend: integrador. n8n: responsable. Frontend: §19 |
+| Recurrencias automáticas (períodos y cobros) | **Propuesto — aprobado** | Hoy solo se guardan los campos; nada genera registros |
+| Modificar recurrencias por texto/voz con HITL | **Propuesto — aprobado** | Hoy la lista de acciones aplicables solo crea |
+| Búsqueda de texto (`q`) | **Propuesto — aprobado** | Sin búsquedas textuales hoy |
+| Frontend | **En desarrollo**: scaffold, sesión, landing y login en ramas remotas; ninguna pantalla de negocio conectada | Ver §12.2 y los informes finales (§20) |
 
 **Lectura para el equipo**
 
-- El procesamiento documental y el HITL **ya se probaron de extremo a extremo**; la voz **todavía requiere terminar las pruebas reales**.
-- El **OAuth de Gmail está configurado, pero eso no implica recepción automática**: no existe ese flujo.
-- Las **automatizaciones periódicas están pendientes**.
+- El procesamiento documental, el HITL, la voz y Gmail **ya se validaron con servicios reales** (Etapas 4–6); las automatizaciones programadas se demostraron en laboratorio (Etapa 7) y siguen **inactivas**.
+- Gmail es una ingesta interna: **no hay pantalla** ni recepción desde la aplicación.
+- Las **automatizaciones periódicas** existen pero las activa la responsable; **solo ella** modifica o ejecuta n8n.
 - **El frontend no depende de que todo esté terminado para empezar**: hay trabajo útil y verificable para casi todas las pantallas (§12.6).
 
-> **Esta matriz es la fotografía del 4 de noviembre de 2026.** Debe revisarse y actualizarse cuando terminen la **Etapa 5** (voz), la **Etapa 6** (recepción automática de Gmail) y la **Etapa 7** (polling, alertas y automatizaciones). Hasta entonces, lo marcado como parcial o pendiente **no está terminado**; en desarrollo puede simularse con mocks tipados, pero no debe presentarse como funcionando en producción.
+> **Esta matriz se actualizó el 7 de noviembre de 2026** (tras las Etapas 5, 6 y 7). Debe revisarse de nuevo cuando el integrador y el equipo frontend entreguen sus informes finales. Lo marcado como *propuesto* **no está implementado**.
 
 ---
 
@@ -1958,36 +1997,28 @@ Criterio: "probado" solo si hay evidencia (descrita por el responsable del backe
 7. **No asumir que un endpoint existe** porque aparece en una idea del MVP. Si no está en §5, no existe: preguntar.
 8. **Comunicar los endpoints o campos que falten** con: pantalla afectada, dato necesario y ejemplo de respuesta deseada.
 9. **Registrar las pruebas realizadas** (fecha, cuenta usada, navegador o dispositivo, resultado) en `docs/testing/` o en la descripción del Pull Request. Las pruebas de escritura se registran con la autorización recibida (§12.8).
-10. **Evitar conflictos con backend e integraciones:** no tocar `backend/`, `database/`, `n8n/` ni `infra/`; si hace falta un cambio allí, pedirlo a la persona responsable.
+10. **Evitar conflictos con backend e integraciones:** el equipo frontend no toca `backend/`, `database/`, `n8n/` ni `infra/`. El **backend de las funciones nuevas (§19) lo desarrolla el integrador**, en coordinación con el equipo; **n8n solo lo modifica la responsable**. Si necesitas un cambio allí, pídelo (campo, pantalla afectada y ejemplo de respuesta deseada).
 11. **Datos de prueba:** solo ficticios; avisar antes de escribir en la API compartida; nunca documentos reales; no procesar con Gemini sin autorización (la cuota diaria es escasa).
 12. **Esta guía no sustituye al código:** ante una diferencia, prevalece el backend; avisar para corregir la guía.
 13. **Diseño:** se implementa la referencia visual entregada por la persona responsable; no se reemplaza ni se inventa otra (§10).
 14. **Despliegue:** nada se despliega a producción sin autorización del responsable (§12.9).
 
-### 14.2 Política obligatoria de ramas Git
+### 14.2 Política definitiva de ramas Git (obligatoria; coincide con la [guía de integración §15.1](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md#151-política-definitiva-de-ramas-obligatoria-para-ambos-responsables))
 
-- **`develop` es la rama de integración compartida del proyecto: sirve para integrar el trabajo del equipo, no para desarrollar directamente en ella.** **Ningún integrante debe desarrollar directamente sobre `develop` ni sobre `main`.**
-- Cada integrante del frontend **crea su propia rama de trabajo**, partiendo de la versión **actualizada** de `develop`.
-- **Nombres descriptivos**, por ejemplo: `feature/frontend-base`, `feature/frontend-auth`, `feature/frontend-dashboard`, `feature/frontend-obligations`.
-- **Antes de empezar**, comprobar en qué rama se está y verificar que los cambios propios no se mezclen con modificaciones locales de otro integrante (cada persona trabaja en su copia y su rama).
-- Los cambios de cada rama se integran a `develop` mediante **Pull Request**, con **revisión del equipo** y resolución de conflictos.
-- **Nadie hace `push` directamente a `develop` ni a `main`.**
-- **El asistente de programación (Claude u otro)** puede crear y modificar archivos, ejecutar pruebas y **revisar** el estado de Git, pero **no debe ejecutar `git add`, `git commit`, `git push`, `git merge` ni crear Pull Requests automáticamente**. Esas operaciones quedan a cargo del integrante responsable de su rama.
-- Si existen **cambios locales sin confirmar**, no descartarlos, sobrescribirlos ni moverlos a otra rama sin autorización de su dueño.
-- **No modificar** `backend/`, `database/`, `n8n/` ni `infra/` sin coordinar con la persona responsable.
-- **No se despliega a producción** sin autorización del responsable.
+- **`develop` y `main` permanecen intactas** durante el desarrollo y la integración. **Nadie** desarrolla en ellas, hace merge hacia ellas ni `push` directo, **sin autorización expresa de la responsable del proyecto**.
+- El responsable frontend trabaja en **su propia rama**, teniendo en cuenta las ramas existentes (`feature/frontend-base` → `feature/frontend-landing` → `feature/login-transition`, apiladas): parte de la más avanzada (`feature/login-transition`) salvo que su dueño continúe en ella, **sin reescribir ni borrar** esas ramas. Nombre sugerido: `feature/frontend-app` o `feature/frontend-<módulo>`.
+- El integrador trabaja en ramas **independientes** del backend; ambos se coordinan para evitar pérdidas de trabajo, sobrescrituras y conflictos.
+- **Rama única de entrega: `integration/mvp-final`.** El integrador consolida allí el frontend integrado, el backend ampliado, los contratos, las migraciones, las pruebas y los informes, y resuelve los conflictos **en coordinación con el frontend**. Todavía no existe (7-nov-2026). Debe superar las pruebas y tener los informes finales completos; que compile no basta.
+- **Se permite** `git add`, `git commit` y `git push` a la **rama de trabajo propia** y a `integration/mvp-final`. **Está prohibido** el merge a `develop`/`main` y el `push` directo a ellas sin autorización, y nunca `push --force`. El asistente de programación puede hacer commit y push a la rama de su dueño, nunca a `develop`/`main`.
+- Antes de empezar: árbol de trabajo limpio (`git status`), `git fetch --all`, `git branch --show-current`. Si hay cambios que no son tuyos, **detente y consulta**; no los descartes ni los muevas.
+- No modificar `backend/`, `database/`, `n8n/` ni `infra/` desde el frontend: lo que haga falta se pide al integrador; **n8n solo lo modifica la responsable**. No se despliega a producción sin autorización.
 
-**Cómo crear tu rama** (ilustrativo; primero debes tener **limpio tu directorio de trabajo**: comprueba con `git status` que no hay cambios sin guardar o resuélvelos antes):
+### 14.3 Roles: equipo frontend, integrador y responsable
 
-```bash
-git status                          # debe indicar "nothing to commit, working tree clean"
-git switch develop
-git pull origin develop
-git switch -c feature/frontend-nombre
-git branch --show-current           # debe mostrar tu rama, no develop ni main
-```
-
-Si `git status` muestra cambios que no son tuyos, **detente** y consulta antes de continuar.
+- **Equipo frontend:** pantallas, componentes y experiencia fieles a la referencia visual.
+- **Integrador:** conecta pantallas y endpoints, verifica que no haya botones muertos ni formularios incompatibles con los DTO, **desarrolla el backend de §19** y entrega `docs/integracion/INFORME_FINAL_INTEGRACION.md` y `docs/integracion/ADAPTACIONES_N8N_PENDIENTES.md`.
+- **Responsable del proyecto:** única persona que crea, modifica, importa, activa y ejecuta workflows de n8n; despliega; hace las pruebas reales con Gemini, Gmail y celular; aprueba migraciones y decisiones.
+- Coordinación detallada: [guía de integración §12 y §15](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md). Cada rol redacta su propio informe final y ambos se corresponden.
 
 ---
 
@@ -2035,15 +2066,17 @@ Si `git status` muestra cambios que no son tuyos, **detente** y consulta antes d
 
 ### 15.2 Requieren terminar integraciones (backend / n8n)
 
-- [ ] Un PDF subido avanza de `received` a `processing` y a `awaiting_human` (requiere ejecutar el workflow 02).
+- [ ] Un PDF subido avanza de `received` a `processing` y a `awaiting_human` (requiere el workflow 02 activo o ejecutado por la responsable).
 - [ ] Visualización de propuestas reales (con evidencia) y de la revisión vinculada.
 - [ ] **Aprobar** y **rechazar** una revisión real; verificar 409 por plazo vencido (24 h) y por decisión distinta.
 - [ ] **Aplicar** una propuesta aprobada: crea período `pending`; repetir devuelve `alreadyApplied: true`; **no aplica automáticamente**; no se ofrece si no es aplicable.
-- [ ] Cierre del caso a `completed` tras ejecutar el workflow 03 (orden aprobar → aplicar → cierre).
+- [ ] Cierre del caso a `completed` tras el workflow 03, ejecutado por la responsable (orden aprobar → aplicar → cierre).
 - [ ] Nota de voz real: transcripción visible en la revisión y propuesta v2 (depende de validar el workflow 04 y de la cuota de Gemini).
 - [ ] Alertas con contenido real (depende de programar la evaluación o de que el responsable la ejecute sobre datos ficticios acordados): campana con no leídas reales, lista con alertas ficticias, `read` y `dismiss` reales (escriben en Neon: solo con autorización), acceso al recurso relacionado y aviso de alerta nueva tras una consulta que la devuelva. El frontend **no** ejecuta evaluaciones ni fabrica alertas.
 - [ ] Notificaciones push (FCM): **no implementadas**; fuera del MVP actual.
-- [ ] Origen Gmail (no existe), texto libre (no existe): **fuera del MVP actual**.
+- [ ] Origen Gmail: sin pantalla (ingesta interna). Notificaciones push (FCM): fuera del MVP.
+- [ ] **Funciones nuevas (propuestas, §19):** asistente de texto y voz con los 7 estados diferenciados; propuestas de creación y de modificación (antes → después); formularios de recurrencia; «Próximos períodos»; búsquedas `q` con paginación del servidor; dashboard por urgencia y vista por inmueble. Criterios completos con evidencia: [guía de integración §17.2](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md#172-funcionalidades-nuevas-cada-una-exige-backend-probado-aisladamente-y-frontend-conectado). **No se declara el asistente funcionando de extremo a extremo hasta que la responsable adapte n8n.**
+- [ ] **Informe final del frontend** (`docs/frontend/INFORME_FINAL_FRONTEND.md`, §20) entregado: sin él, la tarea no se considera entregada.
 
 ---
 
@@ -2055,14 +2088,14 @@ Copia y pega este texto al iniciar la sesión con tu asistente, en la raíz del 
 Eres un desarrollador senior de React + TypeScript con criterio de UX y accesibilidad. Vas a construir el frontend de NotiHouse-Pal en la carpeta `frontend/` de este repositorio.
 
 PASO 0 — LEE PRIMERO
-Lee completo `docs/frontend/GUIA_FRONTEND_NOTIHOUSE_PAL.md`. Es la fuente de verdad técnica (contratos, seguridad, flujos, pruebas seguras, despliegue). No avances sin haberlo leído. Si el código del backend y la guía difieren, manda el código: avísame de la diferencia. La guía es una fotografía del estado al 4 de noviembre de 2026; las integraciones pendientes (voz, Gmail, polling y alertas automáticas) no están terminadas: no las presentes como terminadas.
+Lee completo `docs/frontend/GUIA_FRONTEND_NOTIHOUSE_PAL.md`. Es la fuente de verdad técnica (contratos, seguridad, flujos, pruebas seguras, despliegue). No avances sin haberlo leído. Si el código del backend y la guía difieren, manda el código: avísame de la diferencia. La guía se actualizó el 7 de noviembre de 2026. Las funciones marcadas como PROPUESTAS en la §19 (asistente de texto y voz, recurrencias automáticas, modificación supervisada, búsquedas) NO existen todavía en el backend: no las presentes como terminadas ni las simules.
 
 DISEÑO — REFERENCIA VISUAL EXTERNA
 Recibirás una referencia visual externa (demo o video) entregada por la persona responsable del proyecto. DEBES RESPETARLA. No inventes un diseño alternativo: ni paleta, ni tipografía, ni nombre o concepto visual, ni disposición de navegación o tarjetas propios. La guía no contiene tokens visuales ni paleta, y no debes inferir ninguno. Si la referencia no cubre un estado (carga, vacío, error, plazo vencido, permiso de micrófono denegado, etc.), propón la solución en el estilo de la referencia y pídeme aprobación. Sobre ese diseño aplica la sección 10 de la guía: heurísticas de Nielsen, accesibilidad WCAG AA (mide el contraste sobre los colores de la referencia y avísame si alguno no cumple; no los cambies), responsive en celular, tableta y escritorio, jerarquía, consistencia, retroalimentación, legibilidad, prevención de errores y formularios usables. Entrega una aplicación funcional, atractiva (fiel a la referencia) y responsive.
 
 REGLAS DURAS (no negociables)
-1. No inventes endpoints, campos, permisos, respuestas ni datos. Si algo no está en la guía (§5 y §6) o en el código del backend, dímelo y detente en ese punto.
-2. No modifiques `backend/`, `database/`, `n8n/` ni `infra/` (ni Neon, ni migraciones, ni DTO, controllers, guards o contratos, ni CORS). Solo trabajas en `frontend/` y, si hace falta, documentación en `docs/frontend/`. Si necesitas un cambio allí, pídemelo.
+1. No inventes endpoints, campos, permisos, respuestas ni datos. Si algo no está en la guía (§5, §6 y los contratos PROPUESTOS de §5.4/§19) o en el código del backend, dímelo y detente en ese punto. Los contratos PROPUESTOS aún no existen: usa mocks tipados rotulados "propuesto" hasta que el integrador los publique.
+2. No modifiques `backend/`, `database/`, `n8n/` ni `infra/` (ni Neon, ni migraciones, ni DTO, controllers, guards o contratos, ni CORS). Solo trabajas en `frontend/` y, si hace falta, documentación en `docs/frontend/`. El backend de las funciones nuevas lo desarrolla el integrador y los workflows de n8n SOLO los modifica la responsable del proyecto: si necesitas un cambio allí, pídemelo.
 3. No incluyas secretos. El frontend solo usa `VITE_API_BASE_URL=https://notihouse-pal-api.onrender.com/api/v1` (una URL pública, no un secreto). Nunca pongas en variables `VITE_*`, código, pruebas o documentación: JWT, contraseñas, N8N_SERVICE_TOKEN, JWT_SECRET, claves de Neon, Tigris, Gemini o Google. No escribas contraseñas en ningún archivo. No pidas ni aceptes credenciales de Render, Neon, Tigris, n8n, Gemini ni Google Cloud.
 4. No llames rutas `/internal/*`. No accedas a Neon, Tigris, Gemini, n8n ni Gmail. No cambies estados de casos, propuestas, revisiones o alertas de forma artificial.
 5. PRUEBAS SEGURAS (§12.8). Render usa la base Neon compartida y el responsable sigue haciendo pruebas de integración. Clase A (libre): componentes, pruebas unitarias, mocks, validaciones, responsive, build y lint. Clase B (lectura autorizada): health, readiness, login con cuentas demo autorizadas entregadas por canal privado, GET de recursos propios, consultas moderadas. Clase C (requiere mi autorización previa): cualquier POST/PATCH, crear inmuebles/obligaciones/arriendos, confirmar pagos o cobros, subir PDF o audio, decisiones HITL, aplicar propuestas, cualquier cosa que genere trabajos para n8n. Clase D (requiere integraciones disponibles): procesamiento de PDF, transcripción de voz, propuestas de Gemini, cierre HITL, alertas programadas: avísame antes para que yo compruebe Docker/n8n y la cuota de Gemini. NUNCA ejecutes seeds, migraciones ni limpiezas contra la Neon compartida, ni scripts de `backend/src/database/scripts`. No hagas escrituras reales sin mi autorización explícita para esa prueba y esa cuenta; usa datos ficticios y nunca documentos reales ni datos personales. Tus pruebas automatizadas no deben escribir en la API real.
@@ -2071,9 +2104,9 @@ REGLAS DURAS (no negociables)
 8. Escrituras: nunca las reintentes automáticamente; botón deshabilitado desde el primer clic; usa `requestId` (mismo valor al reintentar el mismo envío) en las cargas; entiende que `alreadyApplied: true` en apply es un 200 normal que significa que ya estaba aplicada, no un error ni una nueva aplicación. No distingas todos los errores como "sin conexión": separa red, 401, 4xx, 409, 429 y 5xx, y trata el 503 y el arranque en frío de Render Free (health y ready) como estados temporales.
 9. Dinero siempre como texto: no uses Number ni parseFloat para operarlo; formatea desde el texto. Fechas `YYYY-MM-DD` sin desfase de zona. Descargas autenticadas con fetch + Blob, creando y liberando la URL de objeto correctamente.
 10. Nunca apliques propuestas ni decidas revisiones HITL automáticamente. Aprobar y Aplicar son acciones explícitas y separadas del usuario; el orden es aprobar → aplicar → (n8n) cierre.
-11. No simules funciones que el backend no soporta: la entrada por texto libre, Gmail, el POST /cases manual y las notificaciones push (FCM) NO están disponibles; márcalas como pendientes. No inventes endpoints, WebSockets, push, API Notification ni service workers, ni generación automática de alertas.
+11. No simules funciones que el backend no soporta todavía: Gmail en pantalla, el POST /cases manual y las notificaciones push (FCM) NO están disponibles. El ASISTENTE DE TEXTO Y VOZ, las RECURRENCIAS AUTOMÁTICAS, la MODIFICACIÓN SUPERVISADA y las BÚSQUEDAS están APROBADOS para desarrollo pero sus contratos son PROPUESTOS (§19): constrúyelos con mocks rotulados, no los presentes como integrados, no fabriques respuestas de IA en el cliente y no marques nada como aplicado sin la respuesta real del backend. No inventes WebSockets, push, API Notification ni service workers, ni generación automática de alertas en el cliente.
 12. NOTIFICACIONES INTERNAS (requisito, guía §8.7): implementa una experiencia completa, funcional y responsive, coherente con la referencia visual externa (campana o acceso equivalente según el diseño; sin proponer colores, tipografías ni diseño nuevo). Debe incluir: indicador de no leídas con datos reales (`GET /dashboard/summary` → `alerts.unread`; estado desconocido, no 0, si falla); lista de alertas (`GET /alerts`) con tipo, severidad, fecha, mensaje y estado; acciones reales marcar leída (`POST /alerts/:id/read`), descartar (`POST /alerts/:id/dismiss`, manejando el 409) y abrir el recurso relacionado (convierte `resource.path`, que es una ruta de la API, a la pantalla); vencimientos próximos, vencidos y revisiones HITL pendientes desde `GET /attention`, sin doble conteo con las alertas (`alert` en cada ítem); estados de carga, vacío y error; adaptación a celular y escritorio; y un aviso visual discreto de alerta nueva SOLO cuando una consulta realmente devuelva una alerta no vista antes (sin aviso en la primera carga; línea base por usuario). Diferencia alertas internas de push FCM (no implementado): no prometas avisos con la app cerrada. No ejecutes evaluaciones ni escribas en Neon para fabricar alertas; pruébalo con mocks locales tipados y, después, con alertas ficticias que genere el responsable. `read` y `dismiss` reales escriben en Neon: solo con mi autorización.
-13. GIT: trabajamos en una rama propia `feature/frontend-*` creada desde `develop` actualizado. Nunca desarrolles sobre `develop` ni `main`. Puedes crear y modificar archivos, ejecutar pruebas y consultar el estado de Git (status, branch, diff, log), pero NO ejecutes `git add`, `git commit`, `git push`, `git merge` ni crees Pull Requests. Si hay cambios locales sin confirmar, no los descartes, sobrescribas ni muevas de rama sin mi autorización. Verifica con `git branch --show-current` que no estás en develop ni main antes de modificar archivos y avísame si lo estás.
+13. GIT (§14.2): `develop` y `main` permanecen intactas: nunca desarrolles, hagas merge ni push en ellas. Trabaja en tu rama propia, creada desde la más avanzada del frontend (`feature/login-transition`) sin reescribir ni borrar las ramas existentes, y coordina con el integrador, que consolida todo en `integration/mvp-final`. Puedes hacer `git add`, `git commit` y `git push` a tu rama de trabajo (y a `integration/mvp-final` si el integrador te lo indica); NUNCA `push --force`, NUNCA merge a `develop`/`main`. Si hay cambios locales sin confirmar que no son tuyos, no los descartes ni muevas. Verifica con `git branch --show-current` antes de modificar archivos.
 14. DESPLIEGUE: no despliegues nada. Prepara el proyecto para Vercel según §12.9 (Root Directory `frontend`, Framework Vite, `npm run build`, salida `dist`, reescritura SPA, solo `VITE_API_BASE_URL`) y deja la lista de §12.10. Recuerda que el dominio de Vercel no podrá llamar a la API hasta que el responsable autorice ese origen en CORS (hoy solo se admite `http://localhost:5173`, un único origen): avísame para coordinarlo; no uses comodines ni proxies para evitarlo.
 15. Independencia: para las consultas normales no se necesita el computador del responsable ni el backend local, porque Render, Neon y Tigris están en la nube. Solo las automatizaciones (procesamiento, propuestas, cierre, alertas) dependen de que n8n/Docker estén encendidos en el equipo del responsable.
 
@@ -2083,10 +2116,10 @@ PASOS
 3. Crea el proyecto Vite React + TypeScript en `frontend/` si sigue vacío (puerto 5173 con `strictPort`, TypeScript estricto, `.env.example` con solo `VITE_API_BASE_URL`). No inventes scripts que no existan en el package.json resultante.
 4. Implementa el cliente HTTP (guía §7.3 y §11.6): `Authorization` en un solo lugar, `ApiError` con `message` texto-o-lista, `AbortController`, sin reintentos en escrituras, reintento limitado en lecturas, manejo de Render dormido y 503 (§11.8).
 5. Implementa JWT y rutas privadas: `expiresAt` desde `expiresIn`, `GET /auth/me` al arrancar, `RequireAuth`, manejo único del 401, logout que vacía la caché y claves de caché con el id del usuario.
-6. Implementa con las APIs reales, en este orden: Login → Dashboard (`/dashboard/summary` + `/attention`) → Bandeja → Inmuebles → Obligaciones y períodos (con confirmación) → Arriendos y cobros → Contratos → Alertas y notificaciones internas (campana, no leídas, lista, acciones y aviso de alerta nueva, §8.7) → Documentos PDF (multipart + descarga autenticada) → Voz (MediaRecorder, §10.8) → Casos y propuestas → Revisión HITL (aprobar/rechazar/aplicar con las condiciones de §6.12). Las lecturas contra Render solo son de clase B; para las pantallas que dependen de n8n (casos, propuestas, HITL) usa mocks tipados diferenciados.
+6. Implementa con las APIs reales, en este orden: Login → Dashboard (`/dashboard/summary` + `/attention`) → Bandeja → Inmuebles → Obligaciones y períodos (con confirmación) → Arriendos y cobros → Contratos → Alertas y notificaciones internas (campana, no leídas, lista, acciones y aviso de alerta nueva, §8.7) → Documentos PDF (multipart + descarga autenticada) → Voz (MediaRecorder, §10.8) → Casos y propuestas → Revisión HITL (aprobar/rechazar/aplicar con las condiciones de §6.12) → búsquedas → formularios de recurrencia → asistente de texto y voz (§19, con mocks rotulados hasta que existan los contratos). Las lecturas contra Render solo son de clase B; para las pantallas que dependen de n8n (casos, propuestas, HITL) usa mocks tipados diferenciados.
 7. Valida `proposedData` con Zod (unión por `action` y caso desconocido) y presenta las propuestas como "Sugerencia de IA — requiere tu confirmación".
 8. Prueba: `tsc`, `npm run build`, lint y pruebas unitarias de los módulos críticos (cliente HTTP, sesión, formateo de dinero y fechas, validaciones, mapeo de estados, notificaciones: contador, deduplicación, alerta nueva y conversión de resource.path), con la API simulada. Revisa responsive y accesibilidad sobre la referencia. Indica qué probaste y qué quedó sin probar (por ejemplo, voz en iOS, integración real).
-9. Al final entrégame: archivos creados, endpoints integrados, qué quedó pendiente y por qué, necesidades de coordinación con el backend (CORS para Vercel, campos faltantes), y confirmación de que no tocaste backend, Neon, n8n ni infraestructura, no incluiste secretos, no hiciste escrituras reales sin autorización y no ejecutaste git add, commit, push, merge ni Pull Requests.
+9. Al final entrégame: archivos creados, endpoints integrados, qué quedó pendiente y por qué, necesidades de coordinación con el backend (CORS para Vercel, campos faltantes), confirmación de que no tocaste backend, Neon, n8n ni infraestructura, no incluiste secretos, no hiciste escrituras reales sin autorización y no ejecutaste git add, commit, push, merge ni Pull Requests, y el informe final `docs/frontend/INFORME_FINAL_FRONTEND.md` (§20) con la matriz Funcionalidad | Implementado | Integrado localmente | Probado en entorno aislado | Probado con servicios reales | Pendiente / bloqueado y la sección "Qué debe hacer la responsable del proyecto después de recibir esta entrega".
 
 Empieza por el PASO 0 y los puntos 1 y 2; no escribas código hasta presentarme la propuesta del punto 2.
 ````
@@ -2100,18 +2133,20 @@ Empieza por el PASO 0 y los puntos 1 y 2; no escribas código hasta presentarme 
 
 | Dónde | Dice | Código / realidad |
 |---|---|---|
-| [README.md](../../README.md) (estado) | "Aún no hay … workflows de n8n, frontend, integraciones externas ni despliegues" | Hay 4 workflows de n8n en `n8n/workflows/` (sin versionar aún) y el backend **está desplegado** en Render |
+| [README.md](../../README.md) (estado) | "Aún no hay … workflows de n8n, frontend, integraciones externas ni despliegues" | Hay 6 workflows de n8n versionados en `n8n/workflows/` (inactivos por defecto) y el backend **está desplegado** en Render (la Etapa 7 está en `develop`; su despliegue no se ha verificado) |
 | [docs/deployment/mvp-demo-setup.md](../deployment/mvp-demo-setup.md) | "aún no hay nada desplegado. Render, el bucket, n8n y Vercel todavía no están configurados" | Render responde en producción (comprobado); Neon y Tigris se informan operativos |
 | `README.md` (estructura) | `frontend/` "Aplicación React + Vite (pendiente)" | Correcto: solo `.gitkeep` |
 | [business-api.md](../api/business-api.md) | "IA, voz, Gmail, FCM y workflows de n8n no están implementados" | La ingesta de voz y los workflows de IA existen; Gmail y FCM no son operativos |
 | `alerts-and-dashboard.md`, `workflow-integration.md` | Describen rutas y comportamiento | Coinciden con el código revisado (rutas y DTO verificados) |
-| Cabecera de documentación de `workflow-integration.md` | "En esta fase no hay n8n instalado" | Existen workflows 01–04 (manuales) |
+| Cabecera de documentación de `workflow-integration.md` | "En esta fase no hay n8n instalado" | Existen workflows 01–06 (01 manual; 02–06 con disparador programado, inactivos por defecto) |
+| `etapa7-informe-final.md` y `CONTRATO_ETAPA8` | Etapa 7 «sin commit ni push» | Commiteada y publicada en `origin/develop` (commit `34ca4be`); el despliegue en Render sigue sin verificarse |
+| Esta guía (versión del 4-nov), §1, §8.13, §13, §15.2 | Frontend vacío; workflows manuales; Gmail/voz pendientes; texto libre «no implementar» | Superado: ver §1, §13 y §19 |
 
 ### 17.2 Puntos que requieren coordinación con backend / integraciones
 
-1. **CORS y Vercel:** hoy `FRONTEND_URL` admite **un solo origen** (`http://localhost:5173`) y no hay comodín. Para que el frontend desplegado llame a la API hay que autorizar el dominio final de Vercel, y para seguir desarrollando en local hay que conservar `localhost`: **admitir ambos exige un cambio de backend** (lista explícita de orígenes) o sustituir temporalmente el origen único. Decidir además si se usarán *preview deployments* (dominios distintos; autorizarlos solo si se decide usarlos). El responsable decide y ejecuta; el equipo frontend **no** modifica el backend, **no** usa comodines ni proxies para esquivar CORS y **no** publica credenciales (§12.4, §12.9).
-2. **Entrada de texto libre:** falta contrato (endpoint de ingesta de texto + workflow). Decidir alcance antes de diseñar esa pantalla.
-3. **Estado del procesamiento visible al usuario:** hoy el usuario solo ve el estado del **caso**; el estado/errores del **trabajo** (`workflow_jobs`) son internos. Con el procesamiento manual, no hay forma de distinguir "en cola" de "n8n caído". Proponer exponer un indicador de solo lectura (p. ej. intentos y último error saneado) si se necesita.
+1. **CORS y Vercel (comprobación obligatoria antes de la entrega, decisión D18: [guía de integración §14.6](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md#146-comprobación-obligatoria-de-cors-para-el-dominio-definitivo-de-vercel-d18)):** hoy `FRONTEND_URL` admite **un solo origen** (`http://localhost:5173`) y no hay comodín. Para que el frontend desplegado llame a la API hay que autorizar el dominio final de Vercel, y para seguir desarrollando en local hay que conservar `localhost`: **admitir ambos exige un cambio de backend** (lista explícita de orígenes) o sustituir temporalmente el origen único. Decidir además si se usarán *preview deployments* (dominios distintos; autorizarlos solo si se decide usarlos). El responsable decide y ejecuta; el equipo frontend **no** modifica el backend, **no** usa comodines ni proxies para esquivar CORS y **no** publica credenciales (§12.4, §12.9).
+2. **Entrada de texto libre:** **aprobada** (7-nov-2026). El contrato (`POST /ingestions/text`, N1) es *propuesto* y lo implementa el integrador; la adaptación de n8n es de la responsable. Ver §19 y la guía de integración §19–§24.
+3. **Estado del procesamiento visible al usuario:** hoy el usuario solo ve el estado del **caso**; el estado/errores del **trabajo** (`workflow_jobs`) son internos. Como el estado del trabajo no se expone, no hay forma de distinguir "en cola" de "n8n caído". Proponer exponer un indicador de solo lectura (p. ej. intentos y último error saneado) si se necesita.
 4. **Saber si una propuesta ya fue aplicada:** no existe `GET` de la aplicación ni un campo `appliedAt` en la propuesta/revisión (§6.12). Sugerir añadirlo para ocultar "Aplicar" cuando corresponda.
 5. **Cabeceras expuestas por CORS:** solo `x-correlation-id`. Si se quiere leer `Content-Disposition` (nombre de archivo) en descargas, el backend debe exponerla; mientras tanto usar `fileName` de `GET /documents/:id`.
 6. **Valores de producción no verificados:** tamaños máximos de carga (`STORAGE_MAX_*`), `TRUST_PROXY_HOPS` (con 0, todos los usuarios comparten el límite de 5 logins por minuto) y umbrales de vencimiento; confirmar con el responsable.
@@ -2130,7 +2165,7 @@ Empieza por el PASO 0 y los puntos 1 y 2; no escribas código hasta presentarme 
 | Sin generación automática de períodos/cobros | Ofrecer formularios claros y, al aplicar una propuesta, mostrar lo creado |
 | Estados `overdue` almacenados pueden retrasarse | Calcular "Vencido" por fecha en listados |
 | Alertas sin evaluación periódica | Estados vacíos honestos; usar la bandeja |
-| Procesamiento manual de workflows | Comunicar "en cola" sin prometer tiempos |
+| Workflows inactivos por defecto (los activa la responsable) | Comunicar "en cola" sin prometer tiempos |
 | `proposedData` es JSON libre | Validar con Zod y degradar con elegancia |
 | Un solo origen CORS | Respetar puerto 5173; coordinar dominios |
 
@@ -2142,7 +2177,7 @@ Comprobaciones realizadas el 2026-11-04 (solo lectura; no se modificó código, 
 
 | # | Comprobación | Resultado |
 |---|---|---|
-| 1 | Cada endpoint de §5.1–§5.3 existe en los controllers | 62 de 62 rutas documentadas existen (49 de navegador + 13 internas), cotejadas por método y ruta contra los decoradores `@Controller`/`@Get`/`@Post`/`@Patch`; `ingestion.controller.ts` e `internal-cases.controller.ts` definen dos controllers cada uno y se revisaron a mano. No hay `PUT` ni `DELETE` en el backend |
+| 1 | Cada endpoint de §5.1–§5.3 existe en los controllers | *(Registro del 4-nov; hoy 66 rutas: 51 de navegador + 15 internas, ver fila 14)* 62 de 62 rutas documentadas existían (49 de navegador + 13 internas), cotejadas por método y ruta contra los decoradores `@Controller`/`@Get`/`@Post`/`@Patch`; `ingestion.controller.ts` e `internal-cases.controller.ts` definen dos controllers cada uno y se revisaron a mano. No hay `PUT` ni `DELETE` en el backend |
 | 2 | DTO citados | Leídos: auth, properties, obligations, occurrences, rentals, rent-charges, contracts, dashboard, attention, alerts, cases, process (propuestas/HITL), proposal-application, ingestion |
 | 3 | Estados y transiciones | Contrastados con [enums.ts](../../backend/src/database/schema/enums.ts), [case-lifecycle.ts](../../backend/src/cases/case-lifecycle.ts) y [hitl.service.ts](../../backend/src/cases/hitl.service.ts) |
 | 4 | Rutas privadas y cabeceras | Guard global ([jwt-auth.guard.ts](../../backend/src/auth/jwt-auth.guard.ts)); CORS ([app.setup.ts](../../backend/src/app.setup.ts)) y preflight en vivo |
@@ -2150,10 +2185,207 @@ Comprobaciones realizadas el 2026-11-04 (solo lectura; no se modificó código, 
 | 6 | Ejemplos sin secretos | Identificadores ficticios; sin contraseñas, tokens ni claves |
 | 7 | Rutas de archivos citados | Todos los enlaces relativos y anclas internas del documento resuelven a archivos/encabezados existentes (0 rotos) |
 | 8 | Diseño visual | La guía **no** propone paleta, tipografía, identidad ni disposición visual: se aplica la referencia externa del equipo; se conservan solo los requisitos de calidad (Nielsen, WCAG AA, responsive) en §10 |
-| 9 | Funcionalidad "terminada" solo con evidencia | La voz, Gmail, alertas periódicas y texto libre se marcan pendientes |
+| 9 | Funcionalidad "terminada" solo con evidencia | (Estado al 4-nov; ver la fila 14) La voz, Gmail, alertas periódicas y texto libre se marcaban pendientes |
 | 10 | Limitaciones vs. tareas | §17.3 |
-| 11 | Revisión final (diseño existente, pruebas seguras, ramas, Vercel) | Secciones 10, 12, 14 y 16 reescritas; inicio rápido añadido; el resto del contenido técnico se conserva. Las 62 rutas y sus contratos no cambiaron |
+| 11 | Revisión final (diseño existente, pruebas seguras, ramas, Vercel) | Secciones 10, 12, 14 y 16 reescritas; inicio rápido añadido; el resto del contenido técnico se conserva. Las 62 rutas de entonces y sus contratos no cambiaron (hoy 66, ver fila 14) |
 | 12 | Límite de CORS | Verificado en código: un único origen; admitir local + Vercel requiere cambio de backend (§12.4, §17.2) |
 | 13 | Notificaciones internas (§8.7) | Endpoints usados verificados (`/dashboard/summary` → `alerts.unread`, `/alerts`, `/alerts/:id/read`, `/alerts/:id/dismiss`, `/attention`, `/hitl-requests`); FCM, WebSockets y tiempo real confirmados como inexistentes; no se ejecutó ninguna evaluación ni se escribió en Neon |
+| 14 | Actualización del 7-nov-2026 | Se re-inspeccionaron workflows 04 y 06, esquema (`obligations`, `rentals`, `proposal_applications`), acciones aplicables, filtros y ramas de frontend. Se corrigió el estado de n8n/Gmail/voz/frontend, se añadieron `GET /alerts/summary` y `GET /system/status`, y se incorporaron las funciones nuevas como **propuestas** (§5.4, §19) y el informe final (§20). No se ejecutó código ni se llamó a servicios externos |
 
 **No verificado (declarado):** valores de configuración de producción en Render; comportamiento de `MediaRecorder` y de la validación estructural `audio/mp4` en dispositivos reales; respuestas del proxy de Render durante el arranque en frío; pruebas "contra Render" que el responsable del backend informó pero que no se repitieron aquí (login, HITL, ciclo de factura).
+
+---
+
+## 19. Asistente de texto y voz, recurrencias, búsquedas y dashboard organizado (funcionalidades nuevas aprobadas)
+
+> **Estado: PROPUESTO. Nada de lo descrito en esta sección existe todavía en el backend.** El detalle técnico (arquitectura, contratos, decisiones, plan y pruebas) está en la [guía de integración](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md) (§19–§24). Esta sección dice **qué debe construir el equipo frontend** y cómo **no simularlo**. El backend de estas funciones lo desarrolla el **integrador**; **n8n lo adapta solo la responsable del proyecto**. Hasta que cada contrato exista, se trabaja con **mocks tipados rotulados «propuesto»** y se marca la pantalla como *no integrada*.
+
+### 19.1 Estado de cada pieza (no mezclar)
+
+| Pieza | Backend hoy | n8n hoy | Qué hace el frontend |
+|---|---|---|---|
+| Grabación de voz y envío (`POST /ingestions/voice`) | **Implementado** | Workflow 04 existe (inactivo por defecto) | Construir la grabación (§10.8) y el seguimiento del caso |
+| Mensaje de texto (`POST /ingestions/text`, N1) | **Propuesto** | **No procesa texto** (adaptación pendiente de la responsable) | Construir el campo de texto; usar mock rotulado hasta que el endpoint exista |
+| Propuestas de **crear** obligación/período | **Implementado** | Existe | Mostrarlas (§8.10) |
+| Propuestas de **modificar** y de recurrencia | **Propuesto** | Pendiente | Preparar la vista antes/después; validar con Zod |
+| Períodos y cobros **generados automáticamente** | **Propuesto** (solo se guardan los campos) | Pendiente (workflow 06) | Formularios y vista «Próximos períodos»; no calcular el calendario en el cliente |
+| Búsqueda `q` (inmuebles y obligaciones: **obligatoria**; arriendos y contratos: opcional) | **Propuesto** | — | Barra de búsqueda con servidor |
+| Filtro por inmueble en bandeja/alertas | **No existe**; solución de cliente válida | — | Resolver recurso → inmueble en el cliente |
+
+### 19.2 Interfaz del asistente (un solo componente, dos entradas)
+
+Inspirada en la caja de mensajes de WhatsApp, sin ser un chat:
+
+- **Campo de texto** (máx. 1000 caracteres, contador visible) y botón **Enviar** (deshabilitado si está vacío o mientras se envía).
+- Botón de **micrófono**: pide permiso tras el gesto del usuario (con explicación previa), **temporizador**, **detener**, **reproducir** (`<audio controls>`), **regrabar**, **eliminar** y **enviar**. Límite ~2 min y ≤ 13 MiB. Formato y `FormData` según §10.8; `POST /ingestions/voice` (existente). Alternativa de subir un archivo solo si no hay soporte de grabación.
+- **No** hay respuesta «en vivo» ni indicador de «escribiendo…»: el procesamiento es asincrónico.
+- **Historial:** solo existe persistencia real a través de la **lista de casos** (`GET /cases`) y, si se implementa el N2 opcional, `GET /ingestions/text/:caseId` para recuperar el texto. **No inventar un sistema de chat**: la pantalla muestra «Mis solicitudes» = casos recientes con su estado. El texto enviado se guarda solo en memoria durante la sesión si N2 no existe.
+- El texto del usuario se muestra **siempre como texto** (nunca `dangerouslySetInnerHTML`).
+
+#### Estados visibles (todos derivados de respuestas reales)
+
+| Estado en pantalla | Cómo se sabe |
+|---|---|
+| **Mensaje recibido** | Respuesta 201/200 del envío |
+| **Pendiente de procesar** | `GET /cases/:id` → `received` (en cola) o `processing` sin propuesta |
+| **Interpretado** | Hay una propuesta en `GET /cases/:id/proposals` |
+| **Requiere aclaración** | Propuesta no aplicable con `missing`/`camposProblematicos`, o revisión con `options.choices` |
+| **Pendiente de confirmación** | Revisión HITL `pending` y no `overdue` |
+| **Cambio aplicado** | Respuesta 201 (o 200 `alreadyApplied`) de `POST …/apply` |
+| **Rechazado o fallido** | Revisión `rejected`/`expired`, o caso `failed` (mostrar `statusReason`) |
+
+Reglas: no marcar nada como realizado hasta que la respuesta real lo confirme; un caso que sigue `received` mucho tiempo se muestra «En cola. Se procesará cuando la automatización esté disponible» **sin prometer tiempos**; consultar el caso con la política de §11.10 de esta guía y §10.7 de la guía de integración (intervalos espaciados, solo con la pestaña visible, detener en estado terminal o `awaiting_human`).
+
+#### Contenido de una solicitud interpretada
+1. «Tu mensaje» (o transcripción si fue voz). 2. «Qué entendimos»: tipo de acción en lenguaje claro (crear recordatorio recurrente, cambiar vencimiento, registrar factura…). 3. **Evidencia** (`evidence.fragments`) junto a cada dato. 4. Datos propuestos legibles (proveedor, inmueble, día, anticipación, importe en COP desde texto). 5. **Faltantes y ambigüedades** con la acción siguiente (elegir una alternativa o «Completar en el formulario» con lo ya extraído). 6. Botones **Aprobar / Rechazar** y luego **Aplicar** (separados, §8.10). 7. Etiqueta «Sugerencia de IA — requiere tu confirmación».
+
+### 19.3 Contrato propuesto de ingesta de texto (N1)
+
+> **Contrato nuevo propuesto — hasta que el integrador lo implemente, es un mock.** Detalle y errores en la guía de integración §20.
+
+`POST /ingestions/text` — JWT, `application/json` (no multipart).
+
+```json
+// Petición
+{
+  "text": "Recuérdame pagar Claro el día 7 de cada mes",
+  "requestId": "<UUID generado por envío>",
+  "caseType": "household_obligation",
+  "propertyId": "<UUID opcional del inmueble que se está viendo>"
+}
+```
+```json
+// 201 (200 si se repite el requestId con el mismo texto)
+{
+  "caseId": "…", "correlationId": "…", "caseStatus": "received", "source": "form",
+  "job": { "type": "text.interpret", "status": "pending" },
+  "processing": "pending", "textLength": 43
+}
+```
+Reglas del cliente: `requestId = crypto.randomUUID()` **por mensaje**, reutilizado al reintentar el mismo envío; botón deshabilitado desde el primer clic; sin reintentos automáticos. Errores: 400 (vacío/largo/campos no permitidos como `ownerId`), 401, 404 (entidad ajena), 409 (`requestId` con otro texto), 429 (demasiados mensajes en curso: «Espera a que se procesen tus solicitudes anteriores»), 503. Con el kill switch activo el mensaje **se acepta** y queda en cola (`GET /system/status` informa «función limitada»).
+
+### 19.4 Formas de propuesta que la interfaz debe saber leer (propuestas)
+
+`proposedData` sigue siendo JSON libre: **unión discriminada por `action` validada con Zod; si no encaja, mostrar el contenido y «requiere revisión manual»**.
+
+| `action` | Estado | Cómo se muestra |
+|---|---|---|
+| `create_obligation_occurrence`, `create_obligation_with_occurrence` | **Existe** | Como hoy (§8.10) |
+| `create_recurring_obligation` | *Propuesto* | Obligación con frecuencia, día de vencimiento, anticipación e inmueble; «se generará el período de cada ciclo» |
+| `update_obligation_schedule` | *Propuesto* | **Tabla antes → después** (`dueDay`, `reminderDaysBefore`, `expectedAmount`): valor actual leído de `GET /obligations/:id`, valor propuesto de `changes`; avisar si el actual ya no coincide con `expected` |
+| `update_occurrence_details` | *Propuesto* | Importe/fecha real que completa un período ya generado |
+| `create_recurring_rental` | *Propuesto* | Arriendo (inmueble, canon, día de cobro, vigencia) y «se generarán cobros esperados; no se cobra ni se envía ningún mensaje» |
+| `guided` (pago/recepción) | *Propuesto*, **no aplicable** | Botón de navegación al diálogo existente de confirmación (O9/R9); **sin «Aplicar»** |
+
+Ejemplo de `update_obligation_schedule` (ficticio):
+```json
+{ "action": "update_obligation_schedule",
+  "data": { "obligationId": "<uuid>", "expected": { "dueDay": 7, "reminderDaysBefore": 3 },
+            "changes": { "dueDay": 15 } } }
+```
+
+#### Varias obligaciones coincidentes (decisión D17)
+
+**Obligatorio en el MVP.** Con **una sola** coincidencia, la edición por IA sigue el flujo completo (propuesta → aprobar → aplicar). Con **varias**, la interfaz **nunca elige una automáticamente**: muestra las alternativas reales con datos **leídos del servidor** (`GET /obligations/:id`, inmueble por `GET /properties/:id`) y ofrece **«Abrir y editar esta obligación»**, que lleva al formulario existente con el cambio sugerido **prellenado y sin guardar**. La persona revisa y guarda con el `PATCH` ya existente. En la revisión de selección **no hay botón «Aplicar»**.
+
+**Ampliación opcional (no bloquea la entrega; no se declara funcionando de extremo a extremo hasta que la responsable adapte n8n, A-7):** flujo con continuación HITL (N9), descrito a continuación.
+
+##### Flujo opcional con N9 (propuesto)
+
+Ejemplo: «Cambia el vencimiento de Claro al día 15» y existen *Claro Hogar* y *Claro Móvil*. La regla vigente **no cambia**: una revisión con `options.choices` **no se aplica**. Por eso el recorrido se hace en **dos revisiones**, sin saltarse HITL (detalle técnico: [guía de integración §19.5](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md#195-modificar-una-recurrencia-por-texto-o-voz-con-hitl)):
+
+1. **Revisión de selección** (`decisionType = conflict_resolution`, `options.context.kind = "target_selection"`): mostrar cada candidato con datos **leídos del servidor** (`GET /obligations/:id`, e inmueble por `GET /properties/:id`): proveedor, concepto, inmueble, día de vencimiento y aviso. **No** mostrar solo las etiquetas de la propuesta. Radio obligatorio; texto «Elige a cuál te refieres. Aún no se cambia nada». **Sin botón «Aplicar»** en esta revisión.
+2. Al pulsar «Elegir y continuar»: `POST /hitl-requests/:id/decision` con `{ decision:"approved", choice }` (existente) y, **solo si responde 200**, `POST /cases/:caseId/continuations` con `{ hitlRequestId }` (N9, propuesto).
+3. Mostrar «Preparando la propuesta…» y enlazar al **caso nuevo** (`caseId` de la respuesta). Consultarlo con la política de §11.10.
+4. Cuando el caso nuevo llega a `awaiting_human`, la **revisión final** (`data_confirmation`, **sin alternativas**) muestra **antes → después** con el valor vigente leído de `GET /obligations/:id`. La persona **aprueba** y luego **aplica** (§8.10). Si la obligación cambió entretanto, `apply` responde 409: recargar y mostrar el motivo.
+
+Casos a manejar: si el paso 2 aprobó pero N9 falló o se perdió la respuesta, mostrar «Falta continuar» con botón **Reintentar** (N9 es idempotente: devuelve 200 con el mismo caso) y volver a llamar a N9 al reabrir una selección ya aprobada; cero coincidencias → «No encontramos una obligación que coincida» con enlace al formulario de obligaciones (propuesta no aplicable); rechazar la selección → no ocurre nada; candidato archivado → 409 con mensaje. Hasta que existan N9 y la adaptación de n8n, esta pantalla se desarrolla con **mocks rotulados «propuesto»**.
+
+### 19.5 Recurrencias en formularios y vistas
+
+- **Formulario de obligación:** `frequency` (mensual, bimestral, trimestral, semestral, anual), `dueDay` (1–31, obligatorio si se activa la generación), `reminderDaysBefore` (0–60), `startsOn`, **interruptor «Generar períodos automáticamente»** (`autoGenerate`, propuesto N6). Texto de ayuda: «NotiHouse-Pal creará los registros de seguimiento; no paga ni envía mensajes». Si el día es 29–31: «En los meses más cortos se usará el último día del mes» (política D1 de la guía de integración; confirmar antes de publicar el texto).
+- **Vencimiento y aviso son campos distintos.** `dueDay` es el día en que vence; `reminderDaysBefore` (0–60) es cuántos días antes se quiere el aviso. Mostrar el cálculo («Vence el 15 · aviso 3 días antes → 12»). **Decisión D6 aprobada:** el backend separará la *ventana general de próximos vencimientos* (bandeja y KPI, sin cambios) del *aviso personalizado*, que respeta el valor elegido incluso si es menor de 7 días. **Hasta que ese cambio esté desplegado en Render**, el backend avisa **al menos 7 días antes**: mostrar «El sistema avisa al menos 7 días antes del vencimiento» y **no prometer «avísame 3 días antes»** antes de confirmarlo. Detalle y pruebas: [guía de integración §19.6](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md#196-vencimiento-y-anticipación-son-cosas-distintas).
+- **Formulario de arriendo:** canon, día de cobro, vigencia, `autoGenerate`. Cobros generados = **«esperados»**, nunca «cobrados».
+- **Vista «Próximos períodos»** (propuesta N8): lista de solo lectura calculada por el backend; si no existe, mostrar únicamente los períodos ya generados. **No reimplementar el calendario en React.**
+- Marcar claramente los registros generados solo si el backend lo informa (no inventar el origen).
+- Editar la recurrencia manualmente = `PATCH` existente (O4/R4); por IA = propuesta con HITL (§19.4). El cambio no altera períodos pagados: el texto de confirmación lo dice.
+
+### 19.6 Búsquedas y filtros
+
+- **Inmuebles (obligatoria):** barra «Buscar por nombre» (`q`, propuesto N3), p. ej. «Casa 18».
+- **Obligaciones (obligatoria):** `q` (proveedor **y** concepto; p. ej. «Claro», «Internet») + filtros **existentes** por inmueble, categoría y estado + «Sin inmueble asignado» (`unassigned=true`, recomendada N4; mientras no exista, recorrer todas las páginas con `pageSize=100` y filtrar `propertyId === null` en cliente).
+- Reglas: debounce ~300 ms; `AbortController`; página 1 al cambiar el término; **la paginación y el total son del servidor** (nunca filtrar solo los 20 resultados cargados); mínimo 2 caracteres; **no distingue mayúsculas/minúsculas** (D11; las tildes son opcionales); estado vacío «Ningún resultado para “…”» distinto de «Aún no tienes obligaciones»; término reflejado en la URL.
+- **Arriendos y contratos (opcional, N3b):** sin `q` hasta que el backend lo ofrezca; los filtros existentes bastan (`propertyId`, `status`, `endsFrom/To`). **No bloquean la entrega.**
+
+### 19.7 Dashboard por urgencia y vista por inmueble
+
+**Inicio** con datos reales, en este orden: (1) **vencido** (períodos, cobros, contratos con fecha superada); (2) **vence hoy / próximos**; (3) **revisiones HITL pendientes o por vencer**; (4) contratos próximos a terminar; (5) cobros de arriendo pendientes; (6) **casos en procesamiento** (`GET /cases?status=processing`); (7) alertas sin leer; (8) importes por moneda con `money.note`. Fuentes existentes: `GET /dashboard/summary`, `GET /attention`, `GET /alerts/summary`, `GET /system/status`, `GET /cases`, `GET /hitl-requests`. Cada tarjeta navega al detalle (convertir `resource.path`).
+
+**Por inmueble:** lista de inmuebles → detalle con obligaciones (`GET /obligations?propertyId=`), arriendos y cobros (`GET /rentals?propertyId=` → `…/charges`), contratos (`GET /contracts?propertyId=`) y accesos a alertas/pendientes de ese inmueble resueltos en cliente. Sección **«Sin inmueble asignado»** para obligaciones con `propertyId = null`. **No atribuir al backend** campos o filtros que no devuelve (la bandeja no trae `propertyId`).
+
+### 19.8 Confirmaciones manuales desde el asistente
+«Ya pagué el agua» y «Recibí el arriendo de noviembre» **no cambian nada**. El asistente muestra el período/cobro candidato y un botón que abre el **modal de confirmación existente** (pago: `reference` opcional; recepción: `evidence` **obligatoria**). Texto fijo: «NotiHouse-Pal no realiza ni verifica pagos: tú declaras que pagaste/recibiste». No existe una ruta alternativa que se salte esta confirmación y la interfaz no debe sugerirla.
+
+### 19.9 Restricciones para no simular funcionalidades
+- Ningún mensaje del asistente se «responde» con texto generado en el cliente ni con un guion; ninguna propuesta se fabrica en el navegador; ningún estado «Aplicado» sin respuesta real.
+- Los mocks de contratos **propuestos** se rotulan «propuesto», viven fuera del build de producción y no se presentan como integración (ni en demostraciones sin aviso).
+- Sin Gemini, Gmail ni n8n desde el navegador; sin secretos en `VITE_*`.
+- Sin chat general: el asistente rechaza o aclara lo que no sea del alcance del producto.
+- Mientras la responsable no adapte n8n (guía de integración §24), el asistente **no se declara funcionando de extremo a extremo**: el mensaje queda «en cola».
+
+### 19.10 Responsabilidades: equipo frontend vs. integrador vs. responsable
+
+| Tema | Equipo frontend | Integrador | Responsable del proyecto |
+|---|---|---|---|
+| Pantallas, componentes, estilos fieles a la referencia, accesibilidad, responsive | **Sí** | Apoya | Revisa |
+| Cliente HTTP, sesión, tipos, hooks de API | **Sí** (coordinado) | Revisa y corrige | — |
+| Contratos HTTP nuevos y backend de §19 | Consume | **Desarrolla y publica** | Autoriza decisiones y migraciones |
+| Conexión pantalla ↔ endpoint | Con el integrador | **Verifica** que no haya botones muertos ni DTO incompatibles | — |
+| Workflows de n8n | **No** | **No** (solo documenta adaptaciones) | **Única** persona que los modifica y ejecuta |
+| Pruebas con Gemini/Gmail/n8n reales, móvil real, sustentación | No | No | **Sí** |
+| Informe final | `INFORME_FINAL_FRONTEND.md` | `INFORME_FINAL_INTEGRACION.md` + `ADAPTACIONES_N8N_PENDIENTES.md` | Recibe ambos |
+
+### 19.11 Pruebas y criterios de entrega del frontend
+
+Decisiones cerradas relevantes para esta interfaz (D1–D18, [guía de integración §21](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md#21-decisiones-técnicas-cerradas-del-mvp-d1d18)): el aviso personalizado respeta `reminderDaysBefore` (D6; hasta que se despliegue en Render no se promete menos de 7 días); el historial son los casos, sin chat (D10); búsqueda sin distinguir mayúsculas (D11); el dashboard y los pendientes por inmueble se organizan **en el frontend** con las APIs existentes (D13); máximo 3 mensajes de texto abiertos (D15); con varias obligaciones coincidentes **nunca se elige una automáticamente** (D17).
+
+**Verificaciones del frontend antes de entregar:** navegación completa · formularios con **datos reales** · estados de carga, vacío y error · estados del asistente y de los casos (`received`, `processing`, `awaiting_human`, `completed`, `failed`) · *polling* sin solicitudes duplicadas · actualización de datos tras cada mutación · **aprobar no equivale a aplicar** (HITL) · responsive y accesibilidad · limpieza de sesión y caché al cerrar sesión o cambiar de usuario · el frontend **nunca** llama a n8n, Gemini, Neon ni rutas `/internal/*`. No se inventan cifras ni se declaran verificadas integraciones externas con mocks.
+
+**Cronograma:** desarrollo y pruebas aisladas preferiblemente hasta el martes 10; integración real y despliegues el miércoles 11 y jueves 12 (a cargo de la responsable); viernes 13 pruebas finales y ensayo; sustentación el sábado 14 ([guía de integración §22.6](../integracion/GUIA_INTEGRACION_FRONTEND_BACKEND_MVP.md#226-cronograma-y-prioridades)).
+
+---
+
+## 20. Informe final obligatorio del equipo frontend
+
+Al terminar el desarrollo de la interfaz, el equipo frontend **debe crear** `docs/frontend/INFORME_FINAL_FRONTEND.md`. **Sin este informe la tarea no se considera entregada.** Se escribe con el estado real del código al momento de la entrega (no antes) y es independiente del informe del integrador (`docs/integracion/INFORME_FINAL_INTEGRACION.md`); ambos reflejan de forma coherente lo pendiente indicando quién lo termina.
+
+### 20.1 Contenido obligatorio
+1. **Resumen ejecutivo:** pantallas y funcionalidades desarrolladas.
+2. **Estado de Git:** ramas, commits y cambios pendientes de integración.
+3. **Arquitectura frontend:** carpetas, componentes, rutas, hooks, servicios y librerías.
+4. **Pantallas desarrolladas:** login, dashboard, inmuebles, obligaciones, períodos, arriendos, cobros, contratos, documentos, asistente, alertas, casos y HITL.
+5. **Funcionalidades interactivas:** formularios, búsquedas, filtros, botones, navegación, carga de PDF y grabación de audio.
+6. **Asistente de texto y voz:** interfaz implementada, comportamiento y conexión con los contratos del backend (indicando si es real o mock).
+7. **Consumo de API:** tabla de endpoints conectados y estado de cada integración.
+8. **Experiencia de usuario:** responsive, accesibilidad, estados de carga, errores y validaciones.
+9. **Autenticación y seguridad:** login, JWT, rutas protegidas, cierre de sesión y expiración.
+10. **Pruebas realizadas:** compilación, lint, pruebas unitarias y verificaciones reales, con resultados.
+11. **Problemas encontrados:** errores corregidos y limitaciones conocidas.
+12. **Funcionalidades pendientes:** pantallas incompletas, endpoints sin conectar o dependencias del backend.
+13. **Instrucciones de ejecución:** iniciar el frontend, variables públicas, conectar la API.
+14. **Conclusión:** qué está terminado, qué requiere integración y qué está pendiente de pruebas finales.
+
+### 20.2 Requisitos del informe
+Markdown en `docs/frontend/`; basado en el código y las pruebas reales; con referencias a archivos, rutas, módulos y endpoints; distinguir **implementado / integrado / probado / pendiente**; no afirmar que algo funciona de extremo a extremo si depende de n8n sin validar; no ocultar problemas; **sin contraseñas, tokens ni claves**; sin inventar resultados ni cifras; comprensible para quien no participó.
+
+**Matriz de estado final (obligatoria):**
+
+| Funcionalidad | Implementado | Integrado localmente | Probado en entorno aislado | Probado con servicios reales | Pendiente / bloqueado |
+|---|---|---|---|---|---|
+
+«Probado con servicios reales» significa Gemini, Gmail, n8n, Neon o Render **reales**; un mock no lo cumple.
+
+y una sección titulada **«Qué debe hacer la responsable del proyecto después de recibir esta entrega»** con las acciones que le corresponden (desplegar, activar, adaptar n8n, pruebas con Gemini/Gmail, pruebas en celular), sin trasladarle desarrollo que el equipo debía terminar.
+
+### 20.3 Entrega mínima
+Código frontend desarrollado **en su rama de trabajo, consolidado por el integrador en `integration/mvp-final`** + `docs/frontend/INFORME_FINAL_FRONTEND.md`, que debe indicar **la rama y el commit de entrega**, las APIs realmente conectadas, el asistente de voz/texto, el polling y las alertas, las pruebas ejecutadas con sus resultados, los errores conocidos y los pasos necesarios para las pruebas finales de la responsable. Coordinar con el integrador para que ambos informes sean coherentes.
