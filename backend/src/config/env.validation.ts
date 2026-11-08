@@ -9,7 +9,10 @@ export type NodeEnvironment = (typeof NODE_ENVIRONMENTS)[number];
 export interface EnvironmentVariables {
   NODE_ENV: NodeEnvironment;
   PORT: number;
+  /** Valor crudo de la variable (uno o varios orígenes separados por comas). */
   FRONTEND_URL: string;
+  /** Orígenes ya separados, recortados y sin duplicados (D18). CORS los usa. */
+  FRONTEND_URLS: string[];
   /** Cadena de Neon con pooling. Opcional solo en `test`. */
   DATABASE_URL?: string;
   /** Secreto HS256 de los JWT. Opcional solo en `test`. */
@@ -101,6 +104,9 @@ export const DUE_DATE_DEFAULTS = {
 /** Máximo de proxies de confianza admitido por configuración. */
 export const MAX_TRUST_PROXY_HOPS = 3;
 
+/** Máximo de orígenes CORS admitidos en FRONTEND_URL (D18). */
+export const MAX_FRONTEND_ORIGINS = 5;
+
 const MIB = 1024 * 1024;
 /** Valores iniciales del MVP y techos que no se pueden superar por configuración. */
 export const UPLOAD_LIMITS = {
@@ -147,10 +153,28 @@ export function validateEnv(
 
   const frontendUrl =
     readString(config, 'FRONTEND_URL') ?? DEFAULTS.FRONTEND_URL;
-  if (!isHttpOrigin(frontendUrl)) {
+  const frontendUrls = [
+    ...new Set(
+      frontendUrl
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter((origin) => origin.length > 0),
+    ),
+  ];
+  if (frontendUrls.length === 0) {
+    errors.push('FRONTEND_URL debe tener al menos un origen');
+  } else if (frontendUrls.length > MAX_FRONTEND_ORIGINS) {
     errors.push(
-      `FRONTEND_URL debe ser un origen http(s) válido, sin ruta (recibido: "${frontendUrl}")`,
+      `FRONTEND_URL admite hasta ${MAX_FRONTEND_ORIGINS} orígenes separados por comas`,
     );
+  } else {
+    for (const origin of frontendUrls) {
+      if (!isHttpOrigin(origin)) {
+        errors.push(
+          `FRONTEND_URL debe ser una lista de orígenes http(s) válidos, sin ruta (recibido: "${origin}")`,
+        );
+      }
+    }
   }
 
   // El mensaje de error nunca incluye el valor, porque contiene credenciales.
@@ -228,6 +252,7 @@ export function validateEnv(
     NODE_ENV: nodeEnv as NodeEnvironment,
     PORT: port,
     FRONTEND_URL: frontendUrl,
+    FRONTEND_URLS: frontendUrls,
     DATABASE_URL: databaseUrl,
     JWT_SECRET: jwtSecret,
     N8N_SERVICE_TOKEN: serviceToken,
