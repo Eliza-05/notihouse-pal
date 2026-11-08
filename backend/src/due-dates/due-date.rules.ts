@@ -133,6 +133,29 @@ export function evaluateOccurrence(
   );
 }
 
+/**
+ * D6 (aprobada 7-nov-2026): ventana **personalizada**, solo para decidir si
+ * se crea o se resuelve la alerta `obligation_due_soon`/`obligation_overdue`
+ * de un período. A diferencia de {@link evaluateOccurrence} (que usa
+ * `max(DUE_DATES_OBLIGATION_DAYS, reminderDaysBefore)` para la bandeja, el
+ * KPI del dashboard y `condition`, sin cambios), aquí el umbral es
+ * `reminderDaysBefore` solo: con 3, el aviso aparece 3 días antes, no 7.
+ * `overdue` no depende del umbral, así que es idéntico en ambas.
+ */
+export function evaluateOccurrenceAlert(
+  row: { dueDate: string; status: string; reminderDaysBefore: number },
+  today: string,
+): DueEvaluation {
+  return evaluateDueDate(
+    {
+      dueDate: row.dueDate,
+      open: isOpenStatus('obligation_occurrence', row.status),
+      windowDays: row.reminderDaysBefore,
+    },
+    today,
+  );
+}
+
 /** El valor del cobro no interviene: cambiar el canon no altera cobros ya registrados. */
 export function evaluateRentCharge(
   row: { dueDate: string; status: string },

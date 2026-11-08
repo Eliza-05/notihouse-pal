@@ -9,6 +9,7 @@ import {
   evaluateContract,
   evaluateHitl,
   evaluateOccurrence,
+  evaluateOccurrenceAlert,
   evaluateRentCharge,
   type HitlEvaluation,
 } from './due-date.rules.js';
@@ -54,6 +55,14 @@ export class DueDateEvaluationService {
     today: string,
   ): DueEvaluation {
     return evaluateOccurrence(row, this.rules, today);
+  }
+
+  /** D6: ventana personalizada, solo para la alerta de un período. */
+  occurrenceAlert(
+    row: { dueDate: string; status: string; reminderDaysBefore: number },
+    today: string,
+  ): DueEvaluation {
+    return evaluateOccurrenceAlert(row, today);
   }
 
   rentCharge(

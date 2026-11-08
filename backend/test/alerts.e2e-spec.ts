@@ -87,7 +87,11 @@ describe('Alerts (e2e)', () => {
           concept: 'Energía',
           category: 'electricity',
           expectedAmount: '145000.00',
-          reminderDaysBefore: 3,
+          // 7, no 3: varias pruebas de este archivo usan vencimientos de
+          // hasta 6 días para ejercer la mecánica de alertas (lotes,
+          // concurrencia, cambio de fecha), no la ventana personalizada de
+          // D6 (cubierta en due-date.rules.spec.ts y alerts.e2e-spec "D6").
+          reminderDaysBefore: 7,
         })
         .expect(201)
     ).body.id as string;
@@ -736,6 +740,101 @@ describe('Alerts (e2e)', () => {
       expect(
         columns.filter((c) => /deliver|sent|push|email/i.test(c.column_name)),
       ).toEqual([]);
+    });
+  });
+
+  /**
+   * D6 (aprobada 7-nov-2026): la alerta `obligation_due_soon` usa la ventana
+   * personalizada (`reminderDaysBefore`), no la general de 7 días. Prueba de
+   * aceptación de la guía, de punta a punta contra la API real.
+   */
+  describe('D6: personalized reminder window for obligation_due_soon', () => {
+    it('does not alert within the general 7-day window if reminderDaysBefore is narrower, and reacts to changing it', async () => {
+      const obligation = (
+        await h
+          .as(laura)
+          .post('/obligations', {
+            providerName: 'D6',
+            concept: `D6 ${Date.now()}`,
+            category: 'other',
+            reminderDaysBefore: 3,
+          })
+          .expect(201)
+      ).body.id as string;
+      const due = clock.d(5);
+      const occurrence = (
+        await h
+          .as(laura)
+          .post(`/obligations/${obligation}/occurrences`, {
+            periodStart: due,
+            periodEnd: due,
+            dueDate: due,
+          })
+          .expect(201)
+      ).body.id as string;
+
+      // A 5 días del vencimiento, dentro de la ventana general (7) pero no
+      // de la personalizada (3): no se crea la alerta.
+      await evaluate().expect(200);
+      expect(await activeAlerts(occurrence)).toEqual([]);
+
+      // 3 → 8: ahora 5 días sí entra en la ventana personalizada; se crea.
+      await h
+        .as(laura)
+        .patch(`/obligations/${obligation}`, { reminderDaysBefore: 8 })
+        .expect(200);
+      await evaluate().expect(200);
+      const created = await activeAlerts(occurrence);
+      expect(created).toMatchObject([{ type: 'obligation_due_soon' }]);
+
+      // 8 → 3: vuelve a quedar fuera; la alerta se resuelve, no se duplica.
+      await h
+        .as(laura)
+        .patch(`/obligations/${obligation}`, { reminderDaysBefore: 3 })
+        .expect(200);
+      await evaluate().expect(200);
+      expect(await activeAlerts(occurrence)).toEqual([]);
+      const [resolved] = await sql<{ resolution_reason: string }>(
+        `SELECT resolution_reason FROM alerts WHERE id = $1`,
+        [created[0]!.id],
+      );
+      expect(resolved!.resolution_reason).toBe('no_longer_applicable');
+    });
+
+    it('never changes the general attention window or the dashboard KPI', async () => {
+      const obligation = (
+        await h
+          .as(laura)
+          .post('/obligations', {
+            providerName: 'D6-general',
+            concept: `D6-general ${Date.now()}`,
+            category: 'other',
+            reminderDaysBefore: 1,
+          })
+          .expect(201)
+      ).body.id as string;
+      const due = clock.d(6);
+      await h
+        .as(laura)
+        .post(`/obligations/${obligation}/occurrences`, {
+          periodStart: due,
+          periodEnd: due,
+          dueDate: due,
+        })
+        .expect(201);
+
+      // La bandeja sigue usando la ventana general (max(7, 1) = 7): 6 días
+      // entra, aunque la alerta (ventana personalizada) no se cree.
+      await evaluate().expect(200);
+      const tray = (
+        await h.as(laura).get('/attention?kind=obligation_occurrence&pageSize=100').expect(200)
+      ).body;
+      expect(
+        tray.items.some(
+          (item: { relevantDate: string; condition: string }) =>
+            item.relevantDate === due && item.condition === 'upcoming',
+        ),
+      ).toBe(true);
     });
   });
 });

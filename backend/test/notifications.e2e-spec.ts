@@ -55,7 +55,9 @@ describe('Persistent internal notifications N1–N12 (e2e)', () => {
     clock = createTestClock();
     h = await createTestApp(t.db, withClock(clock));
     const d = clock.d;
-    // Laura: un período que entra en el umbral (7 días por defecto) dentro de 2 días.
+    // Laura: un período que entra en el umbral (7 días, su propio aviso)
+    // dentro de 2 días. 7 (no 3) para que la ventana general y la
+    // personalizada de D6 coincidan: esta prueba no es sobre D6.
     ids.obligation = (
       await h
         .as(users.laura)
@@ -63,7 +65,7 @@ describe('Persistent internal notifications N1–N12 (e2e)', () => {
           providerName: 'Empresa de energía',
           concept: 'Energía',
           category: 'electricity',
-          reminderDaysBefore: 3,
+          reminderDaysBefore: 7,
         })
         .expect(201)
     ).body.id;
@@ -86,7 +88,7 @@ describe('Persistent internal notifications N1–N12 (e2e)', () => {
           providerName: 'Internet Demo',
           concept: 'Internet',
           category: 'internet',
-          reminderDaysBefore: 3,
+          reminderDaysBefore: 7,
         })
         .expect(201)
     ).body.id;
