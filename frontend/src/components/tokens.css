@@ -1,0 +1,311 @@
+/*
+ * Sistema de diseño de la app autenticada (todo lo que no sea Landing/Login,
+ * que conservan su propio lienzo visual). Provisional hasta que exista una
+ * referencia visual externa: paleta roja/ámbar coherente con la marca
+ * (--landing-primary de landing.css), tipografía Manrope/Public Sans.
+ * Escopado a .app-shell para no chocar con los tokens de .landing-page.
+ */
+.app-shell {
+  --color-primary: #e11d2e;
+  --color-primary-dark: #b5121b;
+  --color-primary-light: #fde8e9;
+  --color-accent: #d97706;
+  --color-accent-light: #fef3c7;
+  --color-success: #16a34a;
+  --color-success-light: #dcfce7;
+  --color-danger: #dc2626;
+  --color-danger-light: #fee2e2;
+  --color-warning: #d97706;
+  --color-warning-light: #fef3c7;
+  --color-info: #2563eb;
+  --color-info-light: #dbeafe;
+
+  --color-bg: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-border: #e5e5e8;
+  --color-text: #1d1d1f;
+  --color-text-muted: #6b6b70;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  font-family: 'Manrope', 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--color-text);
+  background: var(--color-bg);
+  min-height: 100dvh;
+}
+
+@media (prefers-color-scheme: dark) {
+  .app-shell:not([data-theme='light']) {
+    --color-bg: #15151a;
+    --color-surface: #1f1f24;
+    --color-border: #303036;
+    --color-text: #f2f2f3;
+    --color-text-muted: #a1a1a6;
+    --color-primary-light: #3a1416;
+    --color-accent-light: #3a2a0a;
+    --color-success-light: #0f2a17;
+    --color-danger-light: #351213;
+    --color-warning-light: #3a2a0a;
+    --color-info-light: #122234;
+  }
+}
+
+.app-shell * {
+  box-sizing: border-box;
+}
+
+.app-shell button {
+  font-family: inherit;
+}
+
+.app-shell a {
+  color: var(--color-primary);
+}
+
+/* ------------------------------------------------------------------ Botones */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 0.55rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+  line-height: 1.2;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+}
+.btn-secondary {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-bg);
+}
+.btn-danger {
+  background: var(--color-danger);
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--color-text-muted);
+}
+.btn-ghost:hover:not(:disabled) {
+  color: var(--color-text);
+}
+.btn-sm {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+/* ------------------------------------------------------------------ Cards */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 1.25rem;
+}
+.card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+}
+
+/* ------------------------------------------------------------------ Forms */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.9rem;
+}
+.field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.field input,
+.field select,
+.field textarea {
+  font-family: inherit;
+  font-size: 0.92rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.field-error {
+  color: var(--color-danger);
+  font-size: 0.8rem;
+}
+.field-help {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+.field-checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.field-checkbox input {
+  margin-top: 0.2rem;
+  width: auto;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 1rem;
+}
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------------ Tables */
+.table-wrap {
+  overflow-x: auto;
+}
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+table.data-table th {
+  text-align: left;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--color-border);
+}
+table.data-table td {
+  padding: 0.65rem 0.7rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+table.data-table tbody tr:hover {
+  background: var(--color-bg);
+}
+
+/* ------------------------------------------------------------------ Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge-neutral {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+.badge-success {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+.badge-warning {
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+}
+.badge-danger {
+  background: var(--color-danger-light);
+  color: var(--color-danger);
+}
+.badge-info {
+  background: var(--color-info-light);
+  color: var(--color-info);
+}
+
+/* ------------------------------------------------------------------ States */
+.state-block {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  color: var(--color-text-muted);
+}
+.state-block h3 {
+  margin: 0.5rem 0 0.3rem;
+  color: var(--color-text);
+  font-size: 1rem;
+}
+.state-block p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------------------ Misc */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.text-muted {
+  color: var(--color-text-muted);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
