@@ -1,3 +1,4 @@
+import { AppShell } from '../components/AppShell'
 import { LandingPage } from '../features/landing/LandingPage'
 import { DashboardPage } from '../features/dashboard/DashboardPage'
 import { useAuth } from '../lib/auth/useAuth'
@@ -10,5 +11,10 @@ import { useAuth } from '../lib/auth/useAuth'
  */
 export function RootRoute() {
   const { isAuthenticated } = useAuth()
-  return isAuthenticated ? <DashboardPage /> : <LandingPage />
+  if (!isAuthenticated) return <LandingPage />
+  return (
+    <AppShell>
+      <DashboardPage />
+    </AppShell>
+  )
 }
