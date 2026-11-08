@@ -4,10 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, count, eq, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, type SQL } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthenticatedUser } from '../auth/authenticated-user.js';
-import { assertHasChanges, diffPatch } from '../common/dto-helpers.js';
+import {
+  assertHasChanges,
+  diffPatch,
+  escapeLikePattern,
+} from '../common/dto-helpers.js';
 import { offsetOf, type Page } from '../common/pagination.js';
 import {
   DRIZZLE,
@@ -80,6 +84,11 @@ export class PropertiesService {
   ): Promise<Page<PropertyResponseDto>> {
     const filters: SQL[] = [eq(properties.ownerId, user.profileId)];
     if (query.status) filters.push(eq(properties.status, query.status));
+    if (query.q) {
+      filters.push(
+        ilike(properties.name, `%${escapeLikePattern(query.q)}%`),
+      );
+    }
     const where = and(...filters);
 
     const [items, [total]] = await Promise.all([

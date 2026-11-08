@@ -1,13 +1,18 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, count, eq, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthenticatedUser } from '../auth/authenticated-user.js';
-import { assertHasChanges, diffPatch } from '../common/dto-helpers.js';
+import {
+  assertHasChanges,
+  diffPatch,
+  escapeLikePattern,
+} from '../common/dto-helpers.js';
 import { offsetOf, type Page } from '../common/pagination.js';
 import {
   DRIZZLE,
@@ -39,6 +44,7 @@ export const obligationColumns = {
   reminderDaysBefore: obligations.reminderDaysBefore,
   startsOn: obligations.startsOn,
   status: obligations.status,
+  autoGenerate: obligations.autoGenerate,
   createdAt: obligations.createdAt,
   updatedAt: obligations.updatedAt,
 };
@@ -59,11 +65,26 @@ export class ObligationsService {
     user: AuthenticatedUser,
     query: ListObligationsQueryDto,
   ): Promise<Page<ObligationResponseDto>> {
+    if (query.propertyId && query.unassigned) {
+      throw new BadRequestException(
+        'unassigned no es compatible con propertyId',
+      );
+    }
     const filters: SQL[] = [eq(obligations.ownerId, user.profileId)];
     if (query.propertyId)
       filters.push(eq(obligations.propertyId, query.propertyId));
+    if (query.unassigned) filters.push(isNull(obligations.propertyId));
     if (query.status) filters.push(eq(obligations.status, query.status));
     if (query.category) filters.push(eq(obligations.category, query.category));
+    if (query.q) {
+      const pattern = `%${escapeLikePattern(query.q)}%`;
+      filters.push(
+        or(
+          ilike(obligations.providerName, pattern),
+          ilike(obligations.concept, pattern),
+        )!,
+      );
+    }
     const where = and(...filters);
 
     const [items, [total]] = await Promise.all([
@@ -137,6 +158,7 @@ export class ObligationsService {
         reminderDaysBefore: dto.reminderDaysBefore ?? 3,
         startsOn: dto.startsOn ?? null,
         status: dto.status ?? 'active',
+        autoGenerate: dto.autoGenerate ?? false,
       })
       .returning(obligationColumns);
     await this.audit.recordUserAction(tx, {
@@ -188,6 +210,7 @@ export class ObligationsService {
         reminderDaysBefore: dto.reminderDaysBefore,
         startsOn: dto.startsOn,
         status: dto.status,
+        autoGenerate: dto.autoGenerate,
       };
       const { changes, values } = diffPatch(current, patch);
       if (changes.length === 0) return current;

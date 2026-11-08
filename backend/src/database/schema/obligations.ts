@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   date,
   foreignKey,
@@ -46,6 +47,8 @@ export const obligations = pgTable(
     reminderDaysBefore: smallint('reminder_days_before').notNull().default(3),
     startsOn: date('starts_on', { mode: 'string' }),
     status: obligationStatus('status').notNull().default('active'),
+    /** Opt-in: el generador de recurrencia solo procesa registros con `true`. */
+    autoGenerate: boolean('auto_generate').notNull().default(false),
     ...timestamps(),
   },
   (t) => [

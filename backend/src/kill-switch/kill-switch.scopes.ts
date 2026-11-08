@@ -19,6 +19,7 @@ export const KILL_SWITCH_SCOPES = [
   'hitl_expiry',
   'alert_evaluation',
   'proposal_application',
+  'recurrence_generation',
 ] as const;
 export type KillSwitchScope = (typeof KILL_SWITCH_SCOPES)[number];
 
@@ -33,6 +34,7 @@ export const SCOPE_LABELS: Record<KillSwitchScope, string> = {
   hitl_expiry: 'Vencimiento automático de revisiones humanas',
   alert_evaluation: 'Generación automática de alertas',
   proposal_application: 'Aplicación de propuestas aprobadas',
+  recurrence_generation: 'Generación automática de períodos y cobros recurrentes',
 };
 
 /** Tipo de trabajo de la cola → componente que lo procesa. */

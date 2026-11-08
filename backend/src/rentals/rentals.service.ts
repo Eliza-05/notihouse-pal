@@ -42,6 +42,7 @@ export const rentalColumns = {
   startsOn: rentals.startsOn,
   endsOn: rentals.endsOn,
   status: rentals.status,
+  autoGenerate: rentals.autoGenerate,
   createdAt: rentals.createdAt,
   updatedAt: rentals.updatedAt,
 };
@@ -128,6 +129,7 @@ export class RentalsService {
           startsOn: dto.startsOn,
           endsOn: dto.endsOn ?? null,
           status: dto.status ?? 'active',
+          autoGenerate: dto.autoGenerate ?? false,
         })
         .returning(rentalColumns);
       await this.audit.recordUserAction(tx, {
@@ -183,6 +185,7 @@ export class RentalsService {
         startsOn: dto.startsOn,
         endsOn: dto.endsOn,
         status: dto.status,
+        autoGenerate: dto.autoGenerate,
       };
       assertDateOrder(
         patch.startsOn ?? current.startsOn,

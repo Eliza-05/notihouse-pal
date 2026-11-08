@@ -47,3 +47,48 @@ export function monthBounds(date: string): { start: string; next: string } {
   const next = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
   return { start, next };
 }
+
+/** Año y mes (1-12) como pareja, para aritmética de ciclos de recurrencia. */
+export interface YearMonth {
+  year: number;
+  month: number;
+}
+
+export function yearMonthOf(date: string): YearMonth {
+  const [year, month] = date.split('-').map(Number) as [number, number];
+  return { year, month };
+}
+
+/** Desplaza un año-mes por `months` (puede ser negativo). */
+export function addMonthsToYearMonth(ym: YearMonth, months: number): YearMonth {
+  const total = ym.year * 12 + (ym.month - 1) + months;
+  return { year: Math.floor(total / 12), month: (((total % 12) + 12) % 12) + 1 };
+}
+
+/** Meses completos de `a` a `b` (negativo si `b` es anterior a `a`). */
+export function monthsBetweenYearMonth(a: YearMonth, b: YearMonth): number {
+  return b.year * 12 + b.month - (a.year * 12 + a.month);
+}
+
+function pad(n: number, width: number): string {
+  return String(n).padStart(width, '0');
+}
+
+export function daysInMonth(ym: YearMonth): number {
+  return new Date(Date.UTC(ym.year, ym.month, 0)).getUTCDate();
+}
+
+/** Primer y último día (`YYYY-MM-DD`) del mes `ym`. */
+export function monthRange(ym: YearMonth): { start: string; end: string } {
+  const prefix = `${pad(ym.year, 4)}-${pad(ym.month, 2)}`;
+  return {
+    start: `${prefix}-01`,
+    end: `${prefix}-${pad(daysInMonth(ym), 2)}`,
+  };
+}
+
+/** Día `day` dentro del mes `ym`, recortado al último día si el mes es corto (D1). */
+export function clampedDayInMonth(ym: YearMonth, day: number): string {
+  const d = Math.min(day, daysInMonth(ym));
+  return `${pad(ym.year, 4)}-${pad(ym.month, 2)}-${pad(d, 2)}`;
+}

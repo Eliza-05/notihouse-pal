@@ -79,7 +79,12 @@ describe('Rentals and rent charges (e2e)', () => {
           ...body,
         })
         .expect(201)
-    ).body as { id: string; expectedAmount: string; status: string };
+    ).body as {
+      id: string;
+      expectedAmount: string;
+      status: string;
+      autoGenerate: boolean;
+    };
 
   const newCharge = async (
     user: TestUser,
@@ -182,6 +187,7 @@ describe('Rentals and rent charges (e2e)', () => {
         startsOn: '2026-01-01',
         endsOn: null,
         status: 'active',
+        autoGenerate: false,
       });
       expect(res.body).not.toHaveProperty('ownerId');
 
@@ -198,6 +204,20 @@ describe('Rentals and rent charges (e2e)', () => {
         result: 'success',
         correlation_id: correlationId,
       });
+    });
+
+    it('turns auto-generation on at creation or via patch', async () => {
+      const property = await newProperty(laura);
+      const on = await newRental(laura, property, { autoGenerate: true });
+      expect(on.autoGenerate).toBe(true);
+
+      const off = await newRental(laura, await newProperty(laura));
+      expect(off.autoGenerate).toBe(false);
+      const patched = await h
+        .as(laura)
+        .patch(`/rentals/${off.id}`, { autoGenerate: true })
+        .expect(200);
+      expect(patched.body.autoGenerate).toBe(true);
     });
 
     it('rejects foreign, nonexistent and inactive properties without writing', async () => {

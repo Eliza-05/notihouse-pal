@@ -52,6 +52,14 @@ export function diffPatch<P extends object>(
 }
 
 /**
+ * Escapa `\`, `%` y `_` de un término de búsqueda para que `ILIKE` lo trate
+ * como texto literal y no como comodines.
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+/**
  * Exige `end >= start` para fechas `YYYY-MM-DD` ya validadas (su orden
  * lexicográfico coincide con el cronológico). Un `end` nulo no se compara.
  */

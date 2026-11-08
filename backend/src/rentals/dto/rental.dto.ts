@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -83,6 +84,15 @@ export class CreateRentalDto {
   @IsOptional()
   @IsIn(INITIAL_RENTAL_STATUSES)
   status?: (typeof INITIAL_RENTAL_STATUSES)[number];
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Generar automáticamente los próximos cobros. No cobra ni envía mensajes.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoGenerate?: boolean;
 }
 
 /**
@@ -142,6 +152,14 @@ export class UpdateRentalDto {
   @OptionalNotNull()
   @IsIn(RENTAL_STATUSES)
   status?: RentalStatus;
+
+  @ApiPropertyOptional({
+    description:
+      'Generar automáticamente los próximos cobros. No cobra ni envía mensajes.',
+  })
+  @OptionalNotNull()
+  @IsBoolean()
+  autoGenerate?: boolean;
 }
 
 export class ListRentalsQueryDto extends PaginationQueryDto {
@@ -186,6 +204,9 @@ export class RentalResponseDto {
 
   @ApiProperty({ enum: RENTAL_STATUSES })
   status: RentalStatus;
+
+  @ApiProperty()
+  autoGenerate: boolean;
 
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt: Date;

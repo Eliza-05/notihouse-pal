@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Length,
   MaxLength,
 } from 'class-validator';
 import {
@@ -79,6 +80,17 @@ export class ListPropertiesQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(PROPERTY_STATUSES)
   status?: PropertyStatus;
+
+  @ApiPropertyOptional({
+    description: 'Búsqueda por nombre (insensible a mayúsculas)',
+    minLength: 2,
+    maxLength: 60,
+  })
+  @Trim()
+  @IsOptional()
+  @IsString()
+  @Length(2, 60)
+  q?: string;
 }
 
 export class PropertyResponseDto {
