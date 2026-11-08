@@ -52,6 +52,10 @@ import {
   UploadDocumentDto,
   UploadVoiceDto,
 } from './dto/ingestion.dto.js';
+import {
+  CreateTextIngestionDto,
+  TextIngestionResponseDto,
+} from './dto/text-ingestion.dto.js';
 import type { ReceivedFile } from './file-policy.js';
 import { IngestionService } from './ingestion.service.js';
 import { ReceiveUpload } from './upload-receiver.js';
@@ -129,12 +133,37 @@ export class IngestionController {
   ): Promise<IngestionResponseDto> {
     return respond(res, await this.ingestion.ingestVoice(user, file, dto));
   }
+
+  @Post('text')
+  @ApiConsumes('application/json')
+  @ApiOperation({
+    summary: 'Enviar un mensaje de texto al asistente',
+    description:
+      'Crea un caso (`form`) y un trabajo `text.interpret`. No interpreta nada aquí: ' +
+      'no se llama a Gemini desde esta ruta. Se acepta aunque el kill switch limite ' +
+      'el procesamiento (queda en cola).',
+  })
+  @ApiCreatedResponse({ type: TextIngestionResponseDto })
+  @ApiOkResponse({
+    type: TextIngestionResponseDto,
+    description: 'Repetición idempotente (mismo requestId)',
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'Más de 3 mensajes propios en proceso',
+  })
+  async createText(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateTextIngestionDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<TextIngestionResponseDto> {
+    return respond(res, await this.ingestion.ingestText(user, dto));
+  }
 }
 
-function respond(
+function respond<T extends { correlationId: string }>(
   res: Response,
-  { created, result }: { created: boolean; result: IngestionResponseDto },
-): IngestionResponseDto {
+  { created, result }: { created: boolean; result: T },
+): T {
   res.status(created ? 201 : 200);
   res.setHeader(CORRELATION_HEADER, result.correlationId);
   return result;

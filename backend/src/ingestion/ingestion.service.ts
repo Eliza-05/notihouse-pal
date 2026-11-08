@@ -1,13 +1,16 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { and, eq, ne } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { and, count, eq, inArray, ne } from 'drizzle-orm';
+import { createHash, randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { AuditService } from '../audit/audit.service.js';
 import {
@@ -19,8 +22,17 @@ import type { CaseRow } from '../cases/case-lifecycle.js';
 import { type CaseSubject, CasesService } from '../cases/cases.service.js';
 import type { CaseType } from '../cases/dto/case.dto.js';
 import { findDatabaseError } from '../common/database-exception.filter.js';
-import { DRIZZLE, type Database } from '../database/database.constants.js';
-import { cases, documents, workflowJobs } from '../database/schema/index.js';
+import {
+  DRIZZLE,
+  type Database,
+  type DbTransaction,
+} from '../database/database.constants.js';
+import {
+  cases,
+  documents,
+  properties,
+  workflowJobs,
+} from '../database/schema/index.js';
 import {
   GMAIL_INTAKE_WORKER,
   type GmailAttachmentNoticeDto,
@@ -40,6 +52,11 @@ import {
   type UploadDocumentDto,
   type UploadVoiceDto,
 } from './dto/ingestion.dto.js';
+import {
+  type CreateTextIngestionDto,
+  TEXT_INGESTION_JOB_TYPE,
+  type TextIngestionResponseDto,
+} from './dto/text-ingestion.dto.js';
 import { verifyAudioStructure } from './audio-structure.js';
 import {
   acceptUpload,
@@ -48,6 +65,9 @@ import {
 } from './file-policy.js';
 
 const COMPONENT = 'api.ingestion';
+/** D15: máximo de casos de texto abiertos (`received`/`processing`) por usuario. */
+const MAX_OPEN_TEXT_CASES = 3;
+const OPEN_CASE_STATUSES = ['received', 'processing'] as const;
 
 type DocumentType = (typeof documents.$inferInsert)['type'];
 
@@ -160,6 +180,157 @@ export class IngestionService {
           : {}),
       },
     });
+  }
+
+  /**
+   * Entrada de texto del asistente (§19.2, N1). Comparte con la voz la
+   * extracción y la resolución (ninguna de las dos vive aquí: solo se
+   * recibe y se encola, igual que un documento). Nunca llama a Gemini.
+   */
+  async ingestText(
+    user: AuthenticatedUser,
+    dto: CreateTextIngestionDto,
+  ): Promise<{ created: boolean; result: TextIngestionResponseDto }> {
+    const caseType = dto.caseType ?? 'household_obligation';
+    const subject = this.cases.assertSubjectMatchesType(caseType, dto);
+    if (subject) await this.cases.assertOwnedSubject(this.db, user, subject);
+    if (dto.propertyId) await this.assertOwnedProperty(this.db, user, dto.propertyId);
+
+    const textSha256 = createHash('sha256').update(dto.text).digest('hex');
+    const idempotencyKey = dto.requestId
+      ? `ingest:text:${user.profileId}:${dto.requestId}`
+      : null;
+    if (idempotencyKey) {
+      const existing = await this.findTextIngestion(user, idempotencyKey);
+      if (existing) {
+        return {
+          created: false,
+          result: assertSameText(existing, { textSha256, caseType, subject }),
+        };
+      }
+    }
+
+    try {
+      const result = await this.db.transaction(async (tx) => {
+        if (subject) await this.cases.assertOwnedSubject(tx, user, subject);
+        const [{ n: openCases }] = await tx
+          .select({ n: count() })
+          .from(cases)
+          .innerJoin(workflowJobs, eq(workflowJobs.caseId, cases.id))
+          .where(
+            and(
+              eq(cases.ownerId, user.profileId),
+              eq(workflowJobs.jobType, TEXT_INGESTION_JOB_TYPE),
+              inArray(cases.status, OPEN_CASE_STATUSES),
+            ),
+          );
+        if (openCases >= MAX_OPEN_TEXT_CASES) {
+          throw new HttpException(
+            `Ya tienes ${MAX_OPEN_TEXT_CASES} mensajes en proceso; espera a que se resuelvan antes de enviar otro`,
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+        const caseRow = await this.cases.insertCase(tx, user, {
+          type: caseType,
+          source: 'form',
+          subject,
+        });
+        const actor: ProcessActor = { kind: 'user', profileId: user.profileId };
+        await recordProcessEvent(this.audit, tx, actor, {
+          ownerId: user.profileId,
+          correlationId: caseRow.correlationId,
+          component: COMPONENT,
+          action: 'text.receive',
+          resource: 'case',
+          resourceId: caseRow.id,
+          details: {
+            textSha256,
+            textLength: dto.text.length,
+            ...(subject ? { [subject.field]: subject.id } : {}),
+            ...(dto.propertyId ? { propertyId: dto.propertyId } : {}),
+          },
+        });
+        await this.jobs.enqueue(tx, actor, {
+          caseId: caseRow.id,
+          ownerId: user.profileId,
+          correlationId: caseRow.correlationId,
+          jobType: TEXT_INGESTION_JOB_TYPE,
+          idempotencyKey: idempotencyKey ?? `text-intake:${caseRow.id}`,
+          payload: {
+            text: dto.text,
+            textSha256,
+            textLength: dto.text.length,
+            hints: {
+              caseType,
+              ...(subject ? { [subject.field]: subject.id } : {}),
+              ...(dto.propertyId ? { propertyId: dto.propertyId } : {}),
+            },
+          },
+        });
+        return toTextResponse(caseRow, dto.text.length);
+      });
+      return { created: true, result };
+    } catch (error) {
+      if (
+        idempotencyKey &&
+        findDatabaseError(error)?.constraint ===
+          'workflow_jobs_idempotency_key_unique'
+      ) {
+        const existing = await this.findTextIngestion(user, idempotencyKey);
+        if (existing) {
+          return {
+            created: false,
+            result: assertSameText(existing, { textSha256, caseType, subject }),
+          };
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async assertOwnedProperty(
+    executor: Database | DbTransaction,
+    user: AuthenticatedUser,
+    propertyId: string,
+  ): Promise<void> {
+    const [row] = await executor
+      .select({ id: properties.id })
+      .from(properties)
+      .where(
+        and(eq(properties.id, propertyId), eq(properties.ownerId, user.profileId)),
+      );
+    if (!row) throw new NotFoundException('Inmueble no encontrado');
+  }
+
+  /** Caso y trabajo de una entrada de texto previa con la misma clave. */
+  private async findTextIngestion(user: AuthenticatedUser, key: string) {
+    const [job] = await this.db
+      .select({
+        caseId: workflowJobs.caseId,
+        status: workflowJobs.status,
+        payload: workflowJobs.payload,
+      })
+      .from(workflowJobs)
+      .innerJoin(cases, eq(cases.id, workflowJobs.caseId))
+      .where(
+        and(
+          eq(workflowJobs.idempotencyKey, key),
+          eq(cases.ownerId, user.profileId),
+        ),
+      );
+    if (!job) return null;
+    const caseRow = await this.cases.findByIdempotencyKey(user, key);
+    if (!caseRow) return null;
+    const payload = job.payload as {
+      textSha256?: string;
+      textLength?: number;
+    };
+    return {
+      caseRow,
+      textSha256: payload.textSha256 ?? '',
+      textLength: payload.textLength ?? 0,
+      jobStatus: job.status,
+    };
   }
 
   private async ingest(
@@ -472,6 +643,55 @@ function assertSame(
     );
   }
   return toResponse(caseRow, document, existing.job, false);
+}
+
+type ExistingTextIngestion = NonNullable<
+  Awaited<ReturnType<IngestionService['findTextIngestion']>>
+>;
+
+/** Reutilizar `requestId` con otro texto u otros datos es un conflicto. */
+function assertSameText(
+  existing: ExistingTextIngestion,
+  expected: {
+    textSha256: string;
+    caseType: CaseType;
+    subject: CaseSubject | null;
+  },
+): TextIngestionResponseDto {
+  const { caseRow } = existing;
+  const subjectMatches = (
+    ['obligationId', 'rentalId', 'contractId'] as const
+  ).every(
+    (field) =>
+      caseRow[field] ===
+      (expected.subject?.field === field ? expected.subject.id : null),
+  );
+  if (
+    existing.textSha256 !== expected.textSha256 ||
+    caseRow.type !== expected.caseType ||
+    !subjectMatches
+  ) {
+    throw new ConflictException(
+      'requestId ya se usó con otro texto o con otros datos',
+    );
+  }
+  return toTextResponse(caseRow, existing.textLength, existing.jobStatus);
+}
+
+function toTextResponse(
+  caseRow: CaseRow,
+  textLength: number,
+  jobStatus = 'pending',
+): TextIngestionResponseDto {
+  return {
+    caseId: caseRow.id,
+    correlationId: caseRow.correlationId,
+    caseStatus: caseRow.status,
+    source: caseRow.source,
+    job: { type: TEXT_INGESTION_JOB_TYPE, status: jobStatus },
+    processing: 'pending',
+    textLength,
+  };
 }
 
 function toResponse(

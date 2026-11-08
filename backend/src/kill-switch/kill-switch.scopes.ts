@@ -20,6 +20,7 @@ export const KILL_SWITCH_SCOPES = [
   'alert_evaluation',
   'proposal_application',
   'recurrence_generation',
+  'text_processing',
 ] as const;
 export type KillSwitchScope = (typeof KILL_SWITCH_SCOPES)[number];
 
@@ -35,6 +36,7 @@ export const SCOPE_LABELS: Record<KillSwitchScope, string> = {
   alert_evaluation: 'Generación automática de alertas',
   proposal_application: 'Aplicación de propuestas aprobadas',
   recurrence_generation: 'Generación automática de períodos y cobros recurrentes',
+  text_processing: 'Interpretación automática de mensajes de texto',
 };
 
 /** Tipo de trabajo de la cola → componente que lo procesa. */
@@ -42,6 +44,7 @@ const JOB_TYPE_SCOPES: Record<string, KillSwitchScope> = {
   'document.process': 'document_processing',
   'voice.transcribe': 'voice_processing',
   'hitl.decision': 'hitl_closure',
+  'text.interpret': 'text_processing',
 };
 
 export function scopeOfJobType(jobType: string): KillSwitchScope {

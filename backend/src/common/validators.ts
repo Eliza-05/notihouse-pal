@@ -74,6 +74,32 @@ export function IsPositiveMoneyAmount(options?: ValidationOptions) {
     });
 }
 
+/**
+ * Sin caracteres de control (texto libre del usuario: mensajes del
+ * asistente). Admite salto de línea y tabulación; rechaza el resto
+ * (incluye el carácter nulo y los de formato invisible usados para
+ * inyección). R16: el texto es dato, nunca instrucción ni SQL.
+ */
+const CONTROL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
+
+export function isPlainText(value: unknown): value is string {
+  return typeof value === 'string' && !CONTROL_CHARS.test(value);
+}
+
+export function IsPlainText(options?: ValidationOptions) {
+  return (target: object, propertyName: string) =>
+    registerDecorator({
+      name: 'isPlainText',
+      target: target.constructor,
+      propertyName,
+      options: {
+        message: `${propertyName} no puede contener caracteres de control`,
+        ...options,
+      },
+      validator: { validate: isPlainText },
+    });
+}
+
 /** Objeto JSON simple (no `null`, no arreglo). */
 export function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
