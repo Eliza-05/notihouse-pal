@@ -23,10 +23,13 @@ import {
   currentCycleIndex,
   RECURRENCE_FREQUENCY_MONTHS,
 } from './cycle.js';
+import type { recurrenceFrequency } from '../database/schema/index.js';
 import type {
   GenerateRecurrenceDto,
   GenerateRecurrenceResponseDto,
 } from './dto/recurrence.dto.js';
+
+type RecurrenceFrequency = (typeof recurrenceFrequency.enumValues)[number];
 
 const COMPONENT = 'process.recurrence';
 const DEFAULT_BATCH = 100;
@@ -180,25 +183,72 @@ export class RecurrenceService {
       .for('update');
 
     for (const row of rows) {
-      if (row.dueDay == null) {
-        run.counters.missingDueDay += 1;
-        continue;
-      }
-      const anchorDate = row.startsOn ?? calendarDateIn(row.createdAt, run.timeZone);
-      const anchor = yearMonthOf(anchorDate);
-      const frequencyMonths = RECURRENCE_FREQUENCY_MONTHS[row.frequency];
-      const base = currentCycleIndex(anchor, frequencyMonths, yearMonthOf(run.today));
-      for (let i = 0; i < CYCLES_AHEAD; i++) {
-        const cycle = computeCycle({
-          anchor,
-          frequencyMonths,
-          cycleIndex: base + i,
-          dueDay: row.dueDay,
-        });
-        await this.insertObligationOccurrence(tx, row, cycle, run);
-      }
+      const result = await this.generateForObligation(
+        tx,
+        row,
+        run.today,
+        run.timeZone,
+        run.actor,
+        run.correlationId,
+      );
+      run.counters.obligationPeriodsCreated += result.created;
+      run.counters.unchanged += result.unchanged;
+      if (result.missingDueDay) run.counters.missingDueDay += 1;
     }
     return rows.map((r) => r.id);
+  }
+
+  /**
+   * Genera el ciclo actual y el siguiente de una obligación (§19.4, punto 6):
+   * la misma función que usa el barrido programado también se invoca al
+   * aplicar `create_recurring_obligation`, para que el primer período exista
+   * de inmediato.
+   */
+  async generateForObligation(
+    tx: DbTransaction,
+    obligation: {
+      id: string;
+      ownerId: string;
+      frequency: RecurrenceFrequency;
+      dueDay: number | null;
+      startsOn: string | null;
+      createdAt: Date;
+      expectedAmount: string | null;
+      currency: string;
+    },
+    today: string,
+    timeZone: string,
+    actor: ProcessActor,
+    correlationId: string,
+  ): Promise<{ created: number; unchanged: number; missingDueDay: boolean }> {
+    if (obligation.dueDay == null) {
+      return { created: 0, unchanged: 0, missingDueDay: true };
+    }
+    const anchorDate =
+      obligation.startsOn ?? calendarDateIn(obligation.createdAt, timeZone);
+    const anchor = yearMonthOf(anchorDate);
+    const frequencyMonths = RECURRENCE_FREQUENCY_MONTHS[obligation.frequency];
+    const base = currentCycleIndex(anchor, frequencyMonths, yearMonthOf(today));
+    let created = 0;
+    let unchanged = 0;
+    for (let i = 0; i < CYCLES_AHEAD; i++) {
+      const cycle = computeCycle({
+        anchor,
+        frequencyMonths,
+        cycleIndex: base + i,
+        dueDay: obligation.dueDay,
+      });
+      const inserted = await this.insertObligationOccurrence(
+        tx,
+        obligation,
+        cycle,
+        actor,
+        correlationId,
+      );
+      if (inserted) created += 1;
+      else unchanged += 1;
+    }
+    return { created, unchanged, missingDueDay: false };
   }
 
   private async insertObligationOccurrence(
@@ -210,8 +260,9 @@ export class RecurrenceService {
       currency: string;
     },
     cycle: { periodStart: string; periodEnd: string; dueDate: string | null },
-    run: Run,
-  ): Promise<void> {
+    actor: ProcessActor,
+    correlationId: string,
+  ): Promise<boolean> {
     const [inserted] = await tx
       .insert(obligationOccurrences)
       .values({
@@ -226,20 +277,17 @@ export class RecurrenceService {
       })
       .onConflictDoNothing()
       .returning({ id: obligationOccurrences.id });
-    if (inserted) {
-      run.counters.obligationPeriodsCreated += 1;
-      await recordProcessEvent(this.audit, tx, run.actor, {
-        ownerId: obligation.ownerId,
-        correlationId: run.correlationId,
-        component: COMPONENT,
-        action: 'obligation_occurrence.generate',
-        resource: 'obligation_occurrence',
-        resourceId: inserted.id,
-        details: { obligationId: obligation.id, periodStart: cycle.periodStart },
-      });
-    } else {
-      run.counters.unchanged += 1;
-    }
+    if (!inserted) return false;
+    await recordProcessEvent(this.audit, tx, actor, {
+      ownerId: obligation.ownerId,
+      correlationId,
+      component: COMPONENT,
+      action: 'obligation_occurrence.generate',
+      resource: 'obligation_occurrence',
+      resourceId: inserted.id,
+      details: { obligationId: obligation.id, periodStart: cycle.periodStart },
+    });
+    return true;
   }
 
   private async sweepRentals(
@@ -270,21 +318,59 @@ export class RecurrenceService {
       .for('update');
 
     for (const row of rows) {
-      const anchor = yearMonthOf(row.startsOn);
-      const base = currentCycleIndex(anchor, 1, yearMonthOf(run.today));
-      for (let i = 0; i < CYCLES_AHEAD; i++) {
-        const cycle = computeCycle({
-          anchor,
-          frequencyMonths: 1,
-          cycleIndex: base + i,
-          dueDay: row.dueDay,
-          lowerBound: row.startsOn,
-        });
-        if (row.endsOn && cycle.periodStart > row.endsOn) continue;
-        await this.insertRentCharge(tx, row, cycle, run);
-      }
+      const result = await this.generateForRental(
+        tx,
+        row,
+        run.today,
+        run.actor,
+        run.correlationId,
+      );
+      run.counters.rentChargesCreated += result.created;
+      run.counters.unchanged += result.unchanged;
     }
     return rows.map((r) => r.id);
+  }
+
+  /** Misma función para el barrido programado y para `create_recurring_rental`. */
+  async generateForRental(
+    tx: DbTransaction,
+    rental: {
+      id: string;
+      ownerId: string;
+      dueDay: number;
+      startsOn: string;
+      endsOn: string | null;
+      expectedAmount: string;
+      currency: string;
+    },
+    today: string,
+    actor: ProcessActor,
+    correlationId: string,
+  ): Promise<{ created: number; unchanged: number }> {
+    const anchor = yearMonthOf(rental.startsOn);
+    const base = currentCycleIndex(anchor, 1, yearMonthOf(today));
+    let created = 0;
+    let unchanged = 0;
+    for (let i = 0; i < CYCLES_AHEAD; i++) {
+      const cycle = computeCycle({
+        anchor,
+        frequencyMonths: 1,
+        cycleIndex: base + i,
+        dueDay: rental.dueDay,
+        lowerBound: rental.startsOn,
+      });
+      if (rental.endsOn && cycle.periodStart > rental.endsOn) continue;
+      const inserted = await this.insertRentCharge(
+        tx,
+        rental,
+        cycle,
+        actor,
+        correlationId,
+      );
+      if (inserted) created += 1;
+      else unchanged += 1;
+    }
+    return { created, unchanged };
   }
 
   private async insertRentCharge(
@@ -296,8 +382,9 @@ export class RecurrenceService {
       currency: string;
     },
     cycle: { periodStart: string; periodEnd: string; dueDate: string | null },
-    run: Run,
-  ): Promise<void> {
+    actor: ProcessActor,
+    correlationId: string,
+  ): Promise<boolean> {
     const [inserted] = await tx
       .insert(rentCharges)
       .values({
@@ -312,20 +399,17 @@ export class RecurrenceService {
       })
       .onConflictDoNothing()
       .returning({ id: rentCharges.id });
-    if (inserted) {
-      run.counters.rentChargesCreated += 1;
-      await recordProcessEvent(this.audit, tx, run.actor, {
-        ownerId: rental.ownerId,
-        correlationId: run.correlationId,
-        component: COMPONENT,
-        action: 'rent_charge.generate',
-        resource: 'rent_charge',
-        resourceId: inserted.id,
-        details: { rentalId: rental.id, periodStart: cycle.periodStart },
-      });
-    } else {
-      run.counters.unchanged += 1;
-    }
+    if (!inserted) return false;
+    await recordProcessEvent(this.audit, tx, actor, {
+      ownerId: rental.ownerId,
+      correlationId,
+      component: COMPONENT,
+      action: 'rent_charge.generate',
+      resource: 'rent_charge',
+      resourceId: inserted.id,
+      details: { rentalId: rental.id, periodStart: cycle.periodStart },
+    });
+    return true;
   }
 }
 

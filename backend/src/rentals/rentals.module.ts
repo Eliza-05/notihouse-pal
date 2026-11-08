@@ -10,5 +10,6 @@ import { RentalsService } from './rentals.service.js';
   imports: [AuditModule],
   controllers: [RentalsController, RentChargesController],
   providers: [RentalsService, RentChargesService],
+  exports: [RentalsService],
 })
 export class RentalsModule {}

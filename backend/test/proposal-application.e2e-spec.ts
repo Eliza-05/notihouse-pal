@@ -801,4 +801,305 @@ describe('Proposal application (e2e)', () => {
       ).toBe(0);
     });
   });
+
+  describe('new proposal actions (§20.2)', () => {
+    const occurrenceRow = (id: string) =>
+      sql<{
+        due_date: string;
+        amount: string | null;
+        status: string;
+      }>(
+        `SELECT due_date::text, amount, status FROM obligation_occurrences WHERE id = $1`,
+        [id],
+      );
+
+    it('create_recurring_obligation: creates the obligation with autoGenerate and its first periods, and rejects duplicates', async () => {
+      const unique = randomUUID();
+      const proposedData = {
+        action: 'create_recurring_obligation',
+        data: {
+          obligation: {
+            providerName: `Claro ${unique}`,
+            concept: `Internet ${unique}`,
+            category: 'internet',
+            frequency: 'monthly',
+            dueDay: 18,
+            startsOn: '2026-01-01',
+          },
+        },
+      };
+      const { c, p } = await reviewed(proposedData);
+      const res = await apply(w.laura, c.id, p.id).expect(201);
+      expect(res.body).toMatchObject({
+        action: 'create_recurring_obligation',
+        resource: { type: 'obligation' },
+        createdObligationId: res.body.resource.id,
+      });
+
+      const [obligation] = await sql<{
+        auto_generate: boolean;
+        due_day: number;
+      }>(`SELECT auto_generate, due_day FROM obligations WHERE id = $1`, [
+        res.body.resource.id,
+      ]);
+      expect(obligation).toMatchObject({ auto_generate: true, due_day: 18 });
+      expect(await occurrencesOf(res.body.resource.id)).toBe(2);
+
+      const { c: c2, p: p2 } = await reviewed(proposedData);
+      await apply(w.laura, c2.id, p2.id).expect(409);
+    });
+
+    it('update_obligation_schedule: changes dueDay/reminderDaysBefore/expectedAmount, recalculates a future pending occurrence, and enforces optimistic locking', async () => {
+      const unique = randomUUID();
+      const own = (
+        await w.h
+          .as(w.laura)
+          .post('/obligations', {
+            providerName: `Gas ${unique}`,
+            concept: `Gas ${unique}`,
+            category: 'gas',
+            dueDay: 10,
+            reminderDaysBefore: 3,
+            expectedAmount: '50000.00',
+          })
+          .expect(201)
+      ).body;
+      const farFuture = `${new Date().getUTCFullYear() + 3}`;
+      const occurrence = (
+        await w.h
+          .as(w.laura)
+          .post(`/obligations/${own.id}/occurrences`, {
+            periodStart: `${farFuture}-05-01`,
+            periodEnd: `${farFuture}-05-31`,
+            dueDate: `${farFuture}-05-10`,
+          })
+          .expect(201)
+      ).body;
+
+      const proposedData = {
+        action: 'update_obligation_schedule',
+        data: {
+          obligationId: own.id,
+          expected: { dueDay: 10, reminderDaysBefore: 3, expectedAmount: '50000.00' },
+          changes: { dueDay: 20 },
+        },
+      };
+
+      // Control optimista: si "expected" ya no coincide, 409 y nada cambia.
+      const staleCase = await reviewed({
+        action: 'update_obligation_schedule',
+        data: {
+          obligationId: own.id,
+          expected: { dueDay: 11 },
+          changes: { dueDay: 20 },
+        },
+      });
+      await apply(w.laura, staleCase.c.id, staleCase.p.id).expect(409);
+
+      const { c, p } = await reviewed(proposedData);
+      const res = await apply(w.laura, c.id, p.id).expect(201);
+      expect(res.body).toMatchObject({
+        action: 'update_obligation_schedule',
+        resource: { type: 'obligation', id: own.id },
+        createdObligationId: null,
+      });
+      const [updated] = await sql<{ due_day: number }>(
+        `SELECT due_day FROM obligations WHERE id = $1`,
+        [own.id],
+      );
+      expect(updated!.due_day).toBe(20);
+
+      const [row] = await occurrenceRow(occurrence.id);
+      expect(row!.due_date).toBe(`${farFuture}-05-20`);
+
+      // Sin cambios reales → 400.
+      const noChange = await reviewed({
+        action: 'update_obligation_schedule',
+        data: {
+          obligationId: own.id,
+          expected: { dueDay: 20 },
+          changes: { dueDay: 20 },
+        },
+      });
+      await apply(w.laura, noChange.c.id, noChange.p.id).expect(400);
+    });
+
+    it('update_obligation_schedule: never moves a pending occurrence into the past, and rejects an archived obligation', async () => {
+      const unique = randomUUID();
+      const own = (
+        await w.h
+          .as(w.laura)
+          .post('/obligations', {
+            providerName: `Energía ${unique}`,
+            concept: `Energía ${unique}`,
+            category: 'electricity',
+            dueDay: 10,
+          })
+          .expect(201)
+      ).body;
+      // Día 1 del mes en curso: con el reloj real, es una fecha pasada salvo
+      // que la prueba corra exactamente el día 1 (ver más abajo).
+      const now = new Date();
+      const periodStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+      const occurrence = (
+        await w.h
+          .as(w.laura)
+          .post(`/obligations/${own.id}/occurrences`, {
+            periodStart,
+            periodEnd: periodStart,
+            dueDate: periodStart,
+          })
+          .expect(201)
+      ).body;
+
+      // dueDay=1 movería la fecha al pasado dentro de ese mes: se conserva.
+      const { c, p } = await reviewed({
+        action: 'update_obligation_schedule',
+        data: {
+          obligationId: own.id,
+          expected: { dueDay: 10 },
+          changes: { dueDay: 1 },
+        },
+      });
+      await apply(w.laura, c.id, p.id).expect(201);
+      const [row] = await occurrenceRow(occurrence.id);
+      expect(row!.due_date).toBe(periodStart);
+
+      await w.h
+        .as(w.laura)
+        .patch(`/obligations/${own.id}`, { status: 'archived' })
+        .expect(200);
+      const { c: c2, p: p2 } = await reviewed({
+        action: 'update_obligation_schedule',
+        data: {
+          obligationId: own.id,
+          expected: {},
+          changes: { reminderDaysBefore: 10 },
+        },
+      });
+      await apply(w.laura, c2.id, p2.id).expect(409);
+    });
+
+    it('update_occurrence_details: adds the real amount/date to a pending period, never a confirmed or cancelled one', async () => {
+      const unique = randomUUID();
+      const own = (
+        await w.h
+          .as(w.laura)
+          .post('/obligations', {
+            providerName: `Admin ${unique}`,
+            concept: `Admin ${unique}`,
+            category: 'administration',
+            dueDay: 15,
+          })
+          .expect(201)
+      ).body;
+      const pending = (
+        await w.h
+          .as(w.laura)
+          .post(`/obligations/${own.id}/occurrences`, {
+            periodStart: '2031-03-01',
+            periodEnd: '2031-03-31',
+            dueDate: '2031-03-15',
+          })
+          .expect(201)
+      ).body;
+
+      const { c, p } = await reviewed({
+        action: 'update_occurrence_details',
+        data: {
+          obligationId: own.id,
+          occurrenceId: pending.id,
+          amount: '87000.00',
+          dueDate: '2031-03-17',
+        },
+      });
+      const res = await apply(w.laura, c.id, p.id).expect(201);
+      expect(res.body).toMatchObject({
+        action: 'update_occurrence_details',
+        resource: { type: 'obligation_occurrence', id: pending.id },
+      });
+      const [row] = await occurrenceRow(pending.id);
+      expect(row).toMatchObject({ amount: '87000.00', due_date: '2031-03-17' });
+
+      const confirmed = (
+        await w.h
+          .as(w.laura)
+          .post(`/obligations/${own.id}/occurrences`, {
+            periodStart: '2031-04-01',
+            periodEnd: '2031-04-30',
+            dueDate: '2031-04-15',
+            amount: '1000.00',
+          })
+          .expect(201)
+      ).body;
+      await w.h
+        .as(w.laura)
+        .post(`/obligations/${own.id}/occurrences/${confirmed.id}/confirm`, {
+          result: 'paid',
+          reference: 'ref-1',
+        })
+        .expect(200);
+      const { c: c2, p: p2 } = await reviewed({
+        action: 'update_occurrence_details',
+        data: { obligationId: own.id, occurrenceId: confirmed.id, amount: '999.00' },
+      });
+      await apply(w.laura, c2.id, p2.id).expect(409);
+    });
+
+    it('create_recurring_rental: creates the rental (bypassing the household_obligation case type, D7) with its first charge, and rejects an overlap', async () => {
+      const property = (
+        await w.h
+          .as(w.laura)
+          .post('/properties', { name: `Inmueble ${randomUUID()}` })
+          .expect(201)
+      ).body.id;
+      const proposedData = {
+        action: 'create_recurring_rental',
+        data: {
+          rental: {
+            propertyId: property,
+            expectedAmount: '900000.00',
+            dueDay: 5,
+            startsOn: '2026-01-01',
+          },
+        },
+      };
+      const { c, p } = await reviewed(proposedData, {
+        caseBody: { type: 'rent_collection' },
+      });
+      const res = await apply(w.laura, c.id, p.id).expect(201);
+      expect(res.body).toMatchObject({
+        action: 'create_recurring_rental',
+        resource: { type: 'rental' },
+        createdRentalId: res.body.resource.id,
+      });
+      const [rental] = await sql<{ auto_generate: boolean }>(
+        `SELECT auto_generate FROM rentals WHERE id = $1`,
+        [res.body.resource.id],
+      );
+      expect(rental!.auto_generate).toBe(true);
+      expect(
+        await count(
+          `SELECT count(*) AS n FROM rent_charges WHERE rental_id = $1`,
+          [res.body.resource.id],
+        ),
+      ).toBeGreaterThanOrEqual(1);
+
+      const { c: c2, p: p2 } = await reviewed(
+        {
+          action: 'create_recurring_rental',
+          data: {
+            rental: {
+              propertyId: property,
+              expectedAmount: '500000.00',
+              dueDay: 10,
+              startsOn: '2026-02-01',
+            },
+          },
+        },
+        { caseBody: { type: 'rent_collection' } },
+      );
+      await apply(w.laura, c2.id, p2.id).expect(409);
+    });
+  });
 });

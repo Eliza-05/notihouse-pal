@@ -24,7 +24,12 @@ const DESTRUCTIVE_PATTERNS: [string, RegExp][] = [
   ['TRUNCATE', /^\s*TRUNCATE\b/im],
   ['DELETE', /^\s*DELETE\s+FROM\b/im],
   ['UPDATE masivo', /^\s*UPDATE\s+\S+\s+SET\b/im],
-  ['ALTER ... DROP', /\bALTER\s+(TABLE|TYPE)\b[^;]*\bDROP\b/i],
+  // No marca `DROP NOT NULL`/`DROP DEFAULT`: relajan una restricción (aditivo,
+  // sin pérdida de datos), a diferencia de `DROP COLUMN/CONSTRAINT/TABLE`.
+  [
+    'ALTER ... DROP',
+    /\bALTER\s+(TABLE|TYPE)\b[^;]*\bDROP\s+(?!NOT\s+NULL\b|DEFAULT\b)/i,
+  ],
   ['ALTER ... RENAME', /\bALTER\s+(TABLE|TYPE)\b[^;]*\bRENAME\b/i],
   ['ALTER COLUMN ... TYPE', /\bALTER\s+COLUMN\b[^;]*\bTYPE\b/i],
 ];
