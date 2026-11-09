@@ -10,12 +10,12 @@
  *   (el audio de prueba es ficticio). Un tono corto (preflight) → sin voz.
  * - POST /__control {"nextInterpretation": {...}} fuerza la PRÓXIMA interpretación
  *   (p. ej. un modelo que inventa un proveedor) para probar los controles deterministas.
- * - POST /__control {"failNext": 429} hace que la próxima llamada falle con ese estado.
+ * - POST /__control {"failNext": 429, "failSkip": 1} hace que la próxima llamada (tras saltar failSkip) falle con ese estado.
  * - GET /__stats: número de llamadas (para comprobar que no hay llamadas de más).
  */
 import http from 'node:http';
 
-const state = { transcript: 'Registra la factura de agua de Acueducto por 98.500 pesos', nextInterpretation: null, failNext: null, calls: { transcribe: 0, interpret: 0, preflight: 0 } };
+const state = { transcript: 'Registra la factura de agua de Acueducto por 98.500 pesos', nextInterpretation: null, failNext: null, failSkip: 0, calls: { transcribe: 0, interpret: 0, preflight: 0 } };
 
 const PROVIDERS = [
   ['Claro', 'mobile', 'Servicio móvil'], ['Movistar', 'mobile', 'Servicio móvil'], ['Tigo', 'internet', 'Internet'], ['ETB', 'internet', 'Internet'],
@@ -85,7 +85,8 @@ http.createServer((req, res) => {
     if (req.url === '/__stats') return send(200, state.calls);
     if (req.url === '/__control' && req.method === 'POST') { Object.assign(state, JSON.parse(body || '{}')); return send(200, { ok: true }); }
     if (!/:generateContent$/.test(req.url.split('?')[0])) return send(404, { error: 'not found' });
-    if (state.failNext) { const c = state.failNext; state.failNext = null; return send(c, { error: { code: c, message: c === 429 ? 'Quota exceeded: PerDay limit (simulado)' : 'simulado' } }); }
+    if (state.failNext && state.failSkip > 0) state.failSkip -= 1;
+    else if (state.failNext) { const c = state.failNext; state.failNext = null; return send(c, { error: { code: c, message: c === 429 ? 'Quota exceeded: PerDay limit (simulado)' : 'simulado' } }); }
     const r = JSON.parse(body);
     const sys = r.systemInstruction?.parts?.[0]?.text ?? '';
     if (sys.startsWith('Transcribes')) {

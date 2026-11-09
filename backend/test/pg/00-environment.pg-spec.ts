@@ -154,7 +154,7 @@ describe('B. Migraciones reproducidas en PostgreSQL 18 real', () => {
   });
   afterAll(() => owner.end());
 
-  it('18 tablas y 3 migraciones cuyo hash coincide con los archivos', async () => {
+  it('18 tablas y 5 migraciones cuyo hash coincide con los archivos', async () => {
     const tables = await owner.query(
       `SELECT count(*)::int AS n FROM information_schema.tables
         WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
@@ -167,6 +167,8 @@ describe('B. Migraciones reproducidas en PostgreSQL 18 real', () => {
       '0000_initial_schema',
       '0001_auth_accounts',
       '0002_alerts_and_proposal_applications',
+      '0003_auto_generate_recurrence',
+      '0004_proposal_actions_expansion',
     ]);
     const applied = await owner.query<{ hash: string }>(
       `SELECT hash FROM drizzle.__drizzle_migrations ORDER BY created_at`,

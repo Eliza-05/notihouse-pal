@@ -76,8 +76,14 @@ export const WF03 = 'nhpHitlClose0001';
 export async function textThroughN8n(token, text, extra = {}) {
   const r = await http('POST', '/ingestions/text', { token, body: { text, ...extra } });
   if (r.status !== 201) throw new Error(`ingesta texto -> ${r.status}`);
-  const run = n8nRun(WF04);
   const caseId = r.body.caseId;
+  let run = n8nRun(WF04);
+  // n8n procesa un trabajo por ejecución (el más antiguo): repetir hasta procesar este caso.
+  for (let i = 0; i < 12; i += 1) {
+    const st = (await sql("select status from workflow_jobs where case_id=$1 and job_type='text.interpret'", [caseId]))[0]?.status;
+    if (st !== 'pending') break;
+    run = n8nRun(WF04);
+  }
   const c = (await sql('select status from cases where id=$1', [caseId]))[0];
   const p = (await sql('select id::text, source, proposed_data from case_proposals where case_id=$1 order by version desc limit 1', [caseId]))[0];
   const h = (await sql('select id::text, decision_type, status, options from hitl_requests where case_id=$1', [caseId]))[0];
@@ -88,4 +94,27 @@ export async function decide(token, hitlId, decision = 'approved', comment) {
 }
 export async function apply(token, caseId, proposalId) {
   return http('POST', `/cases/${caseId}/proposals/${proposalId}/apply`, { token, body: {} });
+}
+
+/** Procesa la cola de textos pendientes (una ejecución de n8n por trabajo) hasta vaciarla. */
+export async function drainQueue(max = 12) {
+  for (let i = 0; i < max; i += 1) {
+    const n = Number((await sql("select count(*)::int n from workflow_jobs where status='pending' and job_type in ('text.interpret','voice.transcribe')"))[0].n);
+    if (n === 0) return i;
+    n8nRun(WF04);
+  }
+  return max;
+}
+
+export const WF02 = 'nhpDocProcess001';
+export const WF06 = 'nhpMaintSched001';
+
+/** Ejecuta el workflow 03 (un trabajo hitl.decision por ejecución, el más antiguo) hasta cerrar el caso. */
+export async function closeCase(caseId, max = 12) {
+  for (let i = 0; i < max; i += 1) {
+    const st = (await sql('select status from cases where id=$1', [caseId]))[0]?.status;
+    if (st !== 'processing' && st !== 'awaiting_human') return st;
+    n8nRun(WF03);
+  }
+  return (await sql('select status from cases where id=$1', [caseId]))[0]?.status;
 }

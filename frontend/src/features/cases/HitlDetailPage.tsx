@@ -167,7 +167,11 @@ export function HitlDetailPage() {
           </div>
         )}
 
-        {parsed?.kind === 'unknown' && (
+        {parsed?.kind === 'unknown' && isManualOnly(parsed.raw) && (
+          <p className="text-muted">Esta solicitud no tiene una acción que aplicar: complétala manualmente desde el formulario correspondiente.</p>
+        )}
+
+        {parsed?.kind === 'unknown' && !isManualOnly(parsed.raw) && (
           <div>
             <p className="field-error">Requiere revisión manual: no se reconoció la forma de esta propuesta.</p>
             <pre style={{ fontSize: '0.75rem', overflowX: 'auto' }}>{JSON.stringify(parsed.raw, null, 2)}</pre>
@@ -204,8 +208,11 @@ export function HitlDetailPage() {
           </div>
         )}
 
-        {hitl.status === 'approved' && !applyResult && (
+        {hitl.status === 'approved' && !applyResult && canApply && (
           <p role="status">Aprobada. Aún no se ha creado nada: pulsa Aplicar para registrar el cambio.</p>
+        )}
+        {hitl.status === 'approved' && !applyResult && !canApply && (
+          <p role="status">Aprobada. No hay nada que aplicar automáticamente: no se creó ni se cambió ningún dato.</p>
         )}
         {hitl.status === 'rejected' && <p role="status">Rechazada: no se registró nada.</p>}
         {hitl.status === 'expired' && <p role="status">Vencida sin decisión: no se aplicará nada.</p>}
@@ -225,4 +232,9 @@ export function HitlDetailPage() {
       </div>
     </div>
   )
+}
+
+/** Propuesta sin acción aplicable que el flujo marcó para completar a mano (faltan datos, informativa, no soportada). */
+function isManualOnly(raw: unknown): boolean {
+  return typeof raw === 'object' && raw !== null && (raw as { requiereRevisionManual?: unknown }).requiereRevisionManual === true
 }
