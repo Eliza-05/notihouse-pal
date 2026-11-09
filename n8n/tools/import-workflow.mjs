@@ -99,7 +99,7 @@ if (apiBase || geminiBase || qaAuthorize) {
 }
 // Con ambos interruptores en false el workflow no puede llamar a Google ni al backend.
 const config = repoConfig;
-for (const sw of ['AUTORIZAR_LECTURA_GMAIL', 'AUTORIZAR_INGESTA', 'AUTORIZAR_RECLAMACION']) {
+for (const sw of ['AUTORIZAR_LECTURA_GMAIL', 'AUTORIZAR_INGESTA', 'AUTORIZAR_RECLAMACION', 'AUTORIZAR_MANTENIMIENTO', 'AUTORIZAR_RECURRENCIA']) {
   if (new RegExp(`${sw} = true`).test(config)) throw new Error(`${sw} está en true en el JSON del repo: no se importa.`);
 }
 if (dry) { console.log('--dry-run: no se importó nada.'); process.exit(0); }

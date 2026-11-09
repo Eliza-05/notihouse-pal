@@ -17,7 +17,7 @@ const schema = z
     endsOn: calendarDateField({ required: true }),
     noticePeriodDays: z.string().optional(),
   })
-  .refine((v) => v.endsOn >= v.startsOn, { message: 'endsOn no puede ser anterior a startsOn', path: ['endsOn'] })
+  .refine((v) => v.endsOn >= v.startsOn, { message: 'La fecha de fin no puede ser anterior a la de inicio', path: ['endsOn'] })
 type FormValues = z.infer<typeof schema>
 
 export function ContractFormModal({ contract, onClose }: { contract?: Contract; onClose: () => void }) {

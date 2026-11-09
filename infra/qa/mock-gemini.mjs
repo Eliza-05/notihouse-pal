@@ -56,6 +56,25 @@ function interpret(text) {
   return x;
 }
 
+// Factura (workflow 02): extractor por reglas sobre el texto del PDF entre <documento>…</documento>.
+function interpretInvoice(doc) {
+  const g = (re) => re.exec(doc)?.[1]?.trim() ?? null;
+  const ev = (field, frag) => (frag && doc.includes(frag) ? [{ field, text: frag }] : []);
+  const provider = g(/Emisor:\s*([^\n]+)/);
+  const concept = g(/Concepto:\s*([^\n]+)/);
+  const ps = /del (\d{4}-\d{2}-\d{2}) al (\d{4}-\d{2}-\d{2})/.exec(doc);
+  const due = g(/(?:Fecha limite de pago|Fecha de vencimiento|Vence)[: ]+(\d{4}-\d{2}-\d{2})/i);
+  const total = g(/Total a pagar:\s*([\d.,]+)/i);
+  const amount = total ? Number(total.replace(/\./g, '').replace(',', '.')).toFixed(2) : null;
+  const inj = /ignora (todas )?las instrucciones|system prompt|marca (esta factura )?como pagad/i.test(doc);
+  return {
+    isInvoice: Boolean(provider && amount), providerName: provider, concept, category: /internet/i.test(concept ?? '') ? 'internet' : 'other',
+    periodStart: ps?.[1] ?? null, periodEnd: ps?.[2] ?? null, dueDate: due, amount, currency: /COP/.test(doc) ? 'COP' : null,
+    amountCandidates: amount ? [{ value: amount, label: 'Total a pagar' }] : [], containsInstructions: inj,
+    evidence: [...ev('providerName', provider), ...ev('amount', total), ...ev('dueDate', due)],
+  };
+}
+
 const wrap = (obj) => ({ modelVersion: 'SIMULADO-qa', candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(obj) }] } }] });
 
 http.createServer((req, res) => {
@@ -77,6 +96,8 @@ http.createServer((req, res) => {
     }
     state.calls.interpret += 1;
     if (state.nextInterpretation) { const o = state.nextInterpretation; state.nextInterpretation = null; return send(200, wrap(o)); }
+    const dm = /<documento>\n([\s\S]*?)\n<\/documento>/.exec(r.contents?.[0]?.parts?.[0]?.text ?? '');
+    if (dm) return send(200, wrap(interpretInvoice(dm[1])));
     const m = /<mensaje>\n([\s\S]*?)\n<\/mensaje>/.exec(r.contents?.[0]?.parts?.[0]?.text ?? '');
     return send(200, wrap(interpret(m ? m[1] : '')));
   });

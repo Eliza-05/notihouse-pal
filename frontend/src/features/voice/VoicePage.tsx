@@ -82,6 +82,7 @@ export function VoicePage() {
           ref={fileInputRef}
           type="file"
           accept="audio/*"
+          style={{ maxWidth: '100%' }}
           onChange={(e) => {
             const file = e.target.files?.[0]
             if (file) void send(file, file.type)

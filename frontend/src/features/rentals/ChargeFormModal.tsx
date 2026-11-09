@@ -14,7 +14,7 @@ const schema = z
     dueDate: calendarDateField({ required: true }),
     expectedAmount: positiveMoneyField().optional().or(z.literal('')),
   })
-  .refine((v) => v.periodEnd >= v.periodStart, { message: 'periodEnd no puede ser anterior a periodStart', path: ['periodEnd'] })
+  .refine((v) => v.periodEnd >= v.periodStart, { message: 'El fin del período no puede ser anterior al inicio', path: ['periodEnd'] })
 type FormValues = z.infer<typeof schema>
 
 export function ChargeFormModal({
