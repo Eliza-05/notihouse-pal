@@ -46,6 +46,8 @@
 
 .app-body {
   display: flex;
+  min-width: 0;
+  width: 100%;
   min-height: calc(100dvh - 57px);
 }
 .app-nav {
@@ -79,6 +81,7 @@
 
 .app-main {
   flex: 1;
+  min-width: 0; /* permite que .table-wrap haga scroll interno en móvil */
   padding: 1.25rem;
   max-width: 1100px;
   width: 100%;

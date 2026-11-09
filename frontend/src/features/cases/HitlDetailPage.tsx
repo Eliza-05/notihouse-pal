@@ -4,7 +4,7 @@ import { ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
 import { ApiError } from '../../lib/api/errors'
 import { formatInstant, formatCalendarDate } from '../../lib/format/dates'
 import { formatMoney } from '../../lib/format/money'
-import { HITL_DECISION_TYPE_LABELS, label } from '../../lib/format/labels'
+import { HITL_DECISION_TYPE_LABELS, OBLIGATION_FREQUENCY_LABELS, label } from '../../lib/format/labels'
 import { useObligation } from '../obligations/hooks'
 import { useApplyProposal, useDecideHitl, useHitlRequest } from './hooks'
 import { parseProposal } from './proposalSchema'
@@ -18,7 +18,7 @@ const APPLICABLE_ACTIONS = new Set([
   'create_recurring_rental',
 ])
 
-function ScheduleDiff({ obligationId, expected }: { obligationId: string; expected: { dueDay?: number | null; reminderDaysBefore?: number; expectedAmount?: string | null } }) {
+function ScheduleDiff({ obligationId, changes }: { obligationId: string; changes: { dueDay?: number | null; reminderDaysBefore?: number; expectedAmount?: string | null } }) {
   const { data: obligation } = useObligation(obligationId)
   return (
     <table className="data-table" style={{ marginTop: '0.5rem' }}>
@@ -30,25 +30,25 @@ function ScheduleDiff({ obligationId, expected }: { obligationId: string; expect
         </tr>
       </thead>
       <tbody>
-        {expected.dueDay !== undefined && (
+        {changes.dueDay !== undefined && (
           <tr>
             <td>Día de vencimiento</td>
             <td>{obligation?.dueDay ?? '—'}</td>
-            <td>{expected.dueDay ?? '—'}</td>
+            <td>{changes.dueDay ?? '—'}</td>
           </tr>
         )}
-        {expected.reminderDaysBefore !== undefined && (
+        {changes.reminderDaysBefore !== undefined && (
           <tr>
             <td>Aviso (días antes)</td>
             <td>{obligation?.reminderDaysBefore ?? '—'}</td>
-            <td>{expected.reminderDaysBefore}</td>
+            <td>{changes.reminderDaysBefore}</td>
           </tr>
         )}
-        {expected.expectedAmount !== undefined && (
+        {changes.expectedAmount !== undefined && (
           <tr>
             <td>Monto esperado</td>
             <td>{formatMoney(obligation?.expectedAmount ?? null, obligation?.currency ?? 'COP')}</td>
-            <td>{formatMoney(expected.expectedAmount ?? null, obligation?.currency ?? 'COP')}</td>
+            <td>{formatMoney(changes.expectedAmount ?? null, obligation?.currency ?? 'COP')}</td>
           </tr>
         )}
       </tbody>
@@ -123,13 +123,22 @@ export function HitlDetailPage() {
         )}
 
         {parsed?.kind === 'known' && parsed.value.action === 'update_obligation_schedule' && (
-          <ScheduleDiff obligationId={parsed.value.data.obligationId} expected={parsed.value.data.expected} />
+          <ScheduleDiff obligationId={parsed.value.data.obligationId} changes={parsed.value.data.changes} />
+        )}
+
+        {parsed?.kind === 'known' && parsed.value.action === 'update_occurrence_details' && (
+          <p>
+            Completa el período ya generado
+            {parsed.value.data.amount ? <> con monto {formatMoney(parsed.value.data.amount, 'COP')}</> : null}
+            {parsed.value.data.dueDate ? <> y vencimiento {formatCalendarDate(parsed.value.data.dueDate)}</> : null}. Solo
+            afecta un período pendiente; no confirma ningún pago.
+          </p>
         )}
 
         {parsed?.kind === 'known' && parsed.value.action === 'create_recurring_obligation' && (
           <p>
             Obligación <strong>{parsed.value.data.obligation.providerName}</strong>, vence día{' '}
-            {parsed.value.data.obligation.dueDay} de cada mes. Se generará el período de cada ciclo.
+            {parsed.value.data.obligation.dueDay} de cada ciclo ({label(OBLIGATION_FREQUENCY_LABELS, parsed.value.data.obligation.frequency ?? "monthly").toLowerCase()}). Se generará el período de cada ciclo.
           </p>
         )}
 
@@ -195,20 +204,20 @@ export function HitlDetailPage() {
           </div>
         )}
 
-        {hitl.status === 'approved' && (
+        {hitl.status === 'approved' && !applyResult && (
           <p role="status">Aprobada. Aún no se ha creado nada: pulsa Aplicar para registrar el cambio.</p>
         )}
         {hitl.status === 'rejected' && <p role="status">Rechazada: no se registró nada.</p>}
         {hitl.status === 'expired' && <p role="status">Vencida sin decisión: no se aplicará nada.</p>}
 
-        {canApply && (
+        {canApply && !applyResult && (
           <div className="row" style={{ marginTop: '0.75rem' }}>
             <button type="button" className="btn btn-primary" disabled={apply.isPending} onClick={handleApply}>
               {apply.isPending ? 'Aplicando…' : 'Aplicar'}
             </button>
           </div>
         )}
-        {hitl.status === 'approved' && !canApply && parsed?.kind !== 'guided' && (
+        {hitl.status === 'approved' && !canApply && !applyResult && parsed?.kind !== 'guided' && (
           <p className="text-muted">Debes registrarlo manualmente desde el formulario correspondiente.</p>
         )}
         {applyError && <p className="field-error" role="alert">{applyError}</p>}
