@@ -41,6 +41,7 @@ describe('validateEnv', () => {
       NODE_ENV: 'development',
       PORT: 3000,
       FRONTEND_URL: 'http://localhost:5173',
+      FRONTEND_URLS: ['http://localhost:5173'],
       ...REQUIRED,
       ...LOCAL_STORAGE_DEFAULTS,
       ...DUE_DATE_SETTINGS,
@@ -90,6 +91,66 @@ describe('validateEnv', () => {
       );
     },
   );
+
+  it.each([
+    'http://app.example.com',
+    'http://192.168.1.10:5173',
+    '*',
+    'https://*.vercel.app',
+    'null',
+    'https://app.example.com/',
+    'https://user:pass@app.example.com',
+    'http://localhost:5173,http://evil.example.com',
+  ])('rejects FRONTEND_URL "%s" (https required unless local, no wildcards)', (url) => {
+    expect(() => validateEnv({ ...REQUIRED, FRONTEND_URL: url })).toThrow(
+      /FRONTEND_URL/,
+    );
+  });
+
+  it('allows http only for localhost, 127.0.0.1 and [::1]; https for any public origin', () => {
+    const env = validateEnv({
+      ...REQUIRED,
+      FRONTEND_URL:
+        'http://localhost:5173,http://127.0.0.1:5173,http://[::1]:5173,https://notihouse.vercel.app',
+    });
+    expect(env.FRONTEND_URLS).toEqual([
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://[::1]:5173',
+      'https://notihouse.vercel.app',
+    ]);
+  });
+
+  it('parses FRONTEND_URL as a comma-separated, trimmed, deduplicated list of origins (D18)', () => {
+    const env = validateEnv({
+      ...REQUIRED,
+      FRONTEND_URL:
+        'http://localhost:5173, https://app.example.com ,http://localhost:5173',
+    });
+    expect(env.FRONTEND_URLS).toEqual([
+      'http://localhost:5173',
+      'https://app.example.com',
+    ]);
+  });
+
+  it('rejects FRONTEND_URL with more than 5 origins', () => {
+    const sixOrigins = Array.from(
+      { length: 6 },
+      (_, i) => `https://app${i}.example.com`,
+    ).join(',');
+    expect(() =>
+      validateEnv({ ...REQUIRED, FRONTEND_URL: sixOrigins }),
+    ).toThrow(/FRONTEND_URL/);
+  });
+
+  it('rejects FRONTEND_URL if any listed origin is invalid', () => {
+    expect(() =>
+      validateEnv({
+        ...REQUIRED,
+        FRONTEND_URL: 'http://localhost:5173,not-a-url',
+      }),
+    ).toThrow(/FRONTEND_URL/);
+  });
 
   it.each(['development', 'production'])(
     'requires DATABASE_URL in %s',

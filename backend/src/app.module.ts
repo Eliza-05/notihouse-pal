@@ -17,6 +17,7 @@ import { AlertsModule } from './alerts/alerts.module.js';
 import { AttentionModule } from './attention/attention.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { KillSwitchModule } from './kill-switch/kill-switch.module.js';
+import { RecurrenceModule } from './recurrence/recurrence.module.js';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { KillSwitchModule } from './kill-switch/kill-switch.module.js';
     AlertsModule,
     AttentionModule,
     DashboardModule,
+    RecurrenceModule,
     AuditModule,
   ],
 })

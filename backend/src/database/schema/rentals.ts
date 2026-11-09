@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   date,
   foreignKey,
@@ -31,6 +32,8 @@ export const rentals = pgTable(
     startsOn: date('starts_on', { mode: 'string' }).notNull(),
     endsOn: date('ends_on', { mode: 'string' }),
     status: rentalStatus('status').notNull().default('active'),
+    /** Opt-in: el generador de recurrencia solo procesa registros con `true`. */
+    autoGenerate: boolean('auto_generate').notNull().default(false),
     ...timestamps(),
   },
   (t) => [

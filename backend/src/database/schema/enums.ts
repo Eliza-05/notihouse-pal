@@ -194,4 +194,8 @@ export const alertResolution = pgEnum('alert_resolution', [
 export const proposalApplicationAction = pgEnum('proposal_application_action', [
   'create_obligation_occurrence',
   'create_obligation_with_occurrence',
+  'create_recurring_obligation',
+  'update_obligation_schedule',
+  'update_occurrence_details',
+  'create_recurring_rental',
 ]);

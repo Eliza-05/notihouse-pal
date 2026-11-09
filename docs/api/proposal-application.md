@@ -131,3 +131,22 @@ Todo ocurre en **una transacción** de PostgreSQL:
 - Solo hay acciones para obligaciones del hogar. Arriendos y contratos no tienen acciones aplicables (por diseño, nunca se confirman ingresos ni se renuevan contratos desde una propuesta).
 - La concurrencia se comprobó en PostgreSQL 18 local con conexiones independientes: 2, 3, 8 y 10 aplicaciones simultáneas producen un período, una aplicación y un evento ([resultados](../testing/postgres-concurrency-results.md)). Falta comprobarlo a través del pooler de Neon.
 - La deduplicación de propuestas anteriores y las respuestas contradictorias de `complete` se comprobaron con un cliente HTTP simulado; faltan los workflows reales de n8n.
+
+## Ampliación de nov-2026: cuatro acciones nuevas (D7, D8, D12)
+
+> Implementadas y probadas en entorno aislado (PGlite y PostgreSQL 15 local). Migración `0004_proposal_actions_expansion.sql`. El sobre sigue siendo `{ action, data }`; cualquier otra clave → 400. Siguen valiendo todas las reglas anteriores: propuesta aprobada, revisión `data_confirmation` aprobada y vigente, caso bloqueado, idempotencia (`alreadyApplied`), auditoría `case_proposal.apply` y aislamiento por usuario. **Aprobar no aplica.** Ninguna acción confirma pagos ni cobros. A diferencia de las dos acciones originales, estas **no dependen del tipo de caso** (D7): validan sus propias precondiciones.
+
+| Acción | `data` | Efecto | Errores típicos |
+|---|---|---|---|
+| `create_recurring_obligation` | `{ obligation: { providerName, concept, category, frequency?, dueDay (1–31, obligatorio), reminderDaysBefore?, startsOn?, expectedAmount?, currency?, propertyId? } }` | Crea la obligación `active` con `autoGenerate = true` y genera de inmediato el ciclo actual y el siguiente (mismo servicio que el barrido). | 409 duplicado proveedor+concepto; 404/409 inmueble ajeno o inactivo |
+| `update_obligation_schedule` | `{ obligationId, expected: { dueDay?, reminderDaysBefore?, expectedAmount? }, changes: { …mismos campos } }` | Solo esos tres campos. `expected` debe coincidir con lo vigente (control optimista). Si cambia `dueDay`, recalcula las fechas **previstas** de los períodos `pending` (ver D12). | 409 si `expected` ya no coincide o la obligación está archivada; 400 sin cambios reales |
+| `update_occurrence_details` | `{ obligationId, occurrenceId, amount?, dueDate? }` | Completa monto y/o fecha de un período `pending`. Esa fecha pasa a ser **fecha propia**. | 409 si el período no está `pending` |
+| `create_recurring_rental` | `{ rental: { propertyId, expectedAmount, dueDay, startsOn, endsOn?, tenantAlias?, currency? } }` | Crea el arriendo `active` con `autoGenerate = true` y genera sus cobros esperados. | 409 solapamiento; 404 inmueble ajeno |
+
+### D12 — qué períodos recalcula `update_obligation_schedule`
+
+Se recalculan **solo** los períodos `pending` cuya `dueDate` coincide con la fecha que *habría generado el día habitual anterior* (mismo cálculo del generador, con recorte al fin de mes). Un `pending` con otra fecha se considera de **fecha propia** (factura real recibida, `update_occurrence_details` o creación manual) y se conserva. Nunca se tocan períodos pagados, atendidos, anulados ni vencidos; el nuevo vencimiento nunca se mueve al pasado. **Decisión técnica:** el esquema no distingue «prevista» de «propia», y una migración adicional no se justifica para el MVP, por lo que se infiere comparando contra la fecha prevista. **Limitación conocida:** una fecha real que coincida por casualidad con la prevista se recalcula igual.
+
+### Recurso de la aplicación
+
+`proposal_applications` ahora apunta a **exactamente uno** de tres recursos (restricción `proposal_applications_exactly_one_resource`): período (`obligationId` + `occurrenceId`), obligación sola, o arriendo (`rentalId`). La respuesta de `apply` expone el recurso aplicado en `resource`.

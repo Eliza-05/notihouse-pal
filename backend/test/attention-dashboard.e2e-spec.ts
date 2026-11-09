@@ -451,7 +451,11 @@ describe('Attention inbox and dashboard (e2e)', () => {
         rentCharges: { pending: 0, overdue: 0, dueSoon: 0, received: 0 },
         contracts: { active: 2, endingSoon: 1, endPassed: 1 },
         hitl: { pending: 2 },
-        alerts: { active: 9, unread: 9 },
+        // D6: con reminderDaysBefore=3, occUsd (d(5)) y occNoAmount (d(6))
+        // ya no emiten obligation_due_soon (quedan fuera de la ventana
+        // personalizada), aunque sigan contando en periodsDueSoon (ventana
+        // general, sin cambios): 9 - 2 = 7.
+        alerts: { active: 7, unread: 7 },
         cases: { open: 2 },
       });
     });
@@ -562,7 +566,7 @@ describe('Attention inbox and dashboard (e2e)', () => {
       await h.as(laura).post(`/alerts/${alertId}/read`).expect(200);
       const body = (await h.as(laura).get('/dashboard/summary').expect(200))
         .body;
-      expect(body.alerts).toEqual({ active: 9, unread: 8 });
+      expect(body.alerts).toEqual({ active: 7, unread: 6 });
       expect(
         (await attention(laura, '?pageSize=100')).items.find(
           (i) => i.id === ids.occSoon,

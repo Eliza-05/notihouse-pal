@@ -22,6 +22,20 @@
       "when": 1793293414570,
       "tag": "0002_alerts_and_proposal_applications",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794112734395,
+      "tag": "0003_auto_generate_recurrence",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794114401487,
+      "tag": "0004_proposal_actions_expansion",
+      "breakpoints": true
     }
   ]
 }

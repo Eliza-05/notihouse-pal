@@ -48,7 +48,11 @@ describe('Obligations and occurrences (e2e)', () => {
           ...body,
         })
         .expect(201)
-    ).body as { id: string; expectedAmount: string | null };
+    ).body as {
+      id: string;
+      expectedAmount: string | null;
+      autoGenerate: boolean;
+    };
 
   const newOccurrence = async (
     user: TestUser,
@@ -125,9 +129,23 @@ describe('Obligations and occurrences (e2e)', () => {
         frequency: 'monthly',
         reminderDaysBefore: 3,
         status: 'active',
+        autoGenerate: false,
       });
       expect(res.body).not.toHaveProperty('ownerId');
       expect(await countAudit('obligation.create', res.body.id)).toBe(1);
+    });
+
+    it('turns auto-generation on at creation or via patch', async () => {
+      const on = await newObligation(laura, { autoGenerate: true });
+      expect(on.autoGenerate).toBe(true);
+
+      const off = await newObligation(laura);
+      expect(off.autoGenerate).toBe(false);
+      const patched = await h
+        .as(laura)
+        .patch(`/obligations/${off.id}`, { autoGenerate: true })
+        .expect(200);
+      expect(patched.body.autoGenerate).toBe(true);
     });
 
     it('associates an obligation with an own active property only', async () => {
@@ -249,6 +267,75 @@ describe('Obligations and occurrences (e2e)', () => {
         await h.as(andres).get('/obligations?status=paused').expect(200)
       ).body;
       expect(paused.items.map((o: { id: string }) => o.id)).toEqual([mine.id]);
+    });
+
+    it('searches by provider and concept, case-insensitively and with escaped wildcards', async () => {
+      const claro = await newObligation(laura, {
+        providerName: 'Claro Colombia',
+        concept: `Internet hogar ${uniq()}`,
+      });
+      const agua = await newObligation(laura, {
+        providerName: 'Acueducto',
+        concept: `Agua 100% ${uniq()}`,
+      });
+
+      const byProvider = (
+        await h.as(laura).get('/obligations?q=claro').expect(200)
+      ).body;
+      expect(byProvider.items.map((o: { id: string }) => o.id)).toContain(
+        claro.id,
+      );
+      expect(byProvider.items.map((o: { id: string }) => o.id)).not.toContain(
+        agua.id,
+      );
+
+      const byConcept = (
+        await h.as(laura).get('/obligations?q=INTERNET').expect(200)
+      ).body;
+      expect(byConcept.items.map((o: { id: string }) => o.id)).toContain(
+        claro.id,
+      );
+
+      // El `%` del término se trata como texto literal, no como comodín.
+      const literalPercent = (
+        await h.as(laura).get('/obligations?q=100%25').expect(200)
+      ).body;
+      expect(
+        literalPercent.items.map((o: { id: string }) => o.id),
+      ).toEqual([agua.id]);
+
+      // Nunca ve las de otro propietario, aunque coincidan.
+      await newObligation(andres, { providerName: 'Claro Colombia' });
+      const total = (
+        await h.as(laura).get('/obligations?q=claro&pageSize=100').expect(200)
+      ).body.total;
+      expect(total).toBe(1);
+    });
+
+    it.each(['q=a', `q=${'x'.repeat(61)}`])(
+      'rejects an out-of-range q (%s) with 400',
+      async (qs) => {
+        await h.as(laura).get(`/obligations?${qs}`).expect(400);
+      },
+    );
+
+    it('lists obligations without a property via unassigned, exclusive of propertyId', async () => {
+      const withProperty = await newObligation(laura, {
+        propertyId: lauraProperty,
+      });
+      const withoutProperty = await newObligation(laura);
+
+      const unassigned = (
+        await h.as(laura).get('/obligations?unassigned=true').expect(200)
+      ).body;
+      const ids = unassigned.items.map((o: { id: string }) => o.id);
+      expect(ids).toContain(withoutProperty.id);
+      expect(ids).not.toContain(withProperty.id);
+
+      await h
+        .as(laura)
+        .get(`/obligations?unassigned=true&propertyId=${lauraProperty}`)
+        .expect(400);
     });
 
     it('hides foreign obligations (404) and blocks foreign updates', async () => {

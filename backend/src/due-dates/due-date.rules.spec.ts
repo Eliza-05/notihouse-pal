@@ -1,9 +1,11 @@
+import { addDays } from './calendar.js';
 import {
   attentionPriority,
   type DueDateRules,
   evaluateContract,
   evaluateHitl,
   evaluateOccurrence,
+  evaluateOccurrenceAlert,
   evaluateRentCharge,
 } from './due-date.rules.js';
 
@@ -15,6 +17,7 @@ const RULES: DueDateRules = {
   hitlSoonHours: 6,
 };
 const TODAY = '2026-11-18';
+const addDaysToToday = (days: number) => addDays(TODAY, days);
 
 describe('due-date rules', () => {
   describe('obligation occurrences', () => {
@@ -115,6 +118,97 @@ describe('due-date rules', () => {
 
     it('returns the same result for the same input', () => {
       expect(occ('2026-11-20')).toEqual(occ('2026-11-20'));
+    });
+  });
+
+  /**
+   * D6 (aprobada 7-nov-2026): la alerta `obligation_due_soon` usa una
+   * ventana PERSONALIZADA (solo `reminderDaysBefore`, nunca `max(7, …)`
+   * como la ventana general de `evaluateOccurrence`, que no cambia).
+   * `overdue` no depende de la ventana: es igual en ambas.
+   */
+  describe('obligation occurrence alert window (D6)', () => {
+    const alert = (
+      dueDate: string,
+      reminderDaysBefore: number,
+      status = 'pending',
+    ) => evaluateOccurrenceAlert({ dueDate, status, reminderDaysBefore }, TODAY);
+
+    it.each([
+      // reminderDaysBefore, daysUntil, condition esperado.
+      [0, 1, 'scheduled'],
+      [0, 0, 'due_today'],
+      [3, 4, 'scheduled'],
+      [3, 3, 'upcoming'],
+      [3, 0, 'due_today'],
+      [7, 8, 'scheduled'],
+      [7, 7, 'upcoming'],
+      [8, 8, 'upcoming'],
+      [8, 9, 'scheduled'],
+      [60, 60, 'upcoming'],
+      [60, 61, 'scheduled'],
+    ])(
+      'reminderDaysBefore=%d, daysUntil=%d → %s (límite exacto: día −N avisa, día −N−1 no)',
+      (reminderDaysBefore, daysUntil, condition) => {
+        const dueDate = addDaysToToday(daysUntil);
+        expect(alert(dueDate, reminderDaysBefore).condition).toBe(condition);
+      },
+    );
+
+    it('with reminderDaysBefore=3, emits at day 12 (not day 8) for a due date on day 15', () => {
+      // Ejemplo de aceptación de la guía: hoy 2026-11-12, vence 2026-11-15.
+      expect(
+        evaluateOccurrenceAlert(
+          { dueDate: '2026-11-15', status: 'pending', reminderDaysBefore: 3 },
+          '2026-11-08',
+        ).condition,
+      ).toBe('scheduled');
+      expect(
+        evaluateOccurrenceAlert(
+          { dueDate: '2026-11-15', status: 'pending', reminderDaysBefore: 3 },
+          '2026-11-12',
+        ).condition,
+      ).toBe('upcoming');
+    });
+
+    it('with reminderDaysBefore=0, emits exactly on the due date', () => {
+      expect(
+        evaluateOccurrenceAlert(
+          { dueDate: '2026-11-15', status: 'pending', reminderDaysBefore: 0 },
+          '2026-11-14',
+        ).condition,
+      ).toBe('scheduled');
+      expect(
+        evaluateOccurrenceAlert(
+          { dueDate: '2026-11-15', status: 'pending', reminderDaysBefore: 0 },
+          '2026-11-15',
+        ).condition,
+      ).toBe('due_today');
+    });
+
+    it.each(['paid', 'attended', 'cancelled'])(
+      'never alerts a %s period, even within the personalized window',
+      (status) => {
+        expect(alert(TODAY, 60, status).condition).toBe('resolved');
+      },
+    );
+
+    it('overdue does not depend on the window: identical to the general evaluation', () => {
+      const row = { dueDate: '2026-11-01', status: 'pending', reminderDaysBefore: 3 };
+      expect(evaluateOccurrenceAlert(row, TODAY).condition).toBe('overdue');
+      expect(evaluateOccurrence(row, RULES, TODAY).condition).toBe('overdue');
+    });
+
+    it('a window wider than 7 (reminderDaysBefore=60) agrees with the general evaluation', () => {
+      // Cuando reminderDaysBefore ≥ 7, la ventana general (max(7, N) = N) y
+      // la personalizada (N) coinciden: no hay diferencia que observar.
+      const row = {
+        dueDate: '2026-11-30',
+        status: 'pending',
+        reminderDaysBefore: 60,
+      };
+      expect(evaluateOccurrence(row, RULES, TODAY).condition).toBe('upcoming');
+      expect(evaluateOccurrenceAlert(row, TODAY).condition).toBe('upcoming');
     });
   });
 

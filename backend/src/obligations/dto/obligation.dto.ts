@@ -1,11 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
+  Length,
   Matches,
   Max,
   MaxLength,
@@ -14,6 +16,7 @@ import {
 import {
   OptionalNotNull,
   OptionalNullable,
+  QueryBoolean,
   Trim,
 } from '../../common/dto-helpers.js';
 import { PageMetaDto, PaginationQueryDto } from '../../common/pagination.js';
@@ -106,6 +109,15 @@ export class CreateObligationDto {
   @IsOptional()
   @IsIn(INITIAL_OBLIGATION_STATUSES)
   status?: (typeof INITIAL_OBLIGATION_STATUSES)[number];
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Generar automáticamente los próximos períodos. No cobra ni envía mensajes.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoGenerate?: boolean;
 }
 
 /**
@@ -183,6 +195,14 @@ export class UpdateObligationDto {
   @OptionalNotNull()
   @IsIn(OBLIGATION_STATUSES)
   status?: ObligationStatus;
+
+  @ApiPropertyOptional({
+    description:
+      'Generar automáticamente los próximos períodos. No cobra ni envía mensajes.',
+  })
+  @OptionalNotNull()
+  @IsBoolean()
+  autoGenerate?: boolean;
 }
 
 export class ListObligationsQueryDto extends PaginationQueryDto {
@@ -203,6 +223,26 @@ export class ListObligationsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(OBLIGATION_CATEGORIES)
   category?: Category;
+
+  @ApiPropertyOptional({
+    description: 'Búsqueda por proveedor o concepto (insensible a mayúsculas)',
+    minLength: 2,
+    maxLength: 60,
+  })
+  @Trim()
+  @IsOptional()
+  @IsString()
+  @Length(2, 60)
+  q?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Solo obligaciones sin inmueble asignado. Incompatible con propertyId.',
+  })
+  @IsOptional()
+  @QueryBoolean()
+  @IsBoolean()
+  unassigned?: boolean;
 }
 
 export class ObligationResponseDto {
@@ -241,6 +281,9 @@ export class ObligationResponseDto {
 
   @ApiProperty({ enum: OBLIGATION_STATUSES })
   status: ObligationStatus;
+
+  @ApiProperty()
+  autoGenerate: boolean;
 
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt: Date;

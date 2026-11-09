@@ -19,6 +19,8 @@ import {
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ServiceRoute } from '../auth/service-route.decorator.js';
+import { AssistantResolveService } from './assistant/assistant-resolve.service.js';
+import { ResolveCaseDto, ResolveResponseDto } from './assistant/assistant.dto.js';
 import { CaseProcessService } from './case-process.service.js';
 import { CaseResponseDto } from './dto/case.dto.js';
 import {
@@ -48,7 +50,10 @@ import { Suspendable } from '../kill-switch/kill-switch.guard.js';
 })
 @Controller('internal/cases/:id')
 export class InternalCasesController {
-  constructor(private readonly service: CaseProcessService) {}
+  constructor(
+    private readonly service: CaseProcessService,
+    private readonly assistant: AssistantResolveService,
+  ) {}
 
   @Post('proposals')
   @ApiOperation({
@@ -93,6 +98,24 @@ export class InternalCasesController {
     const { created, request } = await this.service.createHitlRequest(id, dto);
     res.status(created ? 201 : 200);
     return request;
+  }
+
+  @Post('assistant/resolve')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Resolver una extracción contra los datos propios del usuario',
+    description:
+      'Solo lectura: nunca escribe una propuesta ni una revisión. Sin Gemini ni ' +
+      'llamadas externas. Nunca elige automáticamente entre varias coincidencias (D17).',
+  })
+  @ApiOkResponse({ type: ResolveResponseDto })
+  @ApiBadRequestResponse({ description: 'Extracción con forma inválida' })
+  @ApiConflictResponse({ description: 'Reclamación inválida' })
+  resolve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ResolveCaseDto,
+  ): Promise<ResolveResponseDto> {
+    return this.assistant.resolve(id, dto);
   }
 
   @Post('complete')

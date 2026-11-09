@@ -384,3 +384,22 @@ La Fase 4.2F.2 repitió la idempotencia, la compensación, la descarga privada y
 8. Gmail: el workflow 05 envía cada adjunto a `POST /internal/gmail/attachments` (§11), que crea el trabajo `document.process` del paso 1.
 
 Todas las rutas internas exigen el token de servicio. Las que tocan un caso o un archivo exigen además la reclamación vigente de un trabajo de ese caso. Detalles en [workflow-integration.md](workflow-integration.md).
+
+## 16. Mensajes de texto del asistente (nov-2026, N1)
+
+`POST /api/v1/ingestions/text` — JWT, `application/json`. **No interpreta nada y no llama a Gemini**: solo recibe y encola.
+
+Cuerpo: `{ "text": "1–1000 caracteres, sin caracteres de control (se permiten \n y \t)", "requestId"?: "<uuid>", "caseType"?: "household_obligation" (por defecto), "propertyId"?, "obligationId"?, "rentalId"?, "contractId"? }`. A lo sumo una entidad acorde al tipo de caso; todas deben ser del usuario; `ownerId`/`caseId` → 400.
+
+Crea, en una transacción, un caso `received` (origen `form`) y un trabajo `text.interpret` con `payload { text, textSha256, textLength, hints }`. Auditoría `text.receive` (hash y longitud; **nunca el contenido**).
+
+| Código | Cuándo |
+|---|---|
+| 201 | Caso y trabajo creados: `{ caseId, correlationId, caseStatus: "received", source, job: { type: "text.interpret", status: "pending" }, processing: "pending", textLength }` |
+| 200 | Repetición idempotente (mismo `requestId` y mismo texto): devuelve el mismo caso; también ante envíos simultáneos |
+| 400 | Texto vacío, demasiado largo o con caracteres de control; campos no permitidos |
+| 404 | Entidad inexistente o ajena |
+| 409 | Mismo `requestId` con otro texto u otros datos |
+| 429 | Ya hay **3** casos de texto abiertos (`received`/`processing`) del usuario. El conteo se serializa por usuario con un bloqueo consultivo transaccional: solicitudes simultáneas no pueden superar el límite (verificado en PostgreSQL real) |
+
+Se acepta aunque el kill switch `text_processing` limite el procesamiento (queda en cola). Hasta que n8n adapte el workflow (A-1), el trabajo permanece `pending`.

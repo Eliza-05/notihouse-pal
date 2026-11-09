@@ -1,0 +1,92 @@
+import request from 'supertest';
+import {
+  createMigratedDatabase,
+  type TestDatabase,
+} from './support/pglite.js';
+import type { TestApp } from './support/test-app.js';
+
+/**
+ * D18: `FRONTEND_URL` admite una lista explícita de orígenes separados por
+ * comas (p. ej. desarrollo local + Vercel). La configuración se fija ANTES
+ * de importar AppModule, porque ConfigModule valida el entorno al cargarse.
+ */
+describe('CORS with multiple explicit origins (e2e, D18)', () => {
+  let t: TestDatabase;
+  let h: TestApp;
+
+  beforeAll(async () => {
+    Object.assign(process.env, {
+      FRONTEND_URL:
+        'http://localhost:5173, https://notihouse-pal.vercel.app',
+    });
+    t = await createMigratedDatabase();
+    const { createTestApp } = await import('./support/test-app.js');
+    h = await createTestApp(t.db);
+  }, 60_000);
+
+  afterAll(async () => {
+    await h.app.close();
+  });
+
+  const server = () => h.app.getHttpServer();
+
+  it('allows every configured origin', async () => {
+    for (const origin of [
+      'http://localhost:5173',
+      'https://notihouse-pal.vercel.app',
+    ]) {
+      const res = await request(server())
+        .get('/api/v1/health')
+        .set('Origin', origin);
+      expect(res.headers['access-control-allow-origin']).toBe(origin);
+    }
+  });
+
+  it('rejects an origin outside the configured list', async () => {
+    const res = await request(server())
+      .get('/api/v1/health')
+      .set('Origin', 'https://evil.example.com');
+    expect(res.headers['access-control-allow-origin']).not.toBe(
+      'https://evil.example.com',
+    );
+  });
+
+  it('answers a preflight (OPTIONS) from an allowed origin with the allowed methods and headers', async () => {
+    const res = await request(server())
+      .options('/api/v1/obligations')
+      .set('Origin', 'https://notihouse-pal.vercel.app')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'authorization,content-type');
+    expect(res.status).toBe(204);
+    expect(res.headers['access-control-allow-origin']).toBe(
+      'https://notihouse-pal.vercel.app',
+    );
+    expect(res.headers['access-control-allow-methods']).toMatch(/POST/);
+    expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+  });
+
+  it('answers a preflight from a foreign origin without CORS headers and without a 5xx', async () => {
+    for (const origin of ['https://evil.example.com', 'http://localhost:9999', 'null']) {
+      const res = await request(server())
+        .options('/api/v1/obligations')
+        .set('Origin', origin)
+        .set('Access-Control-Request-Method', 'POST');
+      expect(res.status).toBeLessThan(500);
+      expect(res.headers['access-control-allow-origin']).toBeUndefined();
+      expect(res.headers['access-control-allow-methods']).toBeUndefined();
+    }
+  });
+
+  it('never answers a foreign origin with a server error on a normal request', async () => {
+    const res = await request(server())
+      .get('/api/v1/health')
+      .set('Origin', 'https://evil.example.com');
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('answers a request without an Origin header (health checks, curl)', async () => {
+    const res = await request(server()).get('/api/v1/health');
+    expect(res.status).toBe(200);
+  });
+});

@@ -1,8 +1,13 @@
 import {
   addDays,
+  addMonthsToYearMonth,
   calendarDateIn,
+  clampedDayInMonth,
   daysBetween,
   monthBounds,
+  monthRange,
+  monthsBetweenYearMonth,
+  yearMonthOf,
 } from './calendar.js';
 
 const BOGOTA = 'America/Bogota';
@@ -66,6 +71,56 @@ describe('calendar dates', () => {
     expect(monthBounds('2028-02-29')).toEqual({
       start: '2028-02-01',
       next: '2028-03-01',
+    });
+  });
+
+  describe('year-month arithmetic (recurrencia)', () => {
+    it('reads the year-month of a calendar date', () => {
+      expect(yearMonthOf('2026-11-18')).toEqual({ year: 2026, month: 11 });
+    });
+
+    it.each([
+      [{ year: 2026, month: 11 }, 1, { year: 2026, month: 12 }],
+      [{ year: 2026, month: 11 }, 2, { year: 2027, month: 1 }],
+      [{ year: 2026, month: 1 }, -1, { year: 2025, month: 12 }],
+      [{ year: 2026, month: 11 }, 0, { year: 2026, month: 11 }],
+      [{ year: 2026, month: 11 }, 14, { year: 2028, month: 1 }],
+    ])('addMonthsToYearMonth(%j, %d) = %j', (ym, months, expected) => {
+      expect(addMonthsToYearMonth(ym, months)).toEqual(expected);
+    });
+
+    it.each([
+      [{ year: 2026, month: 1 }, { year: 2026, month: 11 }, 10],
+      [{ year: 2026, month: 11 }, { year: 2026, month: 1 }, -10],
+      [{ year: 2026, month: 11 }, { year: 2026, month: 11 }, 0],
+      [{ year: 2025, month: 12 }, { year: 2027, month: 1 }, 13],
+    ])('monthsBetweenYearMonth(%j, %j) = %d', (a, b, expected) => {
+      expect(monthsBetweenYearMonth(a, b)).toBe(expected);
+    });
+
+    it('computes the first and last day of a month, including February', () => {
+      expect(monthRange({ year: 2026, month: 11 })).toEqual({
+        start: '2026-11-01',
+        end: '2026-11-30',
+      });
+      expect(monthRange({ year: 2027, month: 2 })).toEqual({
+        start: '2027-02-01',
+        end: '2027-02-28',
+      });
+      expect(monthRange({ year: 2028, month: 2 })).toEqual({
+        start: '2028-02-01',
+        end: '2028-02-29',
+      });
+    });
+
+    it.each([
+      [{ year: 2027, month: 1 }, 31, '2027-01-31'],
+      [{ year: 2027, month: 2 }, 31, '2027-02-28'],
+      [{ year: 2028, month: 2 }, 29, '2028-02-29'],
+      [{ year: 2026, month: 4 }, 31, '2026-04-30'],
+      [{ year: 2026, month: 11 }, 15, '2026-11-15'],
+    ])('clampedDayInMonth(%j, %d) = %s (D1)', (ym, day, expected) => {
+      expect(clampedDayInMonth(ym, day)).toBe(expected);
     });
   });
 });

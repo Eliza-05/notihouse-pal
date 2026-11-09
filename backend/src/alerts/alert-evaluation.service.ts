@@ -221,11 +221,13 @@ export class AlertEvaluationService {
         candidates = rows.map((r) => ({
           id: r.id,
           ownerId: r.ownerId,
+          // D6: la alerta usa la ventana personalizada (reminderDaysBefore
+          // solo), no la general de la bandeja/dashboard.
           desired: desiredAlert(
             kind,
             r.id,
             r.dueDate,
-            this.dueDates.occurrence(r, today).condition,
+            this.dueDates.occurrenceAlert(r, today).condition,
           ),
         }));
         break;
@@ -457,7 +459,9 @@ export class AlertEvaluationService {
       let desired: DesiredAlert | null;
       let closed: boolean;
       if (row.occurrenceId) {
-        const e = this.dueDates.occurrence(
+        // D6: la misma ventana personalizada que decidió crearla decide si
+        // sigue vigente; si no, se resuelve (evita un bucle crea/resuelve).
+        const e = this.dueDates.occurrenceAlert(
           {
             dueDate: row.occurrenceDue!,
             status: row.occurrenceStatus!,

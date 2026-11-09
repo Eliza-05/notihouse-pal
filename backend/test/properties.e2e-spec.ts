@@ -178,8 +178,52 @@ describe('Properties (e2e)', () => {
     'page=0',
     'page=abc',
     'status=deleted',
+    'q=a',
+    `q=${'x'.repeat(61)}`,
   ])('rejects invalid list parameters (%s)', async (qs) => {
     await h.as(laura).get(`/properties?${qs}`).expect(400);
+  });
+
+  it('searches by name, case-insensitively, with escaped wildcards and only within the owner', async () => {
+    const casa = await h
+      .as(laura)
+      .post('/properties', { name: `Casa del lago ${randomUUID()}` })
+      .expect(201);
+    const apto = await h
+      .as(laura)
+      .post('/properties', { name: `Apto 100% nuevo ${randomUUID()}` })
+      .expect(201);
+
+    const byName = (
+      await h.as(laura).get('/properties?q=casa del lago').expect(200)
+    ).body;
+    expect(byName.items.map((p: { id: string }) => p.id)).toEqual([
+      casa.body.id,
+    ]);
+
+    const upper = (
+      await h.as(laura).get('/properties?q=CASA DEL LAGO').expect(200)
+    ).body;
+    expect(upper.items.map((p: { id: string }) => p.id)).toEqual([
+      casa.body.id,
+    ]);
+
+    // El `%` del término se trata como texto literal, no como comodín.
+    const literalPercent = (
+      await h.as(laura).get('/properties?q=100%25').expect(200)
+    ).body;
+    expect(literalPercent.items.map((p: { id: string }) => p.id)).toEqual([
+      apto.body.id,
+    ]);
+
+    await h
+      .as(andres)
+      .post('/properties', { name: 'Casa del lago compartida' })
+      .expect(201);
+    const foreign = (
+      await h.as(laura).get('/properties?q=compartida').expect(200)
+    ).body;
+    expect(foreign).toMatchObject({ items: [], total: 0 });
   });
 
   it('returns own property and 404 for unknown or foreign ones', async () => {

@@ -42,6 +42,7 @@ export const rentalColumns = {
   startsOn: rentals.startsOn,
   endsOn: rentals.endsOn,
   status: rentals.status,
+  autoGenerate: rentals.autoGenerate,
   createdAt: rentals.createdAt,
   updatedAt: rentals.updatedAt,
 };
@@ -102,45 +103,61 @@ export class RentalsService {
     correlationId: string,
     dto: CreateRentalDto,
   ): Promise<RentalResponseDto> {
+    return this.db.transaction((tx) =>
+      this.insertRental(tx, user, correlationId, dto),
+    );
+  }
+
+  /**
+   * Crea el arriendo dentro de `tx` y audita la creación. La reutiliza la
+   * aplicación de la propuesta `create_recurring_rental` (`details` añade su
+   * trazabilidad).
+   */
+  async insertRental(
+    tx: DbTransaction,
+    user: AuthenticatedUser,
+    correlationId: string,
+    dto: CreateRentalDto,
+    details: Record<string, unknown> = {},
+  ): Promise<RentalResponseDto> {
     assertDateOrder(dto.startsOn, dto.endsOn ?? null, 'startsOn', 'endsOn');
-    return this.db.transaction(async (tx) => {
-      await assertAssignableProperty(
-        tx,
-        user,
-        dto.propertyId,
-        PROPERTY_WRITE_LOCK,
-      );
-      await this.assertPropertyFree(
-        tx,
-        dto.propertyId,
-        dto.startsOn,
-        dto.endsOn ?? null,
-      );
-      const [row] = await tx
-        .insert(rentals)
-        .values({
-          ownerId: user.profileId,
-          propertyId: dto.propertyId,
-          tenantAlias: dto.tenantAlias ?? null,
-          expectedAmount: dto.expectedAmount,
-          currency: dto.currency ?? 'COP',
-          dueDay: dto.dueDay,
-          startsOn: dto.startsOn,
-          endsOn: dto.endsOn ?? null,
-          status: dto.status ?? 'active',
-        })
-        .returning(rentalColumns);
-      await this.audit.recordUserAction(tx, {
-        profileId: user.profileId,
-        correlationId,
-        component: COMPONENT,
-        action: 'rental.create',
-        resource: 'rental',
-        resourceId: row!.id,
-        details: { propertyId: row!.propertyId, status: row!.status },
-      });
-      return row!;
+    await assertAssignableProperty(
+      tx,
+      user,
+      dto.propertyId,
+      PROPERTY_WRITE_LOCK,
+    );
+    await this.assertPropertyFree(
+      tx,
+      dto.propertyId,
+      dto.startsOn,
+      dto.endsOn ?? null,
+    );
+    const [row] = await tx
+      .insert(rentals)
+      .values({
+        ownerId: user.profileId,
+        propertyId: dto.propertyId,
+        tenantAlias: dto.tenantAlias ?? null,
+        expectedAmount: dto.expectedAmount,
+        currency: dto.currency ?? 'COP',
+        dueDay: dto.dueDay,
+        startsOn: dto.startsOn,
+        endsOn: dto.endsOn ?? null,
+        status: dto.status ?? 'active',
+        autoGenerate: dto.autoGenerate ?? false,
+      })
+      .returning(rentalColumns);
+    await this.audit.recordUserAction(tx, {
+      profileId: user.profileId,
+      correlationId,
+      component: COMPONENT,
+      action: 'rental.create',
+      resource: 'rental',
+      resourceId: row!.id,
+      details: { propertyId: row!.propertyId, status: row!.status, ...details },
     });
+    return row!;
   }
 
   async update(
@@ -183,6 +200,7 @@ export class RentalsService {
         startsOn: dto.startsOn,
         endsOn: dto.endsOn,
         status: dto.status,
+        autoGenerate: dto.autoGenerate,
       };
       assertDateOrder(
         patch.startsOn ?? current.startsOn,

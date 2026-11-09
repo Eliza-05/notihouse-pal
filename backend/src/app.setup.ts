@@ -45,10 +45,24 @@ export function configureApp(app: INestApplication): void {
       app.getHttpAdapter().getInstance() as { set(k: string, v: unknown): void }
     ).set('trust proxy', trustProxyHops);
   }
-  // Un único origen permitido (el frontend). Sin cookies: la sesión viaja en
-  // la cabecera Authorization, por lo que no se habilitan credenciales.
+  // Lista explícita de orígenes permitidos (D18): el frontend local y, si se
+  // configuran, los de Vercel. Sin cookies: la sesión viaja en la cabecera
+  // Authorization, por lo que no se habilitan credenciales.
+  const allowedOrigins = config.get('FRONTEND_URLS', { infer: true });
   app.enableCors({
-    origin: config.get('FRONTEND_URL', { infer: true }),
+    origin(
+      origin: string | undefined,
+      callback: (error: Error | null, allow?: boolean) => void,
+    ) {
+      // Sin cabecera Origin (curl, health checks): no es una petición CORS.
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      // Origen no autorizado: no se emiten cabeceras CORS (el navegador
+      // bloquea la respuesta) y la petición sigue su curso sin error 500.
+      callback(null, false);
+    },
     methods: CORS_METHODS,
     allowedHeaders: CORS_ALLOWED_HEADERS,
     exposedHeaders: [CORRELATION_HEADER],

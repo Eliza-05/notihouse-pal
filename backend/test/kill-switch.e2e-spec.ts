@@ -529,4 +529,35 @@ describe('Kill switch (e2e)', () => {
       )
       .expect(401);
   });
+
+  it('the recurrence generation can be suspended', async () => {
+    await ks.activate({
+      scope: 'recurrence_generation',
+      reason: 'Generación duplicando períodos',
+      trigger: 'manual',
+      actor: 'operador:test',
+      actorType: 'system',
+    });
+    const res = await svc()
+      .post('/internal/recurrence/generate', { workerId: 'n8n-scheduler' })
+      .expect(503);
+    expect(res.body).toMatchObject({
+      code: 'KILL_SWITCH_ACTIVE',
+      scope: 'recurrence_generation',
+    });
+    await request(w.h.app.getHttpServer())
+      .post('/api/v1/internal/recurrence/generate')
+      .send({ workerId: 'n8n-scheduler' })
+      .expect(401);
+
+    await ks.resume({
+      scope: 'recurrence_generation',
+      operator: 'operador:test',
+      reason: 'Corregido',
+      testEvidence: 'Generación repetida sin duplicados',
+    });
+    await svc()
+      .post('/internal/recurrence/generate', { workerId: 'n8n-scheduler' })
+      .expect(200);
+  });
 });
