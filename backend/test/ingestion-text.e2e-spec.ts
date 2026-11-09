@@ -220,6 +220,46 @@ describe('Text ingestion (e2e, N1)', () => {
     await sendAs(`Ahora sí cabe ${randomUUID()}`).expect(201);
   });
 
+  it('never exceeds 3 open messages under simultaneous requests (D15, advisory lock)', async () => {
+    const fresh = await createTestUser(t.db, {
+      email: `race-${randomUUID()}@textingest.test`,
+      password: pw(),
+      displayName: 'Race',
+    });
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        h
+          .as(fresh)
+          .post('/ingestions/text', { text: `Mensaje simultáneo ${i} ${randomUUID()}` }),
+      ),
+    );
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses.filter((s) => s === 201)).toHaveLength(3);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(5);
+    const [row] = await sql<{ n: number }>(
+      `SELECT count(*)::int AS n FROM cases WHERE owner_id = $1`,
+      [fresh.profileId],
+    );
+    expect(row!.n).toBe(3);
+  });
+
+  it('is idempotent by requestId even when the same request is sent simultaneously', async () => {
+    const fresh = await createTestUser(t.db, {
+      email: `idem-${randomUUID()}@textingest.test`,
+      password: pw(),
+      displayName: 'Idem',
+    });
+    const requestId = randomUUID();
+    const text = `Mensaje idempotente ${randomUUID()}`;
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        h.as(fresh).post('/ingestions/text', { text, requestId }),
+      ),
+    );
+    expect(results.every((r) => [200, 201].includes(r.status))).toBe(true);
+    expect(new Set(results.map((r) => r.body.caseId)).size).toBe(1);
+  });
+
   it('never calls Gemini, and is accepted even while text_processing is suspended (it only queues)', async () => {
     const fresh = await createTestUser(t.db, {
       email: `ks-${randomUUID()}@textingest.test`,

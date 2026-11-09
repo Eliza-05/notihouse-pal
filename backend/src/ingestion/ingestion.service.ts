@@ -9,7 +9,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { and, count, eq, inArray, ne } from 'drizzle-orm';
+import { and, count, eq, inArray, ne, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { AuditService } from '../audit/audit.service.js';
@@ -213,6 +213,13 @@ export class IngestionService {
     try {
       const result = await this.db.transaction(async (tx) => {
         if (subject) await this.cases.assertOwnedSubject(tx, user, subject);
+        // Serializa los mensajes de un mismo usuario: sin este bloqueo, dos
+        // solicitudes simultáneas leerían el mismo conteo (< 3) y ambas
+        // insertarían, superando el límite (D15). Se libera al terminar la
+        // transacción; no afecta a otros usuarios.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`text-intake:${user.profileId}`}, 0))`,
+        );
         const [{ n: openCases }] = await tx
           .select({ n: count() })
           .from(cases)
