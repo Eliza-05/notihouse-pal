@@ -30,7 +30,7 @@ export function ContractsPage() {
       </div>
       <p className="text-muted">NotiHouse-Pal no genera, firma ni renueva contratos.</p>
 
-      <select value={status} onChange={(e) => { setStatus(e.target.value as ContractStatus | ''); setPage(1) }} style={{ maxWidth: 200 }}>
+      <select aria-label="Filtrar por estado" value={status} onChange={(e) => { setStatus(e.target.value as ContractStatus | ''); setPage(1) }} style={{ maxWidth: 200 }}>
         <option value="">Todos los estados</option>
         {Object.entries(CONTRACT_STATUS_LABELS).map(([v, l]) => (
           <option key={v} value={v}>

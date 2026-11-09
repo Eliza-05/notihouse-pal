@@ -20,7 +20,7 @@ export function CasesPage() {
         Cada factura, nota de voz o mensaje enviado al asistente queda registrado aquí como un caso independiente.
       </p>
 
-      <select value={status} onChange={(e) => { setStatus(e.target.value as CaseStatus | ''); setPage(1) }} style={{ maxWidth: 220 }}>
+      <select aria-label="Filtrar por estado" value={status} onChange={(e) => { setStatus(e.target.value as CaseStatus | ''); setPage(1) }} style={{ maxWidth: 220 }}>
         <option value="">Todos los estados</option>
         {Object.entries(CASE_STATUS_LABELS).map(([v, l]) => (
           <option key={v} value={v}>
