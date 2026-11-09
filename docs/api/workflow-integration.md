@@ -406,3 +406,12 @@ Un **único** scheduler llama a `POST /internal/alerts/evaluate`, como máximo u
 - `document.process` incluye `duplicateOfDocumentId` cuando el archivo es idéntico a otro del usuario (E3).
 
 **E12 al aplicar.** Si otra propuesta abierta del mismo usuario (otro caso, no `stt`, sin aplicar ni rechazar) describe la misma obligación y período con otro monto o fecha, `apply` responde **409** `CONTRADICTING_SOURCE` con ambas fuentes y no escribe nada.
+
+## Ampliación de nov-2026: recurrencia, texto y resolución (contratos implementados)
+
+> Detalle por adaptación de n8n: [`docs/integracion/ADAPTACIONES_N8N_PENDIENTES.md`](../integracion/ADAPTACIONES_N8N_PENDIENTES.md). **Ningún workflow fue modificado**; estos contratos están probados sin n8n.
+
+- **`POST /internal/recurrence/generate`** — token de servicio, kill switch `recurrence_generation`. Cuerpo `{ workerId, batchSize?, maxBatches?, cursor? }`; respuesta `{ evaluationDate, timeZone, correlationId, scanned, obligationPeriodsCreated, rentChargesCreated, unchanged, skipped: { missingDueDay }, complete, nextCursor }`. Procesa solo registros `active` con `autoGenerate = true`; idempotente; sin relleno histórico.
+- **Trabajo `text.interpret`** — creado por `POST /ingestions/text`; reclamable con `POST /internal/workflow-jobs/claim` (`jobTypes: ["text.interpret"]`); alcance de kill switch `text_processing`.
+- **`POST /internal/cases/:id/assistant/resolve`** — token de servicio + reclamación vigente (`jobId`, `claimToken`), **solo lectura**. Acepta trabajos **`text.interpret` y `voice.transcribe`** (lista cerrada; otro tipo → 403). Entrada `extraction` (esquema único de §20.3 de la guía); salida `{ outcome, proposedData, choices, missing, warnings, summary, consequences }`. Errores: 400, 401, 403, 404 (caso o trabajo de otro caso), 409 (reclamación inválida o vencida).
+- **Acciones aplicables nuevas** — ver [`proposal-application.md`](./proposal-application.md).
