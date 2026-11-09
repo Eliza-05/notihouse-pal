@@ -924,6 +924,48 @@ describe('Proposal application (e2e)', () => {
       await apply(w.laura, noChange.c.id, noChange.p.id).expect(400);
     });
 
+    it('update_obligation_schedule (D12): keeps a pending period whose date came from a real invoice, and recalculates only the planned one', async () => {
+      const unique = randomUUID();
+      const own = (
+        await w.h
+          .as(w.laura)
+          .post('/obligations', {
+            providerName: `Agua ${unique}`,
+            concept: `Agua ${unique}`,
+            category: 'water',
+            dueDay: 10,
+          })
+          .expect(201)
+      ).body;
+      const year = `${new Date().getUTCFullYear() + 3}`;
+      const mk = async (month: string, dueDate: string) =>
+        (
+          await w.h
+            .as(w.laura)
+            .post(`/obligations/${own.id}/occurrences`, {
+              periodStart: `${year}-${month}-01`,
+              periodEnd: `${year}-${month}-28`,
+              dueDate,
+            })
+            .expect(201)
+        ).body;
+      const planned = await mk('05', `${year}-05-10`); // fecha prevista por dueDay=10
+      const invoiced = await mk('06', `${year}-06-14`); // fecha real de una factura
+
+      const { c, p } = await reviewed({
+        action: 'update_obligation_schedule',
+        data: {
+          obligationId: own.id,
+          expected: { dueDay: 10 },
+          changes: { dueDay: 20 },
+        },
+      });
+      await apply(w.laura, c.id, p.id).expect(201);
+
+      expect((await occurrenceRow(planned.id))[0]!.due_date).toBe(`${year}-05-20`);
+      expect((await occurrenceRow(invoiced.id))[0]!.due_date).toBe(`${year}-06-14`);
+    });
+
     it('update_obligation_schedule: never moves a pending occurrence into the past, and rejects an archived obligation', async () => {
       const unique = randomUUID();
       const own = (

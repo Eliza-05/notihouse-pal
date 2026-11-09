@@ -18,10 +18,9 @@ import {
   sql,
 } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service.js';
-import type { ProcessActor } from '../audit/process-actor.js';
 import type { AuthenticatedUser } from '../auth/authenticated-user.js';
 import { findDatabaseError } from '../common/database-exception.filter.js';
-import { assertDateOrder, diffPatch } from '../common/dto-helpers.js';
+import { diffPatch } from '../common/dto-helpers.js';
 import {
   DRIZZLE,
   type Database,
@@ -599,6 +598,7 @@ export class ProposalApplicationService {
         user,
         obligationId,
         updated!.dueDay,
+        current.dueDay,
         trace,
         correlationId,
       );
@@ -617,20 +617,33 @@ export class ProposalApplicationService {
    * D12: el período `pending` (nunca `overdue`, que conserva su fecha
    * incumplida) recalcula su `dueDate` con el nuevo día dentro del mes de su
    * `periodStart`, solo si el resultado no queda en el pasado.
+   *
+   * Solo se recalculan los períodos cuya fecha es la PREVISTA por el día
+   * habitual anterior (`oldDueDay`, la misma función de calendario que usa el
+   * generador). Un `pending` cuya fecha difiere de esa previsión recibió una
+   * fecha propia (factura real vía `update_occurrence_details` o
+   * `create_obligation_occurrence`) y se conserva: no hay una columna que
+   * distinga ambos casos, por lo que se infiere sin migración. Limitación
+   * documentada: una fecha real que coincida por casualidad con la prevista
+   * se recalcula igual. Sin día anterior (`null`) no hay fecha prevista que
+   * comparar y no se recalcula nada.
    */
   private async recalculatePendingDueDate(
     tx: DbTransaction,
     user: AuthenticatedUser,
     obligationId: string,
     newDueDay: number,
+    oldDueDay: number | null,
     trace: Trace,
     correlationId: string,
   ): Promise<string | null> {
+    if (oldDueDay == null) return null;
     const today = this.dueDates.reference().today;
     const pending = await tx
       .select({
         id: occurrences.id,
         periodStart: occurrences.periodStart,
+        dueDate: occurrences.dueDate,
       })
       .from(occurrences)
       .where(
@@ -642,6 +655,11 @@ export class ProposalApplicationService {
       .for('update');
     let recalculatedId: string | null = null;
     for (const occurrence of pending) {
+      const startMonth = yearMonthOf(occurrence.periodStart);
+      // Fecha propia (factura real): no es la prevista por el día anterior.
+      if (occurrence.dueDate !== clampedDayInMonth(startMonth, oldDueDay)) {
+        continue;
+      }
       const newDueDate = clampedDayInMonth(
         yearMonthOf(occurrence.periodStart),
         newDueDay,
