@@ -15,6 +15,11 @@
  *   Se escriben en las constantes BUZON_AUTORIZADO y REMITENTES_AUTORIZADOS de la copia
  *   que se importa. Sin ellas esas constantes quedan vacías y el workflow se detiene.
  *   La salida solo muestra las direcciones parcialmente ocultas.
+ * - Opciones SOLO PARA QA LOCAL (modifican únicamente la copia importada, nunca el repo):
+ *     --api-base <url>     sustituye apiBase (solo http://host.docker.internal:<puerto>/api/v1 o localhost)
+ *     --gemini-base <url>  sustituye geminiBase (solo host local, p. ej. el Gemini simulado)
+ *     --qa-authorize       pone en true los interruptores AUTORIZAR_* (nunca AUTOMATIZACION_PROGRAMADA);
+ *                          exige --api-base local para que jamás apunte a Render.
  * - Tras importar, exporta el workflow y comprueba que cada nodo quedó con el id real.
  */
 import { spawnSync } from 'node:child_process';
@@ -22,9 +27,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const args = process.argv.slice(2);
-let file; let container = 'notihouse-n8n'; let dry = false;
+let file; let container = 'notihouse-n8n'; let dry = false; let apiBase; let geminiBase; let qaAuthorize = false;
 for (let i = 0; i < args.length; i += 1) {
-  if (args[i] === '--container') { container = args[i + 1]; i += 1; } else if (args[i] === '--dry-run') dry = true; else file = args[i];
+  if (args[i] === '--container') { container = args[i + 1]; i += 1; } else if (args[i] === '--dry-run') dry = true; else if (args[i] === '--api-base') { apiBase = args[i + 1]; i += 1; } else if (args[i] === '--gemini-base') { geminiBase = args[i + 1]; i += 1; } else if (args[i] === '--qa-authorize') qaAuthorize = true; else file = args[i];
 }
 if (!file) { console.error('Uso: node n8n/tools/import-workflow.mjs <workflow.json> [--container nombre] [--dry-run]'); process.exit(2); }
 
@@ -74,8 +79,26 @@ if (mailbox || senders.length) {
   console.log(`  Buzón autorizado: ${mask(mailbox)}; remitentes: ${senders.map(mask).join(', ')}`);
 }
 
+// El JSON del repo nunca puede traer los interruptores en true (se comprueba ANTES de las opciones QA).
+const repoConfig = wf.nodes.find((n) => n.name === 'Configuracion')?.parameters?.jsCode ?? '';
+
+// Opciones de QA local: solo hacia hosts locales.
+const LOCAL = /^http:\/\/(host\.docker\.internal|localhost|127\.0\.0\.1):\d+(\/api\/v1)?$/;
+if (apiBase && !LOCAL.test(apiBase)) throw new Error('--api-base solo admite un host local');
+if (geminiBase && !LOCAL.test(geminiBase)) throw new Error('--gemini-base solo admite un host local');
+if (qaAuthorize && !apiBase) throw new Error('--qa-authorize exige --api-base local');
+if (apiBase || geminiBase || qaAuthorize) {
+  for (const node of wf.nodes.filter((n) => n.name === 'Configuracion' && n.parameters?.jsCode)) {
+    let c = node.parameters.jsCode;
+    if (apiBase) c = c.replace(/apiBase: '[^']*'/, () => `apiBase: '${apiBase}'`);
+    if (geminiBase) c = c.replace(/geminiBase: '[^']*'/, () => `geminiBase: '${geminiBase}'`);
+    if (qaAuthorize) c = c.replace(/const (AUTORIZAR_[A-Z_]+) = false;/g, 'const $1 = true;');
+    node.parameters.jsCode = c;
+  }
+  console.log('  Opciones QA aplicadas a la copia importada: ' + [apiBase && 'apiBase', geminiBase && 'geminiBase', qaAuthorize && 'AUTORIZAR_*'].filter(Boolean).join(', '));
+}
 // Con ambos interruptores en false el workflow no puede llamar a Google ni al backend.
-const config = wf.nodes.find((n) => n.name === 'Configuracion')?.parameters?.jsCode ?? '';
+const config = repoConfig;
 for (const sw of ['AUTORIZAR_LECTURA_GMAIL', 'AUTORIZAR_INGESTA', 'AUTORIZAR_RECLAMACION']) {
   if (new RegExp(`${sw} = true`).test(config)) throw new Error(`${sw} está en true en el JSON del repo: no se importa.`);
 }

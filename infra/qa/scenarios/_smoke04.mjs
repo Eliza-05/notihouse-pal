@@ -1,0 +1,10 @@
+import { http, login, n8nRun, sql, close, mock } from '../lib.mjs';
+const t = await login('DANIEL');
+const r = await http('POST', '/ingestions/text', { token: t, body: { text: 'Registra la factura de Claro, vence el día 15 de cada mes, avísame 3 días antes' } });
+console.log('ingest', r.status, r.body.caseId, r.body.job);
+const run = n8nRun('nhpVoiceProc0001');
+console.log('n8n exit', run.status); console.log(run.out.split('\n').filter(l=>!/license|Skipping/.test(l)).slice(-25).join('\n'));
+console.log(await sql("select status from cases where id=$1",[r.body.caseId]), await sql("select job_type,status,attempts from workflow_jobs where case_id=$1",[r.body.caseId]));
+console.log(await sql("select source,version,left(proposed_data::text,300) pd from case_proposals where case_id=$1",[r.body.caseId]));
+console.log(await mock('/__stats'));
+await close();

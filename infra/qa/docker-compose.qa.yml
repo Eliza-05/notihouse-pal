@@ -1,0 +1,65 @@
+# NotiHouse-Pal — entorno QA AISLADO (PostgreSQL 18 desechable + n8n Community).
+# Proyecto Compose propio (`notihouse-qa`), volúmenes propios, puertos propios.
+# No comparte nada con `notihouse-n8n`, `notihouse-concurrency` ni con Neon/Render.
+# Secretos: .local/qa/qa.env (ignorado por Git, generado con generate-qa-env.mjs).
+#   docker compose -p notihouse-qa -f infra/qa/docker-compose.qa.yml --env-file .local/qa/qa.env up -d --wait
+# Destruir SOLO este entorno: ... down -v  (únicamente con -p notihouse-qa).
+name: notihouse-qa
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: notihouse-qa-postgres
+    restart: 'no'
+    ports:
+      - '127.0.0.1:55433:5432'
+    environment:
+      POSTGRES_DB: notihouse_qa
+      POSTGRES_USER: notihouse_qa_owner
+      POSTGRES_PASSWORD: ${QA_PG_PASSWORD:?Genera .local/qa/qa.env con generate-qa-env.mjs}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=scram-sha-256
+    volumes:
+      - notihouse-qa-pg:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U notihouse_qa_owner -d notihouse_qa']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    labels:
+      com.notihouse.purpose: qa-disposable
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.46.6
+    container_name: notihouse-qa-n8n
+    restart: 'no'
+    ports:
+      - '127.0.0.1:5679:5678'
+    extra_hosts:
+      # Dentro del contenedor, `localhost` es el propio contenedor: el backend del
+      # anfitrión se alcanza como host.docker.internal.
+      - 'host.docker.internal:host-gateway'
+    environment:
+      GENERIC_TIMEZONE: America/Bogota
+      TZ: America/Bogota
+      N8N_HOST: localhost
+      N8N_PORT: '5678'
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5679/
+      N8N_SECURE_COOKIE: 'false'
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'true'
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: 'true'
+      N8N_DIAGNOSTICS_ENABLED: 'false'
+      N8N_VERSION_NOTIFICATIONS_ENABLED: 'false'
+      N8N_PERSONALIZATION_ENABLED: 'false'
+    volumes:
+      - notihouse-qa-n8n:/home/node/.n8n
+    labels:
+      com.notihouse.purpose: qa-disposable
+
+volumes:
+  notihouse-qa-pg:
+    name: notihouse-qa-pg
+    labels: { com.notihouse.purpose: qa-disposable }
+  notihouse-qa-n8n:
+    name: notihouse-qa-n8n
+    labels: { com.notihouse.purpose: qa-disposable }
