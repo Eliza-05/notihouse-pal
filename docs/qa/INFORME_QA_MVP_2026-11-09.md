@@ -73,10 +73,10 @@ Además se corrigió una **expectativa obsoleta** de prueba: `backend/test/pg/00
 | n8n `agent-eval.test.mjs` | **43/43** (Gemini simulado, 3 respuestas por caso crítico) | — |
 | n8n `voice-stack.test.mjs` (04 con backend real, PG18, n8n Docker, proxy con fallos) | **99/99** | `docs/qa/evidence/voice-stack-2026-11-09.log` |
 | n8n `scheduled-stack.test.mjs` | **29/29** en la 2.ª corrida (la 1.ª tuvo 28/29: «pausa por cuota», prueba por temporizador sobre el workflow 02 sin modificar; no reproducible) | `…/scheduled-stack-2026-11-09.log` |
-| n8n `gmail-stack.test.mjs` | ver nota ¹ | `…/gmail-stack-2026-11-09.log` |
+| n8n `gmail-stack.test.mjs` (Gmail **simulado**) | **82/82** en la 2.ª corrida (ver nota ¹) | `…/gmail-stack-2026-11-09.log` |
 | **Escenarios E2E de esta rama** (`infra/qa/run-all.mjs`) | **152/152** (e01 11, e02 14, e03 7, e04 12, e05 12, e06 8, e07 13, e08 12, e10 22, e09 41) | `…/escenarios-e2e-local-2026-11-09.log` |
 
-¹ La 1.ª corrida dio 81/82: la única falla fue el guardián «workflow 01 y frontend sin cambios» (compara el árbol de trabajo con el cierre de la Etapa 6; mis correcciones deliberadas de frontend lo activan). Se relanzó con el árbol limpio tras el commit; el resultado final se anota en la entrega.
+¹ La 1.ª corrida dio 81/82: la única falla fue el guardián «workflow 01 y frontend sin cambios» (compara el árbol de trabajo con el cierre de la Etapa 6; mis correcciones deliberadas de frontend lo activan). Se relanzó con el árbol limpio tras el commit y pasó **82/82**.
 
 Las pruebas existentes **no se debilitaron**. Las únicas modificaciones fueron al contrato nuevo de 04 (§5) y a la lista de migraciones.
 

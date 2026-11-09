@@ -14,6 +14,8 @@
 | A-6 | **Completa · probada localmente** | 03 cierra el caso con las 6 acciones aplicables, rechazo y expiración | escenarios 1, 2, 4, 7, 10 | — |
 | A-7 | **No implementada** (opcional) | — | — | Backend, frontend y workflow |
 
+> Las secciones siguientes conservan la **especificación original** de cada adaptación. Sus filas «Qué falta» y «Probar después» describen el estado **anterior** a la fase QA: léelas junto con la tabla anterior, que es la vigente.
+
 ## Convenciones comunes
 
 - Todas las rutas internas usan `Authorization: Bearer <N8N_SERVICE_TOKEN>` y el prefijo `/api/v1`. Un JWT de usuario o la ausencia de token responde **401**.
