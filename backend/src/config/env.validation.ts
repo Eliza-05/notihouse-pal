@@ -171,7 +171,7 @@ export function validateEnv(
     for (const origin of frontendUrls) {
       if (!isHttpOrigin(origin)) {
         errors.push(
-          `FRONTEND_URL debe ser una lista de orígenes http(s) válidos, sin ruta (recibido: "${origin}")`,
+          `FRONTEND_URL debe ser una lista de orígenes https (http solo para localhost), sin ruta (recibido: "${origin}")`,
         );
       }
     }
@@ -461,13 +461,21 @@ function readString(
   return trimmed === '' ? undefined : trimmed;
 }
 
+const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]'];
+
+/**
+ * Origen CORS válido (D18): `https` siempre; `http` solo para `localhost`,
+ * `127.0.0.1` o `[::1]` (desarrollo local autorizado). Sin ruta, sin barra
+ * final, sin credenciales ni comodines (`new URL('*')` lanza).
+ */
 function isHttpOrigin(value: string): boolean {
   try {
+    // WHATWG acepta `*` en un host: los comodines se rechazan de forma explícita.
+    if (value.includes('*')) return false;
     const url = new URL(value);
-    return (
-      (url.protocol === 'http:' || url.protocol === 'https:') &&
-      url.origin === value
-    );
+    if (url.origin !== value) return false;
+    if (url.protocol === 'https:') return true;
+    return url.protocol === 'http:' && LOCAL_HOSTNAMES.includes(url.hostname);
   } catch {
     return false;
   }

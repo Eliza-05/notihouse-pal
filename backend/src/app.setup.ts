@@ -59,7 +59,9 @@ export function configureApp(app: INestApplication): void {
         callback(null, true);
         return;
       }
-      callback(new Error('Origen no permitido por CORS'), false);
+      // Origen no autorizado: no se emiten cabeceras CORS (el navegador
+      // bloquea la respuesta) y la petición sigue su curso sin error 500.
+      callback(null, false);
     },
     methods: CORS_METHODS,
     allowedHeaders: CORS_ALLOWED_HEADERS,

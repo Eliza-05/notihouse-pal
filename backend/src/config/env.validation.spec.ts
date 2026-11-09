@@ -92,6 +92,35 @@ describe('validateEnv', () => {
     },
   );
 
+  it.each([
+    'http://app.example.com',
+    'http://192.168.1.10:5173',
+    '*',
+    'https://*.vercel.app',
+    'null',
+    'https://app.example.com/',
+    'https://user:pass@app.example.com',
+    'http://localhost:5173,http://evil.example.com',
+  ])('rejects FRONTEND_URL "%s" (https required unless local, no wildcards)', (url) => {
+    expect(() => validateEnv({ ...REQUIRED, FRONTEND_URL: url })).toThrow(
+      /FRONTEND_URL/,
+    );
+  });
+
+  it('allows http only for localhost, 127.0.0.1 and [::1]; https for any public origin', () => {
+    const env = validateEnv({
+      ...REQUIRED,
+      FRONTEND_URL:
+        'http://localhost:5173,http://127.0.0.1:5173,http://[::1]:5173,https://notihouse.vercel.app',
+    });
+    expect(env.FRONTEND_URLS).toEqual([
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://[::1]:5173',
+      'https://notihouse.vercel.app',
+    ]);
+  });
+
   it('parses FRONTEND_URL as a comma-separated, trimmed, deduplicated list of origins (D18)', () => {
     const env = validateEnv({
       ...REQUIRED,
