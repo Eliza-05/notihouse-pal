@@ -7,6 +7,7 @@ import {
   type TestUser,
 } from './support/pglite.js';
 import { createTestApp, type TestApp } from './support/test-app.js';
+import { samplePdf, sampleWav } from './support/sample-files.js';
 
 interface ClaimedTextJob {
   id: string;
@@ -103,6 +104,87 @@ describe('Assistant resolve (e2e, I2)', () => {
       (j) => j.case.id === c.id,
     );
     await resolve(otherJob!, { intent: 'unsupported' }).expect(403);
+  });
+
+  /** Sube un archivo propio (audio o PDF) y reclama el trabajo resultante. */
+  const uploadAndClaim = async (
+    route: 'voice' | 'documents',
+  ): Promise<ClaimedTextJob & { jobType: string }> => {
+    const req = request(h.app.getHttpServer())
+      .post(`/api/v1/ingestions/${route}`)
+      .set('Authorization', `Bearer ${h.tokenFor(laura)}`);
+    const sent = (
+      await (route === 'voice'
+        ? req.attach('file', sampleWav(), {
+            filename: 'nota.wav',
+            contentType: 'audio/wav',
+          })
+        : req.attach('file', samplePdf(`Factura ${randomUUID()}`), {
+            filename: 'factura.pdf',
+            contentType: 'application/pdf',
+          })
+      ).expect(201)
+    ).body as { caseId: string };
+    const res = await h
+      .asService()
+      .post('/internal/workflow-jobs/claim', { workerId: 'n8n-scheduler' })
+      .expect(200);
+    return (res.body.jobs as (ClaimedTextJob & { jobType: string })[]).find(
+      (j) => j.case.id === sent.caseId,
+    )!;
+  };
+
+  it('resolves a voice job (voice.transcribe) with the same logic as text', async () => {
+    const job = await uploadAndClaim('voice');
+    expect(job.jobType).toBe('voice.transcribe');
+    const before = await sql<{ n: string }>(
+      'SELECT (SELECT count(*) FROM case_proposals)::text AS n',
+    );
+    const res = await resolve(job, {
+      intent: 'create_recurring_obligation',
+      providerName: `Claro ${randomUUID()}`,
+      concept: 'Internet',
+      category: 'internet',
+      frequency: 'monthly',
+      dueDay: 15,
+    }).expect(200);
+    expect(res.body.outcome).toBe('applicable');
+    expect(res.body.proposedData.action).toBe('create_recurring_obligation');
+    // Solo lectura: nada se escribe sin aprobación HITL.
+    const after = await sql<{ n: string }>(
+      'SELECT (SELECT count(*) FROM case_proposals)::text AS n',
+    );
+    expect(after[0]!.n).toBe(before[0]!.n);
+  });
+
+  it('rejects a document.process claim (job types outside the closed list)', async () => {
+    const job = await uploadAndClaim('documents');
+    expect(job.jobType).toBe('document.process');
+    await resolve(job, { intent: 'unsupported' }).expect(403);
+  });
+
+  it('rejects a voice claim used against another case or with a user token', async () => {
+    const job = await uploadAndClaim('voice');
+    const other = await sendAndClaim(`Mensaje ${randomUUID()}`);
+    // El trabajo de voz no pertenece al caso del mensaje de texto.
+    await h
+      .asService()
+      .post(`/internal/cases/${other.case.id}/assistant/resolve`, {
+        jobId: job.id,
+        claimToken: job.claimToken,
+        extraction: { intent: 'unsupported' },
+      })
+      .expect(404);
+    // El token de un usuario nunca sirve en la ruta interna.
+    await request(h.app.getHttpServer())
+      .post(`/api/v1/internal/cases/${job.case.id}/assistant/resolve`)
+      .set('Authorization', `Bearer ${h.tokenFor(laura)}`)
+      .send({
+        jobId: job.id,
+        claimToken: job.claimToken,
+        extraction: { intent: 'unsupported' },
+      })
+      .expect(401);
   });
 
   it('rejects an invalid or mismatched claim', async () => {

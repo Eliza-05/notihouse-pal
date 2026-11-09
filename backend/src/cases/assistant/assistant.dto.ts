@@ -14,7 +14,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Trim } from '../../common/dto-helpers.js';
-import { IsCalendarDate, IsMoneyAmount, IsPlainText } from '../../common/validators.js';
+import { IsCalendarDate, IsMoneyAmount } from '../../common/validators.js';
 import { obligationCategory, recurrenceFrequency } from '../../database/schema/index.js';
 import { ClaimReferenceDto } from '../dto/process.dto.js';
 

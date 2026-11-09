@@ -16,6 +16,7 @@ import { monthRange, yearMonthOf } from '../../due-dates/calendar.js';
 import { DueDateEvaluationService } from '../../due-dates/due-date-evaluation.service.js';
 import { WorkflowJobsService } from '../../integrations/workflow-jobs.service.js';
 import { TEXT_INGESTION_JOB_TYPE } from '../../ingestion/dto/text-ingestion.dto.js';
+import { INGESTION_JOB_TYPES } from '../../ingestion/dto/ingestion.dto.js';
 import {
   type ExtractionDto,
   type ResolveCaseDto,
@@ -59,6 +60,16 @@ interface RentalCandidate {
 }
 
 /**
+ * Tipos de trabajo cuya extracción puede resolverse aquí: el texto del
+ * asistente y la nota de voz (ya transcrita). Cualquier otro (documentos PDF,
+ * correo, revisiones) se rechaza con 403: la lista es cerrada.
+ */
+const RESOLVABLE_JOB_TYPES: readonly string[] = [
+  TEXT_INGESTION_JOB_TYPE,
+  INGESTION_JOB_TYPES.voice,
+];
+
+/**
  * Resolución determinística de un mensaje (texto o voz) contra los datos
  * propios del usuario (§19.2-19.3, I2). Solo lectura: nunca escribe una
  * propuesta ni una revisión (eso lo hacen las rutas internas existentes).
@@ -80,7 +91,7 @@ export class AssistantResolveService {
         dto.claimToken,
         caseId,
       );
-      if (claim.jobType !== TEXT_INGESTION_JOB_TYPE) {
+      if (!RESOLVABLE_JOB_TYPES.includes(claim.jobType)) {
         throw new ForbiddenException(
           'El tipo de trabajo reclamado no está autorizado para resolver este caso',
         );
