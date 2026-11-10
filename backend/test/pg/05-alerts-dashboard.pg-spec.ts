@@ -44,7 +44,12 @@ describe('Escenario J — alertas y dashboard en PostgreSQL real', () => {
 
   it('muchas alertas re-etiquetadas con barridos en paralelo no se interbloquean', async () => {
     const user = await h.newUser();
-    const obligation = await h.obligation(user);
+    // La ventana de alerta es el aviso propio de la obligación (D6; por defecto 3
+    // días). Con 10 días, los vencimientos sembrados (1-5 días, luego 2-6) quedan
+    // todos dentro de la ventana: las 30 alertas se re-etiquetan.
+    const obligation = await h.obligation(user, 'Energía', {
+      reminderDaysBefore: 10,
+    });
     const ids: string[] = [];
     for (let i = 0; i < 30; i++) {
       ids.push(
