@@ -61,7 +61,7 @@ describe('cliente de API', () => {
 
   it('tolera errores sin cuerpo JSON (p. ej. 503 del proxy)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>', { status: 503, statusText: 'Service Unavailable' }))
-    await expect(api('/health')).rejects.toMatchObject({ status: 503, messages: ['Service Unavailable'] })
+    await expect(api('/health')).rejects.toMatchObject({ status: 503, messages: ['El servidor tuvo un problema. Inténtalo de nuevo en unos minutos.'] })
   })
 
   it('devuelve undefined con cuerpos vacíos (204)', async () => {

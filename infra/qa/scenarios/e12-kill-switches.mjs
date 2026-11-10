@@ -4,7 +4,7 @@
  * Solo sobre la base QA, con el script oficial. Comprueba: activación, suspensión (503), nada cambia,
  * auditoría append-only, la reanudación exige evidencia de prueba y todo funciona al reanudar.
  */
-import { login, http, sql, close, assert, killSwitch, sleep, textThroughN8n, decide, apply, closeCase } from '../lib.mjs';
+import { login, http, sql, close, assert, killSwitch, sleep, textThroughN8n, decide, apply, closeCase, drainQueue } from '../lib.mjs';
 
 const t = await login('DANIEL');
 const audit = async (scope, action) => Number((await sql("select count(*)::int n from audit_events where action=$1 and metadata->>'scope'=$2", [action, scope]))[0].n);
@@ -49,7 +49,7 @@ assert((await audit('alert_evaluation', 'kill_switch.activate')) >= 1 && (await 
 // que el alcance es estrecho (no afecta a un trabajo de texto) y que su activación/reanudación quedan auditadas.
 const sent = await http('POST', '/ingestions/text', { token: t, body: { text: 'Registra Claro, vence el día 9 de cada mes' } });
 assert(sent.status === 201, `case_processing: texto recibido (${sent.status})`);
-const claim = await http('POST', '/internal/workflow-jobs/claim', { service: true, body: { workerId: 'qa-e12', limit: 5, leaseSeconds: 120, jobTypes: ['text.interpret'] } });
+const claim = await http('POST', '/internal/workflow-jobs/claim', { service: true, body: { workerId: 'qa-e12', limit: 5, leaseSeconds: 8, jobTypes: ['text.interpret'] } });
 const job = claim.body.jobs?.find((j) => j.case.id === sent.body.caseId);
 assert(!!job, 'case_processing: trabajo reclamado');
 const body = { jobId: job.id, claimToken: job.claimToken, source: 'llm', proposedData: { resultado: 'unsupported', requiereRevisionManual: true }, evidence: { origen: 'qa-e12' } };
@@ -59,7 +59,10 @@ assert(blocked.status === 201, `case_processing: no afecta al trabajo de texto (
 resume('case_processing'); await sleep(1500);
 assert(true, 'case_processing: reanudado');
 assert((await audit('case_processing', 'kill_switch.activate')) >= 1 && (await audit('case_processing', 'kill_switch.resume')) >= 1, 'case_processing: activación y reanudación auditadas');
-// El trabajo queda reclamado: se libera cerrándolo como fallo controlado para no dejar casos abiertos.
-await http('POST', `/internal/workflow-jobs/${job.id}/fail`, { service: true, body: { claimToken: job.claimToken, errorCode: 'QA_E12', retryable: false, message: 'cierre del escenario' } });
+// Limpieza: el trabajo reclamado vence a los 8 s; n8n lo reprocesa y se rechaza la revisión resultante (sin casos abiertos).
+await sleep(9000);
+await drainQueue();
+for (const h of await sql("select id::text from hitl_requests where case_id=$1 and status='pending'", [job.case.id])) await decide(t, h.id, 'rejected', 'limpieza QA e12');
+await closeCase(job.case.id);
 
 await close();

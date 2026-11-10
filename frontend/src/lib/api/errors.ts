@@ -28,7 +28,17 @@ export class ApiError extends Error {
     }
 
     const m = body?.message
-    const messages = Array.isArray(m) ? m : m ? [m] : [res.statusText || `Error ${res.status}`]
+    // Un 5xx sin mensaje propio (o el genérico en inglés de Nest/proxy) se muestra en español.
+    const genericServer = 'El servidor tuvo un problema. Inténtalo de nuevo en unos minutos.'
+    const isEnglishGeneric = typeof m === 'string' && /^(Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)$/i.test(m)
+    const messages =
+      res.status >= 500 && (!m || isEnglishGeneric)
+        ? [genericServer]
+        : Array.isArray(m)
+          ? m
+          : m
+            ? [m]
+            : [res.statusText || `Error ${res.status}`]
 
     return new ApiError(res.status, messages, res.headers.get('x-correlation-id') ?? undefined)
   }

@@ -456,7 +456,8 @@ try {
 
   { const { ing, r } = await ingestAndRun(voiceWav, {}, { stt: stt({ transcript: VOICE_TEXT.replace('S.A.S.', 'SAS') }) });
     const ps = await proposalsOf(ing.caseId);
-    check('Transcripción "SAS" e interpretación "S.A.S.": sigue siendo aplicable', r.exit === 0 && ['create_obligation_with_occurrence', 'update_occurrence_details'].includes(ps[1].proposed_data.action), JSON.stringify(ps[1]?.proposed_data).slice(0, 120)); // la obligación ya existe de la corrida feliz: resolve propone actualizar el período (A-5)
+    // A-5/caso C: la obligación y el período ya existen con esos mismos datos (corrida feliz), así que el backend la reconoce (SAS = S.A.S.) y responde «informational»: nada nuevo que aplicar.
+    check('Transcripción "SAS" e interpretación "S.A.S.": sigue reconociendo la obligación existente', r.exit === 0 && (['create_obligation_with_occurrence', 'update_occurrence_details'].includes(ps[1].proposed_data.action) || ps[1].proposed_data.resultado === 'informational'), JSON.stringify(ps[1]?.proposed_data).slice(0, 120)); // la obligación ya existe de la corrida feliz: resolve propone actualizar el período (A-5)
   }
 
   // ---------- 5. Salidas inválidas de Gemini

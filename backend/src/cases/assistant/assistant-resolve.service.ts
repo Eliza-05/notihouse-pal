@@ -799,14 +799,30 @@ function unsupported(summary: string): ResolveResponseDto {
   };
 }
 
+/** Nombres de campo técnicos → texto para la persona (el resumen se le muestra tal cual). */
+const FIELD_LABELS: Record<string, string> = {
+  providerName: 'proveedor',
+  concept: 'concepto',
+  category: 'categoría',
+  dueDay: 'día de vencimiento',
+  dueDate: 'fecha de vencimiento',
+  amount: 'valor',
+  propertyName: 'inmueble',
+  tenantAlias: 'alias del arrendatario',
+};
+
 function needsCompletion(missing: string[], summary: string): ResolveResponseDto {
+  const friendly = summary.replace(
+    /(providerName|concept|category|dueDay|dueDate|amount|propertyName|tenantAlias)/g,
+    (f) => FIELD_LABELS[f] ?? f,
+  );
   return {
     outcome: 'needs_completion',
     proposedData: null,
     choices: [],
     missing,
     warnings: [],
-    summary,
+    summary: friendly,
     consequences: 'No se registró ni se cambió nada; completa el formulario manualmente.',
   };
 }

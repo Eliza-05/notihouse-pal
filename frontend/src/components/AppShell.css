@@ -114,3 +114,13 @@
     padding: 1rem 0.85rem;
   }
 }
+
+/* 320 px: el encabezado no debe ensanchar la página (sin nombre de usuario, menos relleno). */
+@media (max-width: 420px) {
+  .app-header {
+    padding: 0.6rem 0.75rem;
+  }
+  .app-header__user {
+    display: none;
+  }
+}
