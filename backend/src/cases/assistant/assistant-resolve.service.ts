@@ -375,7 +375,7 @@ export class AssistantResolveService {
         choices: [],
         missing: [],
         warnings: [],
-        summary: `El período ${month} de ${obligation.providerName} ya está cerrado (${existingOccurrence.status}); la factura no lo modifica. Si es una corrección, hazla manualmente.`,
+        summary: `El período ${periodStart.slice(0, 7)} de ${obligation.providerName} ya está cerrado (${existingOccurrence.status}); la factura no lo modifica. Si es una corrección, hazla manualmente.`,
         consequences: INFORMATIONAL_CONSEQUENCES,
       };
     }
@@ -393,7 +393,7 @@ export class AssistantResolveService {
         choices: [],
         missing: [],
         warnings: [],
-        summary: `El período ${month} de ${obligation.providerName} ya tiene esos mismos datos (${extraction.amount}, vence ${dueDate}); no hay nada que cambiar.`,
+        summary: `El período ${periodStart.slice(0, 7)} de ${obligation.providerName} ya tiene esos mismos datos (${extraction.amount}, vence ${dueDate}); no hay nada que cambiar.`,
         consequences: INFORMATIONAL_CONSEQUENCES,
       };
     }

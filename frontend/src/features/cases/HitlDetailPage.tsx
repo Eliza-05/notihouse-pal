@@ -180,7 +180,7 @@ export function HitlDetailPage() {
 
         {choices.length > 0 && hitl.status === 'pending' && !overdue && (
           <fieldset style={{ marginTop: '0.75rem' }}>
-            <legend>Elige a cuál te refieres. Aún no se cambia nada.</legend>
+            <legend>Elige a cuál te refieres. Tu elección queda registrada, pero no ejecuta ningún cambio: después edita el recurso manualmente.</legend>
             {choices.map((c) => (
               <label key={c.key} className="row" style={{ marginBottom: '0.3rem' }}>
                 <input type="radio" name="choice" value={c.key} checked={choice === c.key} onChange={() => setChoice(c.key)} />

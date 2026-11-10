@@ -366,6 +366,8 @@ describe('Assistant resolve (e2e, I2)', () => {
     }).expect(200);
     expect(res.body.outcome).toBe('informational');
     expect(res.body.proposedData).toBeNull();
+    expect(res.body.summary).toContain('2026-12');
+    expect(res.body.summary).not.toContain('[object');
     const rows = await sql<{ amount: string; n: string }>(
       `SELECT amount::text, (SELECT count(*) FROM obligation_occurrences WHERE obligation_id = '${obligation.id}')::text AS n FROM obligation_occurrences WHERE id = '${occ.id}'`,
     );
@@ -402,6 +404,7 @@ describe('Assistant resolve (e2e, I2)', () => {
     const second = await resolve(await uploadAndClaim('documents'), extraction).expect(200);
     expect(second.body.outcome).toBe('informational');
     expect(second.body.proposedData).toBeNull();
+    expect(second.body.summary).not.toContain('[object');
   });
 
   it('register_invoice: reuses an existing obligation (new period) and then completes an already-generated one', async () => {
