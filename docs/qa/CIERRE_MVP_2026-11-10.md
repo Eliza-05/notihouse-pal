@@ -43,14 +43,16 @@ Tests actualizados por cambio de contrato (no para ocultar errores): `e04` (el d
 | Frontend: tsc, build, vitest | OK, 14/14 |
 | n8n `workflows-static` | **83/83** |
 | n8n `scheduled-stack` | **OK** (0 fallos) |
-| n8n `voice-stack`, `gmail-stack` | Ver §3.1 |
+| n8n `voice-stack` | **99/99** |
+| n8n `gmail-stack` | **82/82** |
 | n8n `agent-eval` | **Fallos preexistentes** de casos de voz (ver §3.1) |
 | Escenarios E2E locales (base limpia) | e01 11, e02 14, e03 7, e04 14, e05 12, e06 8, e07 13, e08 12, e10 22, e11 21 (nuevo), e09 42, e12 (nuevo; ver §8) |
 
 ### 3.1 Honestidad sobre lo que no pasa limpio
 
 * **`agent-eval`**: 10 casos con nota de voz (N-07, E5, E6, E13-voz, OD-*voz, INV-voz-*) fallan **idénticamente en el commit base `1d5a1fd`** (comprobado ejecutando el árbol base): el evaluador ejecuta los nodos antiguos del workflow 04 y la reescritura A-1…A-3 ya no produce la propuesta en `Construir propuesta`. **No es una regresión de esta rama.** El comportamiento de voz sí está cubierto con ejecución real por `voice-stack`, e03, e09 y e10. El informe del 9-nov indicaba «43/43»: esa cifra no es reproducible hoy. Pendiente: reescribir `runVoice` para la cadena `Construir propuesta → Resolver → Armar propuesta`.
-* `voice-stack` y `gmail-stack` se ejecutaron y se ajustaron dos expectativas (ver arriba); su resultado final está en el §12 del informe.
+* `voice-stack` (99/99) y `gmail-stack` (82/82) se repitieron tras los commits. En `voice-stack` se ajustó una expectativa por el caso C (ver §2). `gmail-stack` exige el árbol de `frontend/` sin cambios sin confirmar: pasa porque los cambios ya están commiteados.
+* El **PG18 real (186/186)** se ejecutó **antes** de los últimos cambios de texto en `resolve`; estos no tocan alertas ni concurrencia, pero esa suite no se repitió después.
 
 ## 4. Pruebas de navegador (Chromium ↔ NestJS ↔ PG18)
 

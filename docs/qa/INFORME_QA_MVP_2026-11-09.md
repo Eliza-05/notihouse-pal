@@ -1,5 +1,8 @@
 # Informe QA del MVP — 9 de noviembre de 2026
 
+> **Nota de vigencia (10-nov-2026):** A-5 (PDF/Gmail) y el Escenario J quedaron resueltos en la segunda pasada; ver [`CIERRE_MVP_2026-11-10.md`](CIERRE_MVP_2026-11-10.md). Las cifras de este informe son las del 9-nov.
+
+
 > Rama `qa/mvp-e2e-n8n` (creada desde `develop`, que ya contiene `diego`). Entorno **100 % local y aislado**: PostgreSQL 18 desechable, NestJS, Vite, n8n Community en Docker. **Nada de Neon `production`, Render ni Vercel** fue leído, modificado ni usado.
 >
 > **Etiquetas de veracidad.** Cada resultado se marca como **REAL** (servicio real), **INTEGRACIÓN LOCAL** (componentes reales del proyecto, entorno local) o **SIMULADO** (un servicio externo se sustituyó). **Gemini y Gmail NO se probaron de verdad** (§8): no hay clave ni cuenta de pruebas autorizadas. El micrófono físico tampoco.
