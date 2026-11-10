@@ -1,0 +1,9 @@
+{
+  "B_evaluationToPersistenceMs": 42.4201,
+  "C_persistenceToQueryMs": 20.8453,
+  "C_summaryPollingMs": {
+    "p50": 11.9079,
+    "p95": 16.9845,
+    "max": 17.5297
+  }
+}

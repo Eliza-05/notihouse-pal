@@ -1,0 +1,172 @@
+{
+  "id": "nhpConnTest00001",
+  "name": "NotiHouse-Pal - 01 - Prueba de conexion",
+  "active": false,
+  "isArchived": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "tags": [],
+  "nodes": [
+    {
+      "id": "6f1c2a10-0001-4a00-8a00-000000000001",
+      "name": "Ejecucion manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "6f1c2a10-0002-4a00-8a00-000000000002",
+      "name": "Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "notes": "Despierta Render Free: puede tardar cerca de un minuto.",
+      "parameters": {
+        "method": "GET",
+        "url": "https://notihouse-pal-api.onrender.com/api/v1/health",
+        "options": {
+          "timeout": 90000,
+          "response": { "response": { "fullResponse": true } }
+        }
+      }
+    },
+    {
+      "id": "6f1c2a10-0003-4a00-8a00-000000000003",
+      "name": "Readiness",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "notes": "Un 503 puede ser un arranque en frio de Neon: se reintenta.",
+      "parameters": {
+        "method": "GET",
+        "url": "https://notihouse-pal-api.onrender.com/api/v1/health/ready",
+        "options": {
+          "timeout": 90000,
+          "response": { "response": { "fullResponse": true } }
+        }
+      }
+    },
+    {
+      "id": "6f1c2a10-0004-4a00-8a00-000000000004",
+      "name": "Token de servicio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0],
+      "notes": "Solo lectura. Sin X-Claim-Token, el backend valida el token y responde 400 sin consultar la base. UUID inexistente a proposito. 400 = autenticado; 401 = token rechazado.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nhpApiService001",
+          "name": "NotiHouse-Pal API (servicio)"
+        }
+      },
+      "parameters": {
+        "method": "GET",
+        "url": "https://notihouse-pal-api.onrender.com/api/v1/internal/workflow-jobs/00000000-0000-4000-8000-000000000000",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 90000,
+          "response": { "response": { "fullResponse": true, "neverError": true } }
+        }
+      }
+    },
+    {
+      "id": "6f1c2a10-0005-4a00-8a00-000000000005",
+      "name": "Token incorrecto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0],
+      "notes": "Control negativo con un valor falso, sin credencial: debe responder 401.",
+      "parameters": {
+        "method": "GET",
+        "url": "https://notihouse-pal-api.onrender.com/api/v1/internal/workflow-jobs/00000000-0000-4000-8000-000000000000",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer token-invalido-de-prueba" }
+          ]
+        },
+        "options": {
+          "timeout": 90000,
+          "response": { "response": { "fullResponse": true, "neverError": true } }
+        }
+      }
+    },
+    {
+      "id": "6f1c2a10-0006-4a00-8a00-000000000006",
+      "name": "Interpretar respuestas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const read = (name) => $(name).first().json;\nconst codeOf = (r) => r.statusCode ?? r.error?.httpCode ?? r.error?.status ?? null;\n\nconst health = read('Health');\nconst ready = read('Readiness');\nconst service = read('Token de servicio');\nconst wrong = read('Token incorrecto');\n\nconst explain = (code, expected) => {\n  if (code === expected) return 'correcto';\n  if (code === null) return 'sin respuesta: revisa Internet o Render dormido; vuelve a ejecutar';\n  if (code === 401) return 'token rechazado: revisa la credencial';\n  if (code === 503 || code === 502 || code === 504) return 'servicio no disponible por ahora: vuelve a ejecutar';\n  return `respuesta inesperada, se esperaba ${expected}`;\n};\nconst check = (name, code, expected, extra = true) => ({\n  name,\n  httpStatus: code,\n  expected,\n  ok: code === expected && extra,\n  detail: explain(code, expected),\n});\n\nconst message = String(service.body?.message ?? '');\nconst checks = [\n  check('Health de Render', codeOf(health), 200, health.body?.status === 'ok'),\n  check('Readiness de PostgreSQL', codeOf(ready), 200, ready.body?.checks?.database === 'ok'),\n  check('Autenticacion de servicio', codeOf(service), 400, message.includes('x-claim-token')),\n  check('Rechazo de token incorrecto', codeOf(wrong), 401),\n];\nconst ok = checks.every((c) => c.ok);\nreturn [{ json: {\n  ok,\n  resultado: ok ? 'Conexion satisfactoria' : 'Conexion fallida',\n  fallos: checks.filter((c) => !c.ok).map((c) => `${c.name}: ${c.detail}`).join('; '),\n  checks,\n} }];"
+      }
+    },
+    {
+      "id": "6f1c2a10-0007-4a00-8a00-000000000007",
+      "name": "Conexion correcta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1320, 0],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": { "version": 2, "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "6f1c2a10-0100-4a00-8a00-000000000100",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "6f1c2a10-0008-4a00-8a00-000000000008",
+      "name": "Conexion satisfactoria",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1540, -100],
+      "parameters": {}
+    },
+    {
+      "id": "6f1c2a10-0009-4a00-8a00-000000000009",
+      "name": "Conexion fallida",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1540, 100],
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "={{ $json.resultado }}: {{ $json.fallos }}"
+      }
+    }
+  ],
+  "connections": {
+    "Ejecucion manual": { "main": [[{ "node": "Health", "type": "main", "index": 0 }]] },
+    "Health": { "main": [[{ "node": "Readiness", "type": "main", "index": 0 }]] },
+    "Readiness": { "main": [[{ "node": "Token de servicio", "type": "main", "index": 0 }]] },
+    "Token de servicio": { "main": [[{ "node": "Token incorrecto", "type": "main", "index": 0 }]] },
+    "Token incorrecto": { "main": [[{ "node": "Interpretar respuestas", "type": "main", "index": 0 }]] },
+    "Interpretar respuestas": { "main": [[{ "node": "Conexion correcta?", "type": "main", "index": 0 }]] },
+    "Conexion correcta?": {
+      "main": [
+        [{ "node": "Conexion satisfactoria", "type": "main", "index": 0 }],
+        [{ "node": "Conexion fallida", "type": "main", "index": 0 }]
+      ]
+    }
+  }
+}

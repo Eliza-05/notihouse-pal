@@ -1,0 +1,948 @@
+{
+  "id": "nhpGmailIngest01",
+  "name": "NotiHouse-Pal - 05 - Recepcion de facturas por Gmail",
+  "active": false,
+  "isArchived": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": false,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveExecutionProgress": false
+  },
+  "pinData": {},
+  "tags": [],
+  "nodes": [
+    {
+      "id": "7a2c3b50-0001-4b00-8b00-000000000001",
+      "name": "Ejecucion manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "7a2c3b50-0002-4b00-8b00-000000000002",
+      "name": "Disparo programado",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -260
+      ],
+      "notes": "Cada 15 min mientras el workflow esté ACTIVO. Inactivo por defecto: activarlo requiere autorización.",
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b50-0003-4b00-8b00-000000000003",
+      "name": "Marcar programado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        110,
+        -260
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Marca la ejecución como programada para la Configuracion.\nreturn [{ json: { scheduled: true } }];"
+      }
+    },
+    {
+      "id": "7a2c3b50-0004-4b00-8b00-000000000004",
+      "name": "Configuracion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Interruptores: con ambos en false el workflow no llama a Google ni al backend.\n// LECTURA en true y INGESTA en false solo lista qué se procesaría, sin descargar adjuntos.\nconst AUTORIZAR_LECTURA_GMAIL = false;\nconst AUTORIZAR_INGESTA = false;\n// Etapa 7 — ejecución PROGRAMADA (cada 15 min, objetivo del PDD). Exige además\n// los dos interruptores anteriores. Con false, una ejecución programada no\n// llama a Google ni al backend; la ejecución manual no cambia.\nconst AUTOMATIZACION_PROGRAMADA = false;\nconst scheduled = $input.first()?.json?.scheduled === true;\nconst allowedNow = !scheduled || AUTOMATIZACION_PROGRAMADA === true;\n\n// Alcance autorizado. Sin estos datos el workflow se detiene antes de llamar a Google.\nconst BUZON_AUTORIZADO = '';\nconst REMITENTES_AUTORIZADOS = [];\nconst ETIQUETA = 'notihouse-facturas-prueba';\n\n// Solo metadatos de partes: el cuerpo del correo nunca se descarga.\nconst part = 'partId,mimeType,filename,body(attachmentId,size)';\nconst nest = (depth) => (depth === 0 ? part : part + ',parts(' + nest(depth - 1) + ')');\n\nreturn [{ json: {\n  readAuthorized: AUTORIZAR_LECTURA_GMAIL === true && allowedNow,\n  ingestAuthorized: AUTORIZAR_LECTURA_GMAIL === true && AUTORIZAR_INGESTA === true && allowedNow,\n  scheduled,\n  mailbox: BUZON_AUTORIZADO.trim().toLowerCase(),\n  allowedSenders: REMITENTES_AUTORIZADOS.map((s) => s.trim().toLowerCase()),\n  label: ETIQUETA,\n  apiBase: 'https://notihouse-pal-api.onrender.com/api/v1',\n  gmailBase: 'https://gmail.googleapis.com',\n  maxMessages: 5,\n  maxAttachmentsPerMessage: 5,\n  // Mismo máximo inicial del backend para un PDF, que sigue siendo quien decide.\n  maxPdfBytes: 10 * 1024 * 1024,\n  messageFields: 'id,internalDate,payload(headers(name,value),' + nest(4) + ')',\n} }];"
+      },
+      "notes": "Interruptores y alcance autorizado. En false no se llama a Google ni al backend."
+    },
+    {
+      "id": "7a2c3b50-0005-4b00-8b00-000000000005",
+      "name": "Lectura autorizada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7a2c3b50-0006-4b00-8b00-000000000006",
+              "leftValue": "={{ $('Configuracion').first().json.readAuthorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b50-0007-4b00-8b00-000000000007",
+      "name": "Detenido: sin autorizacion",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "7a2c3b50-0008-4b00-8b00-000000000008",
+      "name": "Validar configuracion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const cfg = $('Configuracion').first().json;\nconst email = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (!email.test(cfg.mailbox)) throw new Error('Falta BUZON_AUTORIZADO: no se llamó a Google.');\nif (cfg.allowedSenders.length === 0 || !cfg.allowedSenders.every((s) => email.test(s))) {\n  throw new Error('Falta REMITENTES_AUTORIZADOS: no se llamó a Google.');\n}\nif (!/^[a-z0-9-]+$/.test(cfg.label)) throw new Error('La etiqueta no es válida: no se llamó a Google.');\n// Nunca toda la bandeja: etiqueta, adjunto PDF, remitente y antigüedad, todos obligatorios.\nconst query = 'label:' + cfg.label + ' has:attachment filename:pdf newer_than:30d from:(' + cfg.allowedSenders.join(' OR ') + ')';\nreturn [{ json: { query } }];"
+      }
+    },
+    {
+      "id": "7a2c3b50-0009-4b00-8b00-000000000009",
+      "name": "Perfil de Gmail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "nhpGmailRead0001",
+          "name": "NotiHouse Gmail"
+        }
+      },
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuracion').first().json.gmailBase }}/gmail/v1/users/me/profile",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "emailAddress"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput",
+      "notes": "Solo lectura. Reintenta fallos pasajeros; un fallo definitivo detiene la ejecución sin registrar nada."
+    },
+    {
+      "id": "7a2c3b50-0010-4b00-8b00-000000000010",
+      "name": "Fallo de Gmail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        500
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Mensaje fijo: el error original no se copia para no arrastrar datos de la solicitud.\nconst detail = $input.first().json.error ?? $input.first().json;\nconst code = Number(detail?.httpCode ?? /^(\\d{3})\\b/.exec(String(detail?.cause?.message ?? detail?.message ?? ''))?.[1] ?? 0);\nconst needsReconnect = /reconnected|invalid_grant/i.test(String(detail?.message ?? '') + String(detail?.description ?? '') + String(detail?.cause?.message ?? ''));\nconst reason = needsReconnect ? 'la credencial debe reconectarse en n8n: su autorización se revocó o venció (en modo Testing de Google, a los 7 días)'\n  : code === 401 ? 'la credencial OAuth fue rechazada o revocada (401)'\n  : code === 403 ? 'la credencial no tiene permiso de lectura, o se alcanzó un límite (403)'\n    : code === 429 ? 'se alcanzó un límite de Gmail (429)'\n      : 'Gmail no respondió correctamente' + (code ? ' (HTTP ' + code + ')' : '');\nthrow new Error('Gmail: ' + reason + '. No se registró nada; reejecutar es seguro.');"
+      }
+    },
+    {
+      "id": "7a2c3b50-0011-4b00-8b00-000000000011",
+      "name": "Verificar buzon",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const cfg = $('Configuracion').first().json;\nconst actual = String($input.first().json.emailAddress ?? '').trim().toLowerCase();\nif (actual === '' || actual !== cfg.mailbox) {\n  throw new Error('La credencial OAuth no corresponde al buzón autorizado. No se leyó ningún mensaje.');\n}\nreturn [{ json: { mailbox: actual, query: $('Validar configuracion').first().json.query } }];"
+      }
+    },
+    {
+      "id": "7a2c3b50-0012-4b00-8b00-000000000012",
+      "name": "Ingesta autorizada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7a2c3b50-0013-4b00-8b00-000000000013",
+              "leftValue": "={{ $('Configuracion').first().json.ingestAuthorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b50-0014-4b00-8b00-000000000014",
+      "name": "Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        -200
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "notes": "Despierta Render antes de leer el correo.",
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/health",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "7a2c3b50-0015-4b00-8b00-000000000015",
+      "name": "Readiness",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        -200
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/health/ready",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "7a2c3b50-0016-4b00-8b00-000000000016",
+      "name": "Listar mensajes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        0
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "nhpGmailRead0001",
+          "name": "NotiHouse Gmail"
+        }
+      },
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuracion').first().json.gmailBase }}/gmail/v1/users/me/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $('Verificar buzon').first().json.query }}"
+            },
+            {
+              "name": "maxResults",
+              "value": "={{ $('Configuracion').first().json.maxMessages }}"
+            },
+            {
+              "name": "fields",
+              "value": "messages/id,nextPageToken"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput",
+      "notes": "Solo lectura. Reintenta fallos pasajeros; un fallo definitivo detiene la ejecución sin registrar nada."
+    },
+    {
+      "id": "7a2c3b50-0017-4b00-8b00-000000000017",
+      "name": "Preparar mensajes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const messages = $input.first().json.messages ?? [];\nreturn messages.map((m) => ({ json: { messageId: m.id } }));"
+      }
+    },
+    {
+      "id": "7a2c3b50-0018-4b00-8b00-000000000018",
+      "name": "Leer mensaje",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        0
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "nhpGmailRead0001",
+          "name": "NotiHouse Gmail"
+        }
+      },
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuracion').first().json.gmailBase }}/gmail/v1/users/me/messages/{{ $json.messageId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "format",
+              "value": "full"
+            },
+            {
+              "name": "fields",
+              "value": "={{ $('Configuracion').first().json.messageFields }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Un fallo no detiene los demás mensajes: se informa al final y reejecutar es seguro."
+    },
+    {
+      "id": "7a2c3b50-0019-4b00-8b00-000000000019",
+      "name": "Extraer adjuntos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const cfg = $('Configuracion').first().json;\nconst pending = $('Preparar mensajes').all();\n\nconst header = (msg, name) => (msg.payload?.headers ?? []).find((h) => String(h.name).toLowerCase() === name)?.value ?? '';\nconst senderOf = (from) => (/<([^<>]+)>\\s*$/.exec(from)?.[1] ?? from).trim().toLowerCase();\n// No se entra en mensajes reenviados: lo que traen dentro está fuera del alcance.\nfunction collect(part, found = []) {\n  if (part.filename) found.push(part);\n  if (part.mimeType !== 'message/rfc822') for (const child of part.parts ?? []) collect(child, found);\n  return found;\n}\n\nconst out = [];\n$input.all().forEach((item, i) => {\n  const messageId = pending[i].json.messageId;\n  const msg = item.json.body;\n  if (item.json.statusCode !== 200 || !msg?.payload) {\n    out.push({ json: { messageId, outcome: 'error_gmail', httpStatus: item.json.statusCode ?? null } });\n    return;\n  }\n  const from = header(msg, 'from');\n  const base = { messageId, receivedAt: new Date(Number(msg.internalDate)).toISOString() };\n  if (!cfg.allowedSenders.includes(senderOf(from))) {\n    out.push({ json: { ...base, outcome: 'remitente_no_autorizado' } });\n    return;\n  }\n  const seen = { ...base, from, subject: header(msg, 'subject') };\n  const parts = collect(msg.payload);\n  if (parts.length === 0) out.push({ json: { ...seen, outcome: 'sin_adjuntos' } });\n  let accepted = 0;\n  for (const p of parts) {\n    const a = { ...seen, partId: p.partId, fileName: p.filename, mimeType: p.mimeType, size: p.body?.size ?? 0 };\n    const isPdf = /\\.pdf$/i.test(p.filename) && String(p.mimeType).toLowerCase() === 'application/pdf';\n    if (!isPdf) out.push({ json: { ...a, outcome: 'tipo_no_admitido' } });\n    else if (!p.body?.attachmentId) out.push({ json: { ...a, outcome: 'sin_identificador' } });\n    else if (a.size > cfg.maxPdfBytes) out.push({ json: { ...a, outcome: 'demasiado_grande' } });\n    else if (accepted >= cfg.maxAttachmentsPerMessage) out.push({ json: { ...a, outcome: 'limite_de_adjuntos' } });\n    else {\n      accepted += 1;\n      out.push({ json: cfg.ingestAuthorized\n        ? { ...a, attachmentId: p.body.attachmentId, download: true }\n        : { ...a, outcome: 'pendiente_de_autorizacion' } });\n    }\n  }\n});\nreturn out;"
+      }
+    },
+    {
+      "id": "7a2c3b50-0020-4b00-8b00-000000000020",
+      "name": "Descargable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2860,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7a2c3b50-0021-4b00-8b00-000000000021",
+              "leftValue": "={{ $json.download === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b50-0022-4b00-8b00-000000000022",
+      "name": "Descargar adjunto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        0
+      ],
+      "credentials": {
+        "googleOAuth2Api": {
+          "id": "nhpGmailRead0001",
+          "name": "NotiHouse Gmail"
+        }
+      },
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Configuracion').first().json.gmailBase }}/gmail/v1/users/me/messages/{{ $json.messageId }}/attachments/{{ $json.attachmentId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "data,size"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "7a2c3b50-0023-4b00-8b00-000000000023",
+      "name": "Decodificar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const wanted = $('Extraer adjuntos').all().filter((x) => x.json.download);\nconst mailbox = $('Verificar buzon').first().json.mailbox;\nreturn $input.all().map((item, i) => {\n  const { attachmentId, download, ...source } = wanted[i].json;\n  const data = item.json.body?.data;\n  if (item.json.statusCode !== 200 || typeof data !== 'string') {\n    return { json: { ...source, outcome: 'error_gmail', httpStatus: item.json.statusCode ?? null } };\n  }\n  const base64 = data.replace(/-/g, '+').replace(/_/g, '/');\n  const bytes = Buffer.from(base64, 'base64');\n  if (bytes.length !== source.size) {\n    return { json: { ...source, outcome: 'error_gmail', httpStatus: null } };\n  }\n  return {\n    json: { ...source, decoded: true, mailbox, runId: String($execution.id ?? 'manual').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) },\n    binary: { data: { data: bytes.toString('base64'), mimeType: 'application/pdf', fileName: source.fileName, fileExtension: 'pdf' } },\n  };\n});"
+      }
+    },
+    {
+      "id": "7a2c3b50-0024-4b00-8b00-000000000024",
+      "name": "Decodificado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3520,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7a2c3b50-0025-4b00-8b00-000000000025",
+              "leftValue": "={{ $json.decoded === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b50-0026-4b00-8b00-000000000026",
+      "name": "Enviar al backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3740,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nhpApiService001",
+          "name": "NotiHouse-Pal API (servicio)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Seguro de repetir: buzón + mensaje + parte no crea un segundo documento. El backend decide propietario y validez del PDF.",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/internal/gmail/attachments",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formData",
+              "name": "mailbox",
+              "value": "={{ $json.mailbox }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "messageId",
+              "value": "={{ $json.messageId }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "partId",
+              "value": "={{ $json.partId }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "receivedAt",
+              "value": "={{ $json.receivedAt }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "workflowRunId",
+              "value": "={{ $json.runId }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 2000
+            }
+          },
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "7a2c3b50-0027-4b00-8b00-000000000027",
+      "name": "Clasificar envio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3960,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const sent = $('Decodificar').all().filter((x) => x.json.decoded);\nconst OUTCOME = { 201: 'registrado', 200: 'ya_registrado', 400: 'rechazado', 413: 'rechazado', 415: 'rechazado', 401: 'token_rechazado', 403: 'buzon_no_vinculado', 409: 'conflicto' };\nreturn $input.all().map((item, i) => {\n  const { decoded, runId, mailbox, ...source } = sent[i].json;\n  const status = item.json.statusCode ?? null;\n  const body = status === 200 || status === 201 ? item.json.body : {};\n  return { json: {\n    ...source,\n    outcome: OUTCOME[status] ?? 'error_temporal',\n    httpStatus: status,\n    documentId: body.documentId,\n    caseId: body.caseId,\n    duplicateContent: body.duplicateContent,\n  } };\n});"
+      }
+    },
+    {
+      "id": "7a2c3b50-0028-4b00-8b00-000000000028",
+      "name": "Reunir resultados",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4180,
+        200
+      ],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 3
+      }
+    },
+    {
+      "id": "7a2c3b50-0029-4b00-8b00-000000000029",
+      "name": "Resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4400,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const cfg = $('Configuracion').first().json;\nconst items = $input.all().map((x) => x.json);\nconst counts = {};\nfor (const x of items) counts[x.outcome] = (counts[x.outcome] ?? 0) + 1;\n// Remitente y asunto solo se muestran en la revisión previa, y nunca a los no autorizados.\nconst detail = items.map(({ attachmentId, download, ...x }) => (cfg.ingestAuthorized ? { ...x, from: undefined, subject: undefined } : x));\nconst moreMessages = Boolean($('Listar mensajes').first().json.nextPageToken);\nconst FAILURES = ['error_gmail', 'error_temporal', 'token_rechazado', 'buzon_no_vinculado', 'conflicto'];\nconst failed = FAILURES.filter((f) => counts[f]);\nif (failed.length > 0) {\n  throw new Error('Recepción incompleta: ' + failed.map((f) => f + '=' + counts[f]).join(', ') + '. Reejecutar es seguro: lo ya registrado no se duplica.');\n}\nreturn [{ json: { modo: cfg.ingestAuthorized ? 'ingesta' : 'solo_revision', conteo: counts, hayMasMensajes: moreMessages, detalle: detail } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Ejecucion manual": {
+      "main": [
+        [
+          {
+            "node": "Configuracion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disparo programado": {
+      "main": [
+        [
+          {
+            "node": "Marcar programado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar programado": {
+      "main": [
+        [
+          {
+            "node": "Configuracion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuracion": {
+      "main": [
+        [
+          {
+            "node": "Lectura autorizada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lectura autorizada?": {
+      "main": [
+        [
+          {
+            "node": "Validar configuracion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Detenido: sin autorizacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar configuracion": {
+      "main": [
+        [
+          {
+            "node": "Perfil de Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perfil de Gmail": {
+      "main": [
+        [
+          {
+            "node": "Verificar buzon",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallo de Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar buzon": {
+      "main": [
+        [
+          {
+            "node": "Ingesta autorizada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingesta autorizada?": {
+      "main": [
+        [
+          {
+            "node": "Health",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Listar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health": {
+      "main": [
+        [
+          {
+            "node": "Readiness",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Readiness": {
+      "main": [
+        [
+          {
+            "node": "Listar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar mensajes": {
+      "main": [
+        [
+          {
+            "node": "Preparar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallo de Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar mensajes": {
+      "main": [
+        [
+          {
+            "node": "Leer mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer mensaje": {
+      "main": [
+        [
+          {
+            "node": "Extraer adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Descargable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargable?": {
+      "main": [
+        [
+          {
+            "node": "Descargar adjunto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reunir resultados",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Descargar adjunto": {
+      "main": [
+        [
+          {
+            "node": "Decodificar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decodificar": {
+      "main": [
+        [
+          {
+            "node": "Decodificado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decodificado?": {
+      "main": [
+        [
+          {
+            "node": "Enviar al backend",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reunir resultados",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Enviar al backend": {
+      "main": [
+        [
+          {
+            "node": "Clasificar envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clasificar envio": {
+      "main": [
+        [
+          {
+            "node": "Reunir resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reunir resultados": {
+      "main": [
+        [
+          {
+            "node": "Resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
