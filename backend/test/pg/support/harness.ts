@@ -366,12 +366,17 @@ export class Harness {
 
   private static sharedHash?: string;
 
-  async obligation(user: User, label = 'Energía'): Promise<string> {
+  async obligation(
+    user: User,
+    label = 'Energía',
+    extra: { reminderDaysBefore?: number } = {},
+  ): Promise<string> {
     const res = await user.a.post('/obligations', {
       providerName: `Proveedor ${label} ${randomUUID().slice(0, 8)}`,
       concept: label,
       category: 'other',
       expectedAmount: '1000.00',
+      ...extra,
     });
     expect(res.status).toBe(201);
     return res.body.id as string;

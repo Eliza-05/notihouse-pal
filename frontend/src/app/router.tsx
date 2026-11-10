@@ -18,6 +18,7 @@ import { HitlDetailPage } from '../features/cases/HitlDetailPage'
 import { AssistantPage } from '../features/assistant/AssistantPage'
 import { RequireAuth } from './RequireAuth'
 import { RootRoute } from './RootRoute'
+import { NotFoundPage } from './NotFoundPage'
 
 function protect(element: React.ReactNode) {
   return (
@@ -49,6 +50,7 @@ const router = createBrowserRouter([
   { path: '/casos/:id', element: protect(<CaseDetailPage />) },
   { path: '/revisiones/:id', element: protect(<HitlDetailPage />) },
   { path: '/asistente', element: protect(<AssistantPage />) },
+  { path: '*', element: <NotFoundPage /> },
 ])
 
 export function AppRouter() {

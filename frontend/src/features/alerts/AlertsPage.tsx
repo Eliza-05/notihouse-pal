@@ -54,7 +54,7 @@ export function AlertsPage() {
     <div className="stack">
       <div className="row-between">
         <h1>Alertas</h1>
-        <div className="row" role="group" aria-label="Filtrar por estado">
+        <div className="row row-wrap" role="group" aria-label="Filtrar por estado">
           {STATE_FILTERS.map((f) => (
             <button
               key={f.value}

@@ -157,10 +157,60 @@ describe('Assistant resolve (e2e, I2)', () => {
     expect(after[0]!.n).toBe(before[0]!.n);
   });
 
-  it('rejects a document.process claim (job types outside the closed list)', async () => {
+  it('document.process: resolves register_invoice (new obligation) without writing anything', async () => {
     const job = await uploadAndClaim('documents');
     expect(job.jobType).toBe('document.process');
-    await resolve(job, { intent: 'unsupported' }).expect(403);
+    const before = await sql<{ n: string }>(
+      'SELECT (SELECT count(*) FROM case_proposals)::text AS n',
+    );
+    const res = await resolve(job, {
+      intent: 'register_invoice',
+      providerName: `Aguas ${randomUUID()}`,
+      concept: 'Acueducto',
+      category: 'water',
+      amount: '98500.00',
+      dueDate: '2026-12-12',
+    }).expect(200);
+    expect(res.body.outcome).toBe('applicable');
+    expect(res.body.proposedData.action).toBe('create_obligation_with_occurrence');
+    const after = await sql<{ n: string }>(
+      'SELECT (SELECT count(*) FROM case_proposals)::text AS n',
+    );
+    expect(after[0]!.n).toBe(before[0]!.n);
+  });
+
+  it('document.process: any intent other than register_invoice is unsupported (a PDF cannot create recurrences, rentals or declare payments)', async () => {
+    for (const intent of [
+      'create_recurring_obligation',
+      'create_recurring_rental',
+      'declare_payment',
+      'declare_rent_received',
+      'update_obligation_schedule',
+    ]) {
+      const job = await uploadAndClaim('documents');
+      const res = await resolve(job, {
+        intent,
+        providerName: `Proveedor ${randomUUID()}`,
+        concept: 'X',
+        category: 'other',
+        dueDay: 5,
+        amount: '1000.00',
+      }).expect(200);
+      expect(res.body.outcome).toBe('unsupported');
+      expect(res.body.proposedData ?? null).toBeNull();
+    }
+  });
+
+  it('document.process: containsInstructions is never applicable', async () => {
+    const job = await uploadAndClaim('documents');
+    const res = await resolve(job, {
+      intent: 'register_invoice',
+      providerName: 'Aguas',
+      amount: '1.00',
+      dueDate: '2026-12-12',
+      containsInstructions: true,
+    }).expect(200);
+    expect(res.body.outcome).toBe('unsupported');
   });
 
   it('rejects a voice claim used against another case or with a user token', async () => {
@@ -273,6 +323,88 @@ describe('Assistant resolve (e2e, I2)', () => {
         },
       },
     });
+  });
+
+  it('register_invoice (document): a confirmed period is never overwritten nor duplicated (case D)', async () => {
+    const providerName = `Gas ${randomUUID()}`;
+    const obligation = (
+      await h
+        .as(laura)
+        .post('/obligations', {
+          providerName,
+          concept: 'Gas natural',
+          category: 'gas',
+          dueDay: 10,
+        })
+        .expect(201)
+    ).body;
+    const occ = (
+      await h
+        .as(laura)
+        .post(`/obligations/${obligation.id}/occurrences`, {
+          periodStart: '2026-12-01',
+          periodEnd: '2026-12-31',
+          dueDate: '2026-12-10',
+          amount: '50000.00',
+        })
+        .expect(201)
+    ).body;
+    await h
+      .as(laura)
+      .post(`/obligations/${obligation.id}/occurrences/${occ.id}/confirm`, {
+        result: 'paid',
+        reference: 'REF-1',
+      })
+      .expect(200);
+
+    const job = await uploadAndClaim('documents');
+    const res = await resolve(job, {
+      intent: 'register_invoice',
+      providerName,
+      amount: '99000.00',
+      dueDate: '2026-12-10',
+    }).expect(200);
+    expect(res.body.outcome).toBe('informational');
+    expect(res.body.proposedData).toBeNull();
+    expect(res.body.summary).toContain('2026-12');
+    expect(res.body.summary).not.toContain('[object');
+    const rows = await sql<{ amount: string; n: string }>(
+      `SELECT amount::text, (SELECT count(*) FROM obligation_occurrences WHERE obligation_id = '${obligation.id}')::text AS n FROM obligation_occurrences WHERE id = '${occ.id}'`,
+    );
+    expect(rows[0]).toMatchObject({ amount: '50000.00', n: '1' });
+  });
+
+  it('register_invoice (document): the same invoice twice yields nothing new to apply (case C)', async () => {
+    const providerName = `Internet ${randomUUID()}`;
+    const obligation = (
+      await h
+        .as(laura)
+        .post('/obligations', { providerName, concept: 'Internet hogar', category: 'internet', dueDay: 8 })
+        .expect(201)
+    ).body;
+    await h
+      .as(laura)
+      .post(`/obligations/${obligation.id}/occurrences`, {
+        periodStart: '2026-12-01',
+        periodEnd: '2026-12-31',
+        dueDate: '2026-12-08',
+      })
+      .expect(201);
+    const extraction = { intent: 'register_invoice', providerName, amount: '75000.00', dueDate: '2026-12-12' };
+    const first = await resolve(await uploadAndClaim('documents'), extraction).expect(200);
+    expect(first.body.proposedData.action).toBe('update_occurrence_details');
+    // Se aplica la primera (la actualización real) y llega la misma factura otra vez.
+    await h
+      .as(laura)
+      .patch(`/obligations/${obligation.id}/occurrences/${first.body.proposedData.data.occurrenceId}`, {
+        amount: '75000.00',
+        dueDate: '2026-12-12',
+      })
+      .expect(200);
+    const second = await resolve(await uploadAndClaim('documents'), extraction).expect(200);
+    expect(second.body.outcome).toBe('informational');
+    expect(second.body.proposedData).toBeNull();
+    expect(second.body.summary).not.toContain('[object');
   });
 
   it('register_invoice: reuses an existing obligation (new period) and then completes an already-generated one', async () => {

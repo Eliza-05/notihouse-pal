@@ -1,0 +1,20 @@
+/** Escenario 3 — Nota de voz: audio FICTICIO real a través de NestJS y n8n; la TRANSCRIPCIÓN y la interpretación son SIMULADAS (mock). */
+import { login, http, sql, close, assert, mock, drainQueue, decide, apply } from '../lib.mjs';
+import { readFileSync } from 'node:fs';
+import { ROOT } from '../lib.mjs';
+const t = await login('DANIEL');
+await mock('/__control', { transcript: 'Registra la factura de agua de Acueducto por 98.500 pesos, vence el 30 de noviembre de 2026' });
+const f = new FormData(); f.append('file', new Blob([readFileSync(`${ROOT}/n8n/test-data/audio/nota-voz-agua.wav`)], { type: 'audio/wav' }), 'nota.wav');
+const up = await http('POST', '/ingestions/voice', { token: t, form: f });
+assert(up.status === 201 && up.body.job.type === 'voice.transcribe', `ingesta de voz (${up.status}, ${up.body.job?.type})`);
+await drainQueue();
+const c = (await sql('select status from cases where id=$1', [up.body.caseId]))[0].status;
+assert(c === 'awaiting_human', `caso en awaiting_human (${c})`);
+const ps = await sql('select id::text, source, proposed_data from case_proposals where case_id=$1 order by version', [up.body.caseId]);
+assert(ps.length === 2 && ps[0].source === 'stt' && !ps[0].proposed_data.action, 'v1 = transcripción (stt, evidencia NO aplicable; SIMULADA)');
+assert(ps[1].source === 'llm' && ps[1].proposed_data.action === 'create_obligation_with_occurrence' && ps[1].proposed_data.data.occurrence.amount === '98500.00' && ps[1].proposed_data.data.occurrence.dueDate === '2026-11-30', `v2 = propuesta llm (importe 98500.00, vencimiento 2026-11-30) vía resolve (${ps[1]?.proposed_data?.action})`);
+const h = (await sql('select id::text, decision_type, status from hitl_requests where case_id=$1', [up.body.caseId]))[0];
+assert(h.decision_type === 'data_confirmation' && h.status === 'pending', 'revisión humana pendiente');
+const sttApply = await apply(t, up.body.caseId, ps[0].id); assert([400, 409].includes(sttApply.status), `la propuesta stt nunca se aplica (${sttApply.status})`);
+assert(Number((await sql("select count(*)::int n from obligations where provider_name='Acueducto'"))[0].n) === 0, 'nada se creó sin aprobación');
+await close();

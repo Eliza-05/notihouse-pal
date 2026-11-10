@@ -70,7 +70,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// ÚNICO interruptor de llamadas al backend. Con false no se llama a nada.\nconst AUTORIZAR_MANTENIMIENTO = false;\n// Ejecución PROGRAMADA (cada 15 min). Exige además el interruptor anterior.\nconst AUTOMATIZACION_PROGRAMADA = false;\n\nconst scheduled = $input.first()?.json?.scheduled === true;\n// Un único evaluador de alertas, como máximo una vez por hora (contrato del\n// backend). La ejecución manual siempre evalúa.\nconst ALERTS_EVERY_MS = 55 * 60 * 1000;\nlet lastAlertsAt = 0;\ntry { lastAlertsAt = Number($getWorkflowStaticData('global').lastAlertsAt ?? 0); } catch { /* sin datos estáticos */ }\n\nreturn [{ json: {\n  authorized: AUTORIZAR_MANTENIMIENTO === true && (!scheduled || AUTOMATIZACION_PROGRAMADA === true),\n  scheduled,\n  runAlerts: !scheduled || Date.now() - lastAlertsAt >= ALERTS_EVERY_MS,\n  lastAlertsAt: lastAlertsAt ? new Date(lastAlertsAt).toISOString() : null,\n  apiBase: 'https://notihouse-pal-api.onrender.com/api/v1',\n  workerId: 'n8n-scheduler',\n  maxEvaluationRounds: 20,\n} }];"
+        "jsCode": "// ÚNICO interruptor de llamadas al backend. Con false no se llama a nada.\nconst AUTORIZAR_MANTENIMIENTO = false;\n// A-4: generación automática de períodos/cobros (POST /internal/recurrence/generate).\n// Interruptor propio: con false no se llama a ese endpoint. Va ANTES de evaluar alertas (D14).\nconst AUTORIZAR_RECURRENCIA = false;\n// Ejecución PROGRAMADA (cada 15 min). Exige además el interruptor anterior.\nconst AUTOMATIZACION_PROGRAMADA = false;\n\nconst scheduled = $input.first()?.json?.scheduled === true;\n// Un único evaluador de alertas, como máximo una vez por hora (contrato del\n// backend). La ejecución manual siempre evalúa.\nconst ALERTS_EVERY_MS = 55 * 60 * 1000;\nlet lastAlertsAt = 0;\ntry { lastAlertsAt = Number($getWorkflowStaticData('global').lastAlertsAt ?? 0); } catch { /* sin datos estáticos */ }\n// La generación es idempotente; en ejecución programada basta con intentarla cada 6 horas.\nconst RECURRENCE_EVERY_MS = 6 * 60 * 60 * 1000;\nlet lastRecurrenceAt = 0;\ntry { lastRecurrenceAt = Number($getWorkflowStaticData('global').lastRecurrenceAt ?? 0); } catch { /* sin datos estáticos */ }\n\nreturn [{ json: {\n  authorized: AUTORIZAR_MANTENIMIENTO === true && (!scheduled || AUTOMATIZACION_PROGRAMADA === true),\n  scheduled,\n  runRecurrence: AUTORIZAR_RECURRENCIA === true && (!scheduled || Date.now() - lastRecurrenceAt >= RECURRENCE_EVERY_MS),\n  runAlerts: !scheduled || Date.now() - lastAlertsAt >= ALERTS_EVERY_MS,\n  lastAlertsAt: lastAlertsAt ? new Date(lastAlertsAt).toISOString() : null,\n  apiBase: 'https://notihouse-pal-api.onrender.com/api/v1',\n  workerId: 'n8n-scheduler',\n  maxEvaluationRounds: 20,\n  maxRecurrenceRounds: 20,\n} }];"
       },
       "notes": "Interruptores. En false no se llama al backend."
     },
@@ -191,7 +191,7 @@
     },
     {
       "id": "7a2c3b60-0011-4b00-8b00-000000000011",
-      "name": "Evaluar alertas?",
+      "name": "Generar recurrencias?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
@@ -211,7 +211,7 @@
           "conditions": [
             {
               "id": "7a2c3b60-0012-4b00-8b00-000000000012",
-              "leftValue": "={{ $('Configuracion').first().json.runAlerts }}",
+              "leftValue": "={{ $('Configuracion').first().json.runRecurrence }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -225,22 +225,149 @@
     },
     {
       "id": "7a2c3b60-0013-4b00-8b00-000000000013",
+      "name": "Generar recurrencias",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nhpApiService001",
+          "name": "NotiHouse-Pal API (servicio)"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/internal/recurrence/generate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workerId: $('Configuracion').first().json.workerId, ...($runIndex > 0 && $json.nextCursor ? { cursor: $json.nextCursor } : {}) }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0014-4b00-8b00-000000000014",
+      "name": "Recurrencia incompleta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7a2c3b60-0015-4b00-8b00-000000000015",
+              "leftValue": "={{ $json.complete === false && $runIndex < $('Configuracion').first().json.maxRecurrenceRounds }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0016-4b00-8b00-000000000016",
+      "name": "Registrar recurrencia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const rounds = $('Generar recurrencias').all().map((i) => i.json);\ntry { $getWorkflowStaticData('global').lastRecurrenceAt = Date.now(); } catch { /* ejecución manual */ }\nconst sum = (k) => rounds.reduce((a, r) => a + Number(r[k] ?? 0), 0);\nconst last = rounds[rounds.length - 1] ?? {};\nreturn [{ json: { recurrence: {\n  evaluationDate: last.evaluationDate ?? null, rounds: rounds.length, complete: last.complete === true,\n  scanned: sum('scanned'), obligationPeriodsCreated: sum('obligationPeriodsCreated'), rentChargesCreated: sum('rentChargesCreated'), unchanged: sum('unchanged'),\n  correlationId: last.correlationId ?? null,\n} } }];"
+      }
+    },
+    {
+      "id": "7a2c3b60-0017-4b00-8b00-000000000017",
+      "name": "Anotar fallo de recurrencia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const item = $input.first().json;\nconst detail = item.error ?? item;\nconst text = JSON.stringify(item);\nconst code = Number(detail?.httpCode ?? /^(\\d{3})\\b/.exec(String(detail?.cause?.message ?? detail?.message ?? ''))?.[1] ?? 0);\nconst killSwitch = /KILL_SWITCH_ACTIVE/.test(text) || code === 503;\n// No bloquea las alertas: se registra y el cierre deja la ejecución en error.\nconst message = killSwitch\n  ? 'Generación de recurrencias suspendida (kill switch recurrence_generation o backend no disponible, 503). Las alertas se evaluaron igualmente.'\n  : code === 401 ? 'Token de servicio rechazado (401) al generar recurrencias.'\n  : 'Fallo al generar recurrencias' + (code ? ' (HTTP ' + code + ')' : '') + '. Las alertas se evaluaron igualmente.';\nreturn [{ json: { recurrenceFailure: message } }];"
+      }
+    },
+    {
+      "id": "7a2c3b60-0018-4b00-8b00-000000000018",
+      "name": "Evaluar alertas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2200,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7a2c3b60-0019-4b00-8b00-000000000019",
+              "leftValue": "={{ $('Configuracion').first().json.runAlerts }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b60-0020-4b00-8b00-000000000020",
       "name": "Alertas: esperar a la proxima hora",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        1540,
+        2420,
         260
       ],
       "parameters": {}
     },
     {
-      "id": "7a2c3b60-0014-4b00-8b00-000000000014",
+      "id": "7a2c3b60-0021-4b00-8b00-000000000021",
       "name": "Evaluar alertas",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1540,
+        2420,
         0
       ],
       "credentials": {
@@ -264,12 +391,12 @@
       }
     },
     {
-      "id": "7a2c3b60-0015-4b00-8b00-000000000015",
+      "id": "7a2c3b60-0022-4b00-8b00-000000000022",
       "name": "Evaluacion incompleta?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1760,
+        2640,
         0
       ],
       "parameters": {
@@ -284,7 +411,7 @@
           "combinator": "and",
           "conditions": [
             {
-              "id": "7a2c3b60-0016-4b00-8b00-000000000016",
+              "id": "7a2c3b60-0023-4b00-8b00-000000000023",
               "leftValue": "={{ $json.complete === false && $runIndex < $('Configuracion').first().json.maxEvaluationRounds }}",
               "rightValue": "",
               "operator": {
@@ -298,12 +425,12 @@
       }
     },
     {
-      "id": "7a2c3b60-0017-4b00-8b00-000000000017",
+      "id": "7a2c3b60-0024-4b00-8b00-000000000024",
       "name": "Registrar evaluacion",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1980,
+        2860,
         0
       ],
       "parameters": {
@@ -313,7 +440,22 @@
       }
     },
     {
-      "id": "7a2c3b60-0018-4b00-8b00-000000000018",
+      "id": "7a2c3b60-0025-4b00-8b00-000000000025",
+      "name": "Cierre",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Cierre único: informa el resultado y deja la ejecución en error si la recurrencia falló.\nlet failure = null;\ntry { failure = $('Anotar fallo de recurrencia').first().json.recurrenceFailure; } catch { /* no hubo fallo */ }\nlet recurrence = null;\ntry { recurrence = $('Registrar recurrencia').first().json.recurrence; } catch { /* no se ejecutó */ }\nif (failure) throw new Error(failure);\nreturn [{ json: { recurrence, alerts: 'evaluadas o en espera de la próxima hora' } }];"
+      }
+    },
+    {
+      "id": "7a2c3b60-0026-4b00-8b00-000000000026",
       "name": "Clasificar fallo",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -328,7 +470,7 @@
       }
     },
     {
-      "id": "7a2c3b60-0019-4b00-8b00-000000000019",
+      "id": "7a2c3b60-0027-4b00-8b00-000000000027",
       "name": "Terminar con error",
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
@@ -430,7 +572,7 @@
       "main": [
         [
           {
-            "node": "Evaluar alertas?",
+            "node": "Generar recurrencias?",
             "type": "main",
             "index": 0
           }
@@ -438,6 +580,82 @@
         [
           {
             "node": "Clasificar fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar recurrencias?": {
+      "main": [
+        [
+          {
+            "node": "Generar recurrencias",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Evaluar alertas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar recurrencias": {
+      "main": [
+        [
+          {
+            "node": "Recurrencia incompleta?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Anotar fallo de recurrencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recurrencia incompleta?": {
+      "main": [
+        [
+          {
+            "node": "Generar recurrencias",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar recurrencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar recurrencia": {
+      "main": [
+        [
+          {
+            "node": "Evaluar alertas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anotar fallo de recurrencia": {
+      "main": [
+        [
+          {
+            "node": "Evaluar alertas?",
             "type": "main",
             "index": 0
           }
@@ -456,6 +674,17 @@
         [
           {
             "node": "Alertas: esperar a la proxima hora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alertas: esperar a la proxima hora": {
+      "main": [
+        [
+          {
+            "node": "Cierre",
             "type": "main",
             "index": 0
           }
@@ -492,6 +721,17 @@
         [
           {
             "node": "Registrar evaluacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar evaluacion": {
+      "main": [
+        [
+          {
+            "node": "Cierre",
             "type": "main",
             "index": 0
           }

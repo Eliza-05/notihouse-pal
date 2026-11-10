@@ -33,7 +33,7 @@ export function RentalsPage() {
       </div>
 
       <div className="row" style={{ flexWrap: 'wrap', gap: '0.6rem' }}>
-        <select value={propertyId} onChange={(e) => { setPropertyId(e.target.value); setPage(1) }}>
+        <select aria-label="Filtrar por inmueble" value={propertyId} onChange={(e) => { setPropertyId(e.target.value); setPage(1) }}>
           <option value="">Todos los inmuebles</option>
           {properties?.items.map((p) => (
             <option key={p.id} value={p.id}>
@@ -41,7 +41,7 @@ export function RentalsPage() {
             </option>
           ))}
         </select>
-        <select value={status} onChange={(e) => { setStatus(e.target.value as RentalStatus | ''); setPage(1) }}>
+        <select aria-label="Filtrar por estado" value={status} onChange={(e) => { setStatus(e.target.value as RentalStatus | ''); setPage(1) }}>
           <option value="">Todos los estados</option>
           {Object.entries(RENTAL_STATUS_LABELS).map(([v, l]) => (
             <option key={v} value={v}>

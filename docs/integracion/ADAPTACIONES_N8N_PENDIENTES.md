@@ -1,8 +1,20 @@
 # Adaptaciones de n8n pendientes (A-1 … A-7)
 
-> **Estado:** el backend de estas adaptaciones está implementado y probado en entorno aislado (PGlite y PostgreSQL 15 local desechable, **sin n8n, Gemini ni Gmail reales**). **Ninguna adaptación está hecha ni probada en n8n.** Ninguna funcionalidad que dependa de ellas puede declararse «integrada de extremo a extremo» hasta que la responsable las adapte y pruebe.
+> **Estado (actualizado el 9-nov-2026, rama `qa/mvp-e2e-n8n`):** A-1, A-2, A-3, A-4 y A-6 están **adaptadas en los JSON versionados y probadas localmente** (PostgreSQL 18, NestJS y n8n en Docker, con **Gemini y Gmail simulados**). **A-5 está parcial** y **A-7 no se implementó**. **Ninguna se probó con Gemini, Gmail, micrófono ni almacenamiento externo reales.** Detalle, evidencia y reproducción: [`docs/qa/INFORME_QA_MVP_2026-11-09.md`](../qa/INFORME_QA_MVP_2026-11-09.md).
 >
-> Los workflows `n8n/workflows/*.json` **no se modificaron** en esta entrega. Este documento solo especifica contratos. Fecha: 9-nov-2026. Referencia: guía de integración §19, §20, §24.
+> Los workflows siguen **inactivos** y con todos los interruptores `AUTORIZAR_*`/`AUTOMATIZACION_*` en `false`: activarlos (y programar su ejecución) sigue siendo decisión de la responsable.
+
+| ID | Estado | Qué se hizo | Prueba (local) | Pendiente real |
+|---|---|---|---|---|
+| A-1 | **Completa · probada localmente** | 04 reclama `voice.transcribe` + `text.interpret`; el texto omite descarga y transcripción | escenarios 1, 9; `voice-stack` 99/99 | Interpretación real con Gemini |
+| A-2 | **Completa · probada con Gemini simulado** | Esquema/prompt con 8 intenciones; anclaje (cifras y palabras), evidencia literal, anti-inyección, nunca confirma pagos | `agent-eval` 43/43; escenario 9 | **Plan de llamadas reales** (≤ 8) con clave de QA |
+| A-3 | **Completa · probada localmente** | `Resolver en backend` + `Armar propuesta` (propuesta y HITL por `outcome`); clave `guided` | escenarios 1–3, 10 | Resultado `informational` real |
+| A-4 | **Completa · probada localmente** | 06: recurrencia antes de alertas, cursor hasta `complete`, `AUTORIZAR_RECURRENCIA`, kill switch | escenarios 5, 6 | Paginación con > 100 elementos; activar el disparador programado |
+| A-5 | **Parcial** | Texto/voz: `update_occurrence_details` y `create_obligation_occurrence` vía `resolve`. **PDF/Gmail no usan `resolve`**: el backend lo rechaza para `document.process` (403, lista cerrada) | escenarios 2, 4, 8, 10 | **Decisión:** permitir `document.process` en `resolve` (backend + prueba) y adaptar 02. Hoy un PDF de un período ya generado propone `create_*` y el backend responde 409 al aplicar |
+| A-6 | **Completa · probada localmente** | 03 cierra el caso con las 6 acciones aplicables, rechazo y expiración | escenarios 1, 2, 4, 7, 10 | — |
+| A-7 | **No implementada** (opcional) | — | — | Backend, frontend y workflow |
+
+> Las secciones siguientes conservan la **especificación original** de cada adaptación. Sus filas «Qué falta» y «Probar después» describen el estado **anterior** a la fase QA: léelas junto con la tabla anterior, que es la vigente.
 
 ## Convenciones comunes
 

@@ -62,7 +62,7 @@ export function ObligationsPage() {
             />
           </div>
         </div>
-        <select value={status} onChange={(e) => { setStatus(e.target.value as ObligationStatus | ''); setPage(1) }}>
+        <select aria-label="Filtrar por estado" value={status} onChange={(e) => { setStatus(e.target.value as ObligationStatus | ''); setPage(1) }}>
           <option value="">Todos los estados</option>
           {Object.entries(OBLIGATION_STATUS_LABELS).map(([v, l]) => (
             <option key={v} value={v}>
@@ -70,7 +70,7 @@ export function ObligationsPage() {
             </option>
           ))}
         </select>
-        <select value={category} onChange={(e) => { setCategory(e.target.value as ObligationCategory | ''); setPage(1) }}>
+        <select aria-label="Filtrar por categoría" value={category} onChange={(e) => { setCategory(e.target.value as ObligationCategory | ''); setPage(1) }}>
           <option value="">Todas las categorías</option>
           {Object.entries(OBLIGATION_CATEGORY_LABELS).map(([v, l]) => (
             <option key={v} value={v}>
@@ -79,6 +79,7 @@ export function ObligationsPage() {
           ))}
         </select>
         <select
+          aria-label="Filtrar por inmueble"
           value={propertyId}
           disabled={unassigned}
           onChange={(e) => { setPropertyId(e.target.value); setPage(1) }}

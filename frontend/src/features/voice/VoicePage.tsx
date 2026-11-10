@@ -81,7 +81,9 @@ export function VoicePage() {
         <input
           ref={fileInputRef}
           type="file"
+          aria-label="Subir un archivo de audio"
           accept="audio/*"
+          style={{ maxWidth: '100%' }}
           onChange={(e) => {
             const file = e.target.files?.[0]
             if (file) void send(file, file.type)

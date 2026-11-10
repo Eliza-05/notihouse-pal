@@ -181,6 +181,15 @@ const FULL = {
   paymentStatus: 'pending', missing: [], ambiguities: [],
   evidence: [{ field: 'amount', text: 'cuarenta y tres mil doscientos pesos colombianos' }, { field: 'providerName', text: 'Agua de Prueba S.A.S.' }],
 };
+// A-2: el workflow 04 ahora pide el esquema de extracción con `intent`. Los fixtures históricos
+// (isObligationInstruction / paymentStatus) se traducen aquí; la semántica de seguridad no cambia:
+// «ya pagada» = declare_payment (guiado, nunca aplicable) y «no es instrucción» = unsupported.
+const toExtraction = (o) => {
+  if (!('isObligationInstruction' in o)) return o;
+  const intent = o.paymentStatus === 'paid' ? 'declare_payment' : o.isObligationInstruction ? 'register_invoice' : 'unsupported';
+  const { isObligationInstruction, paymentStatus, periodStart, periodEnd, ...rest } = o;
+  return { intent, propertyName: null, tenantAlias: null, dueDay: null, reminderDaysBefore: null, reminderDay: null, frequency: null, month: null, containsInstructions: false, ...rest };
+};
 const PRE_STT = { hasSpeech: true, language: 'es', transcript: 'Prueba de comprobación. Obligación del servicio de gas. El proveedor es Empresa Ficticia de Comprobación. El valor es mil quinientos pesos colombianos. Vence el quince de noviembre de dos mil veintiséis.', uncertainFragments: [] };
 const PRE_INTERP = { ...FULL, providerName: 'Empresa Ficticia de Comprobación', concept: 'servicio de gas', category: 'gas', periodStart: null, periodEnd: null, dueDate: '2026-11-15', amount: '1500.00', missing: ['periodo'], evidence: [] };
 
@@ -228,7 +237,7 @@ proxyServer = createServer((req, res) => {
       entry.textSent = textPart;
       if (once('interpFail')) { entry.status = sc.interpStatus; return geminiFail(res, sc.interpStatus); }
       if (sc.interpRaw !== undefined) return geminiReply(res, 200, okJson(sc.interpRaw));
-      return geminiReply(res, 200, okJson(sc.interp ?? FULL));
+      return geminiReply(res, 200, okJson(toExtraction(sc.interp ?? FULL)));
     }
     const hit = fault && fault.times > 0 && new RegExp(fault.match).test(path);
     if (hit && fault.mode !== 'after') {
@@ -353,7 +362,7 @@ try {
   { const { ing, r } = await ingestAndRun(voiceWav);
     check('Ingesta de voz real (WAV): 201 y trabajo voice.transcribe', ing.status === 201 && ing.job.type === 'voice.transcribe' && ing.mimeType === 'audio/wav', JSON.stringify(ing).slice(0, 200));
     const job = await jobOf(ing.caseId); const ps = await proposalsOf(ing.caseId); const hs = await hitlOf(ing.caseId); const c = await caseOf(ing.caseId);
-    check('Feliz: orden de llamadas', pathsOf(r.log) === '/health=200 > /health/ready=200 > /internal/workflow-jobs/claim=200 > /internal/documents/:id/content=200 > /internal/cases/:id/proposals=201 > /internal/cases/:id/proposals=201 > /internal/cases/:id/hitl-requests=201 > /internal/workflow-jobs/:id/complete=200', pathsOf(r.log));
+    check('Feliz: orden de llamadas', pathsOf(r.log) === '/health=200 > /health/ready=200 > /internal/workflow-jobs/claim=200 > /internal/documents/:id/content=200 > /internal/cases/:id/proposals=201 > /internal/cases/:id/assistant/resolve=200 > /internal/cases/:id/proposals=201 > /internal/cases/:id/hitl-requests=201 > /internal/workflow-jobs/:id/complete=200', pathsOf(r.log));
     check('Feliz: el audio llega íntegro a Gemini (mismo SHA-256, audio/wav)', real(r.log)[0].audioSha === ing.sha && real(r.log)[0].mime === 'audio/wav', `${real(r.log)[0].audioSha} ${ing.sha}`);
     check('Feliz: dos llamadas reales a Gemini (transcribir e interpretar)', real(r.log).map((e) => e.kind).join(',') === 'transcribe,interpret');
     check('Feliz: la interpretación recibe la transcripción, no el audio', real(r.log)[1].textSent.includes('Agua de Prueba S.A.S.') && !real(r.log)[1].textSent.includes('RIFF'));
@@ -363,7 +372,7 @@ try {
     let parsed = null; try { parsed = await parseProposalAction(ps[1].proposed_data); } catch (e) { parsed = e.message; }
     check('Feliz: la propuesta llm pasa parseProposalAction real', parsed?.action === 'create_obligation_with_occurrence', String(parsed));
     const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
-    check('Feliz: datos exactos', canon(ps[1].proposed_data) === canon({ action: 'create_obligation_with_occurrence', data: { obligation: { providerName: 'Agua de Prueba S.A.S.', concept: 'servicio de agua', category: 'water', expectedAmount: '43200.00', currency: 'COP' }, occurrence: { periodStart: '2026-11-01', periodEnd: '2026-11-30', dueDate: '2026-12-12', amount: '43200.00' } } }), JSON.stringify(ps[1].proposed_data));
+    check('Feliz: datos exactos', canon(ps[1].proposed_data) === canon({ action: 'create_obligation_with_occurrence', data: { obligation: { providerName: 'Agua de Prueba S.A.S.', concept: 'servicio de agua', category: 'water', currency: 'COP' }, occurrence: { periodStart: '2026-12-01', periodEnd: '2026-12-31', dueDate: '2026-12-12', amount: '43200.00' } } }), JSON.stringify(ps[1].proposed_data));
     check('Feliz: revisión data_confirmation pendiente, sin alternativas, ligada a la llm', hs.length === 1 && hs[0].type === 'data_confirmation' && hs[0].status === 'pending' && hs[0].proposal_id === ps[1].id && !hs[0].options.choices);
     const a = await actions(ing.correlationId);
     check('Feliz: auditoría completa y sin pagos', ['voice_note.receive', 'workflow_job.claim', 'document.content_access', 'case_proposal.create', 'hitl_request.create', 'workflow_job.complete'].every((x) => a.includes(x)) && !a.some((x) => /confirm|paid|apply/.test(x)), a.join(','));
@@ -425,7 +434,7 @@ try {
     ['Faltan datos (sin período ni vencimiento)', { ...FULL, periodStart: null, periodEnd: null, dueDate: null, missing: ['periodo', 'vencimiento'] }],
     ['Fecha ambigua', { ...FULL, dueDate: null, ambiguities: ['"el doce" sin mes ni año'] }],
     ['Importe con separador de miles', { ...FULL, amount: '43.200' }],
-    ['Moneda no dicha', { ...FULL, currency: null, missing: ['moneda'] }],
+    // A-3: ya no es un caso no aplicable: `resolve` (backend) asume COP si no se dice otra moneda; la persona la ve y confirma en la revisión.
     ['Proveedor inventado (no está en la transcripción)', { ...FULL, providerName: 'Acueducto Inventado S.A.' }],
     ['La nota dice que ya está pagada', { ...FULL, paymentStatus: 'paid' }],
     ['No es una instrucción de obligación', { ...FULL, isObligationInstruction: false }],
@@ -447,7 +456,8 @@ try {
 
   { const { ing, r } = await ingestAndRun(voiceWav, {}, { stt: stt({ transcript: VOICE_TEXT.replace('S.A.S.', 'SAS') }) });
     const ps = await proposalsOf(ing.caseId);
-    check('Transcripción "SAS" e interpretación "S.A.S.": sigue siendo aplicable', r.exit === 0 && ps[1].proposed_data.action === 'create_obligation_with_occurrence', JSON.stringify(ps[1]?.proposed_data).slice(0, 120));
+    // A-5/caso C: la obligación y el período ya existen con esos mismos datos (corrida feliz), así que el backend la reconoce (SAS = S.A.S.) y responde «informational»: nada nuevo que aplicar.
+    check('Transcripción "SAS" e interpretación "S.A.S.": sigue reconociendo la obligación existente', r.exit === 0 && (['create_obligation_with_occurrence', 'update_occurrence_details'].includes(ps[1].proposed_data.action) || ps[1].proposed_data.resultado === 'informational'), JSON.stringify(ps[1]?.proposed_data).slice(0, 120)); // la obligación ya existe de la corrida feliz: resolve propone actualizar el período (A-5)
   }
 
   // ---------- 5. Salidas inválidas de Gemini
@@ -536,7 +546,7 @@ try {
     check('Una reclamación por ejecución: solo el trabajo de voz más antiguo', j1.attempts === 1 && j2.attempts === 0 && j2.status === 'pending', `${j1.attempts} ${j2.attempts}`);
     check('Los trabajos document.process y los demás de voz no se tocan', jp.status === 'pending' && jp.attempts === 0);
     const claimBody = r.log.find((e) => e.path.endsWith('/claim')).sent;
-    check('La reclamación pide limit 1 y solo voice.transcribe', claimBody.limit === 1 && JSON.stringify(claimBody.jobTypes) === '["voice.transcribe"]', JSON.stringify(claimBody));
+    check('La reclamación pide limit 1 y solo voice.transcribe + text.interpret (A-1)', claimBody.limit === 1 && JSON.stringify(claimBody.jobTypes) === '["voice.transcribe","text.interpret"]', JSON.stringify(claimBody));
   }
 
   // ---------- 8. Idempotencia del ingreso (mismo requestId) y agotamiento de intentos

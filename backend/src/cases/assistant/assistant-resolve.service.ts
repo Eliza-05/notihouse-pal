@@ -61,13 +61,23 @@ interface RentalCandidate {
 
 /**
  * Tipos de trabajo cuya extracción puede resolverse aquí: el texto del
- * asistente y la nota de voz (ya transcrita). Cualquier otro (documentos PDF,
- * correo, revisiones) se rechaza con 403: la lista es cerrada.
+ * asistente, la nota de voz (ya transcrita) y el documento (PDF subido o
+ * adjunto de Gmail, ya extraído). Cualquier otro (revisiones, mantenimiento)
+ * se rechaza con 403: la lista es cerrada.
  */
 const RESOLVABLE_JOB_TYPES: readonly string[] = [
   TEXT_INGESTION_JOB_TYPE,
   INGESTION_JOB_TYPES.voice,
+  INGESTION_JOB_TYPES.document,
 ];
+
+/**
+ * A-5: un documento solo puede producir la intención `register_invoice`
+ * (factura nueva o de una obligación existente). Una factura no puede crear
+ * obligaciones recurrentes, arriendos ni declarar pagos o cobros: esas
+ * intenciones solo son legítimas cuando la persona las escribe o dicta.
+ */
+const DOCUMENT_ALLOWED_INTENTS: readonly string[] = ['register_invoice'];
 
 /**
  * Resolución determinística de un mensaje (texto o voz) contra los datos
@@ -94,6 +104,14 @@ export class AssistantResolveService {
       if (!RESOLVABLE_JOB_TYPES.includes(claim.jobType)) {
         throw new ForbiddenException(
           'El tipo de trabajo reclamado no está autorizado para resolver este caso',
+        );
+      }
+      if (
+        claim.jobType === INGESTION_JOB_TYPES.document &&
+        !DOCUMENT_ALLOWED_INTENTS.includes(dto.extraction.intent)
+      ) {
+        return unsupported(
+          'Un documento solo puede registrar una factura; esa acción debe pedirla la persona por texto o voz. Complétalo manualmente.',
         );
       }
       return this.resolveExtraction(tx, claim.ownerId, dto.extraction);
@@ -335,15 +353,50 @@ export class AssistantResolveService {
 
     const obligation = match.candidate;
     const [existingOccurrence] = await tx
-      .select({ id: obligationOccurrences.id })
+      .select({
+        id: obligationOccurrences.id,
+        status: obligationOccurrences.status,
+        amount: obligationOccurrences.amount,
+        dueDate: obligationOccurrences.dueDate,
+      })
       .from(obligationOccurrences)
       .where(
         and(
           eq(obligationOccurrences.obligationId, obligation.id),
-          eq(obligationOccurrences.status, 'pending'),
           eq(obligationOccurrences.periodStart, periodStart),
         ),
       );
+    // Case D: un período ya confirmado (o anulado) nunca se sobrescribe ni se
+    // duplica: se informa y no se propone ninguna acción aplicable.
+    if (existingOccurrence && existingOccurrence.status !== 'pending') {
+      return {
+        outcome: 'informational',
+        proposedData: null,
+        choices: [],
+        missing: [],
+        warnings: [],
+        summary: `El período ${periodStart.slice(0, 7)} de ${obligation.providerName} ya está cerrado (${existingOccurrence.status}); la factura no lo modifica. Si es una corrección, hazla manualmente.`,
+        consequences: INFORMATIONAL_CONSEQUENCES,
+      };
+    }
+    // Case C: la misma factura otra vez (mismo monto y vencimiento) no genera
+    // otro cambio que aplicar.
+    if (
+      existingOccurrence &&
+      existingOccurrence.amount != null &&
+      Number(existingOccurrence.amount) === Number(extraction.amount) &&
+      String(existingOccurrence.dueDate).slice(0, 10) === dueDate
+    ) {
+      return {
+        outcome: 'informational',
+        proposedData: null,
+        choices: [],
+        missing: [],
+        warnings: [],
+        summary: `El período ${periodStart.slice(0, 7)} de ${obligation.providerName} ya tiene esos mismos datos (${extraction.amount}, vence ${dueDate}); no hay nada que cambiar.`,
+        consequences: INFORMATIONAL_CONSEQUENCES,
+      };
+    }
     if (existingOccurrence) {
       return {
         outcome: 'applicable',
@@ -746,14 +799,30 @@ function unsupported(summary: string): ResolveResponseDto {
   };
 }
 
+/** Nombres de campo técnicos → texto para la persona (el resumen se le muestra tal cual). */
+const FIELD_LABELS: Record<string, string> = {
+  providerName: 'proveedor',
+  concept: 'concepto',
+  category: 'categoría',
+  dueDay: 'día de vencimiento',
+  dueDate: 'fecha de vencimiento',
+  amount: 'valor',
+  propertyName: 'inmueble',
+  tenantAlias: 'alias del arrendatario',
+};
+
 function needsCompletion(missing: string[], summary: string): ResolveResponseDto {
+  const friendly = summary.replace(
+    /(providerName|concept|category|dueDay|dueDate|amount|propertyName|tenantAlias)/g,
+    (f) => FIELD_LABELS[f] ?? f,
+  );
   return {
     outcome: 'needs_completion',
     proposedData: null,
     choices: [],
     missing,
     warnings: [],
-    summary,
+    summary: friendly,
     consequences: 'No se registró ni se cambió nada; completa el formulario manualmente.',
   };
 }

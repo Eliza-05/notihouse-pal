@@ -358,7 +358,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Mismo análisis en el preflight y en el procesamiento.\nfunction readGemini(response) {\n  if (response.promptFeedback?.blockReason) {\n    throw new Error('PERMANENTE: Gemini bloqueó el contenido del documento');\n  }\n  const candidate = response.candidates?.[0];\n  const finish = candidate?.finishReason;\n  if (['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'RECITATION', 'LANGUAGE'].includes(finish)) {\n    throw new Error('PERMANENTE: Gemini no aceptó interpretar este documento');\n  }\n  if (finish !== 'STOP') {\n    throw new Error('TEMPORAL: respuesta incompleta de Gemini');\n  }\n  const text = (candidate.content?.parts ?? [])\n    .filter((p) => !p.thought && typeof p.text === 'string')\n    .map((p) => p.text)\n    .join('');\n  try {\n    return JSON.parse(text);\n  } catch {\n    throw new Error('TEMPORAL: Gemini no devolvió un JSON válido');\n  }\n}\n\n// ---- Verificaciones determinísticas compartidas (Etapa 7) ----\n// El modelo solo PROPONE. Estas reglas deciden si la propuesta puede ser\n// aplicable: no inventar (anclaje en la fuente), abstenerse ante varios\n// valores, tratar las instrucciones del contenido como datos (R16) y no\n// sugerir enlaces (R17).\nconst fold = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();\nconst compact = (s) => fold(s).replace(/[^a-z0-9]+/g, '');\n\n// Montos escritos en el texto, en formato colombiano o internacional.\nfunction amountsInText(text) {\n  const out = [];\n  const re = /\\d[\\d.,]*\\d|\\d/g;\n  for (const m of String(text).matchAll(re)) {\n    const t = m[0];\n    let v = null;\n    if (/^\\d{1,3}(\\.\\d{3})+(,\\d{1,2})?$/.test(t)) v = Number(t.replace(/\\./g, '').replace(',', '.'));\n    else if (/^\\d{1,3}(,\\d{3})+(\\.\\d{1,2})?$/.test(t)) v = Number(t.replace(/,/g, ''));\n    else if (/^\\d+([.,]\\d{1,2})?$/.test(t)) v = Number(t.replace(',', '.'));\n    if (v !== null && Number.isFinite(v)) out.push({ value: v, index: m.index, raw: t });\n  }\n  return out;\n}\nconst sameAmount = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;\nfunction amountGrounded(text, amount) {\n  return amountsInText(text).some((a) => sameAmount(a.value, amount));\n}\n\n// Valores \"a pagar\" etiquetados en el documento (total, saldo pendiente...).\n// Un subtotal, el IVA o un saldo anterior no son candidatos.\nfunction payableAmounts(text) {\n  const t = fold(text);\n  const out = [];\n  const label = /(?<![a-z])(total a pagar|valor a pagar|total factura|valor total|total|saldo pendiente|saldo a pagar|saldo total|pago total|pago minimo|monto a pagar)(?![a-z])/g;\n  for (const m of t.matchAll(label)) {\n    const tail = t.slice(m.index + m[0].length, m.index + m[0].length + 40);\n    const first = amountsInText(tail.split(/\\n/)[0])[0];\n    if (first && first.value > 0) out.push({ label: m[1], value: first.value });\n  }\n  return out;\n}\n\nconst MONTHS = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12, ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, sept: 9, oct: 10, nov: 11, dic: 12 };\nconst iso = (y, m, d) => {\n  const yy = Number(y) < 100 ? 2000 + Number(y) : Number(y);\n  const s = String(yy).padStart(4, '0') + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');\n  const dt = new Date(s + 'T00:00:00Z');\n  return !Number.isNaN(dt.getTime()) && dt.toISOString().slice(0, 10) === s ? s : null;\n};\n// Fechas escritas en el texto, normalizadas a YYYY-MM-DD.\nfunction datesInText(text) {\n  const t = fold(text);\n  const out = new Set();\n  const add = (v) => { if (v) out.add(v); };\n  for (const m of t.matchAll(/(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})/g)) add(iso(m[1], m[2], m[3]));\n  for (const m of t.matchAll(/(?<!\\d)(\\d{1,2})[-/.](\\d{1,2})[-/.](\\d{4}|\\d{2})(?!\\d)/g)) add(iso(m[3], m[2], m[1]));\n  const month = Object.keys(MONTHS).sort((a, b) => b.length - a.length).join('|');\n  for (const m of t.matchAll(new RegExp('(?<!\\\\d)(\\\\d{1,2})\\\\s*(?:de\\\\s+)?(' + month + ')\\\\.?\\\\s*(?:de\\\\s+|del\\\\s+)?(\\\\d{4})', 'g'))) add(iso(m[3], MONTHS[m[2]], m[1]));\n  for (const m of t.matchAll(new RegExp('(' + month + ')\\\\.?\\\\s+(\\\\d{1,2}),?\\\\s*(?:de\\\\s+)?(\\\\d{4})', 'g'))) add(iso(m[3], MONTHS[m[1]], m[2]));\n  return out;\n}\nconst dateGrounded = (text, date) => datesInText(text).has(date);\n\n// El proveedor debe figurar en la fuente (las siglas societarias no cuentan).\nfunction providerGrounded(text, name) {\n  const words = fold(name).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !['sas', 'ltda', 'esp'].includes(w));\n  const hay = compact(text);\n  return words.length > 0 && words.every((w) => hay.includes(w));\n}\n\n// R16: instrucciones dirigidas al sistema dentro del contenido externo.\nconst INJECTION = [\n  /ignor(a|e|ar|en)\\s+(todas\\s+)?(las\\s+|tus\\s+)?(instrucciones|indicaciones|reglas)/,\n  /ignore\\s+(all\\s+|any\\s+)?(the\\s+)?(previous|prior|above|earlier)\\s+(instructions|rules)/,\n  /(olvida|forget)\\s+(todo|everything|tus instrucciones|your instructions)/,\n  /(system\\s*prompt|prompt\\s+del\\s+sistema|mensaje\\s+del\\s+sistema|\\bsystem\\s*:)/,\n  /(eres|you\\s+are)\\s+(ahora|now)\\b/,\n  /(actua|act)\\s+(como|as)\\s+(un|una|an?|el|the)\\b/,\n  /(marca|marcar|marque|registra|registrar)\\s+(\\w+\\s+){0,4}(como\\s+)?(pagad[oa]|cancelad[oa]|recibid[oa])/,\n  /(aprueba|aprobar|apruebe|approve|autoriza|autorizar)\\s+(\\w+\\s+){0,3}(automaticamente|sin\\s+revision|el\\s+pago|this|without)/,\n  /(transfiere|transferir|consigna|consignar|envia\\s+dinero|wire\\s+money|send\\s+money)/,\n  /(revela|revelar|muestra|reveal|print)\\s+(\\w+\\s+){0,2}(prompt|instrucciones|api\\s*key|clave|token|contrasena|password)/,\n  /(instrucciones?|mensaje)\\s+para\\s+(el\\s+|la\\s+)?(asistente|modelo|ia|agente|sistema|chatbot)/,\n  /<\\/?\\s*(documento|transcripcion|system|instrucciones)\\s*>/,\n];\nfunction injectionSignals(text) {\n  const t = fold(text);\n  return INJECTION.map((re, i) => (re.test(t) ? 'patron_' + (i + 1) : null)).filter(Boolean);\n}\n\n// R17: ningún enlace del contenido externo llega a la persona como sugerencia.\nconst stripLinks = (s) => String(s ?? '').replace(/\\b(https?:\\/\\/|www\\.)\\S+/gi, '[enlace omitido]');\n\n// Fechas relativas que no se pueden convertir de forma unívoca (E6, R15).\nconst RELATIVE_DATE = /\\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|manana|pasado manana|hoy|ayer|la otra semana|proxima semana|semana que viene|proximo mes|mes que viene|fin de mes|quincena|en \\w+ dias)\\b/;\nconst MONTH_WORD = new RegExp('\\\\b(' + Object.keys(MONTHS).filter((m) => m.length > 3).join('|') + ')\\\\b');\nfunction relativeDateOnly(text) {\n  const t = fold(text);\n  return RELATIVE_DATE.test(t) && !MONTH_WORD.test(t) && !/\\d{1,2}[-/]\\d{1,2}/.test(t);\n}\n\nconst CONSEQUENCES = 'Aprobar solo confirma los datos: no registra pagos ni mueve dinero. Después debes aplicar la propuesta de forma explícita, lo que crea un período PENDIENTE. Rechazar no registra nada. Si el plazo de 24 h vence sin decisión, no se aplica nada.';\n\n// El backend solo valida estos formatos al APLICAR. Se revisan aquí para no\n// pedirle a una persona que apruebe algo que después no se podría aplicar.\n// Duplicados, propiedad y moneda siguen siendo decisión exclusiva del backend.\nfunction findProblems(x, source) {\n  const isDate = (v) => {\n    if (typeof v !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(v)) return false;\n    const d = new Date(v + 'T00:00:00Z');\n    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;\n  };\n  const isText = (v, max) => typeof v === 'string' && v.trim() !== '' && v.trim().length <= max;\n  const categories = ['water', 'electricity', 'gas', 'internet', 'mobile', 'administration', 'other'];\n  const problems = [];\n  if (!isText(x.providerName, 120)) problems.push('proveedor');\n  else if (!providerGrounded(source, x.providerName)) problems.push('proveedor que no figura en el documento');\n  if (!isText(x.concept, 160)) problems.push('concepto');\n  if (!categories.includes(x.category)) problems.push('categoría');\n  if (!isDate(x.periodStart)) problems.push('inicio del período');\n  if (!isDate(x.periodEnd)) problems.push('fin del período');\n  if (!isDate(x.dueDate)) problems.push('fecha de vencimiento');\n  else if (!dateGrounded(source, x.dueDate)) problems.push('fecha de vencimiento que no figura en el documento');\n  if (isDate(x.periodStart) && isDate(x.periodEnd) && x.periodEnd < x.periodStart) problems.push('orden del período');\n  if (typeof x.amount !== 'string' || !/^(0|[1-9]\\d{0,11})(\\.\\d{1,2})?$/.test(x.amount) || Number(x.amount) <= 0) problems.push('valor');\n  else if (!amountGrounded(source, x.amount)) problems.push('valor que no figura en el documento');\n  if (typeof x.currency !== 'string' || !/^[A-Z]{3}$/.test(x.currency)) problems.push('moneda');\n  return problems;\n}\n\n// E1 / R2: varios valores plausibles para el monto → nunca se elige uno.\nfunction amountOptions(x, source) {\n  const values = new Map();\n  const add = (v, label) => {\n    const n = Number(String(v ?? '').replace(/[^0-9.]/g, ''));\n    if (!Number.isFinite(n) || n <= 0 || !amountGrounded(source, n)) return;\n    const key = n.toFixed(2);\n    if (!values.has(key)) values.set(key, String(label ?? '').slice(0, 60));\n  };\n  if (typeof x.amount === 'string') add(x.amount, 'Valor propuesto');\n  for (const c of Array.isArray(x.amountCandidates) ? x.amountCandidates : []) add(c?.value, c?.label);\n  for (const p of payableAmounts(source)) add(p.value, p.label);\n  return [...values.entries()].map(([value, label]) => ({ value, label }));\n}\n\n// El ID de la obligación solo sale del caso, nunca del modelo.\nfunction applicableProposal(x, caseObligationId) {\n  const occurrence = { periodStart: x.periodStart, periodEnd: x.periodEnd, dueDate: x.dueDate, amount: x.amount };\n  return caseObligationId\n    ? { action: 'create_obligation_occurrence', data: { obligationId: caseObligationId, ...occurrence, currency: x.currency } }\n    : { action: 'create_obligation_with_occurrence', data: {\n        obligation: { providerName: x.providerName.trim(), concept: x.concept.trim(), category: x.category, expectedAmount: x.amount, currency: x.currency },\n        occurrence,\n      } };\n}\n\nconst cfg = $('Configuracion').first().json;\nconst job = $('Preparar trabajo').first().json;\nconst source = String($('Extraer texto').first().json.text ?? '');\nconst x = readGemini($input.first().json);\nconst problems = findProblems(x, source);\nconst options = amountOptions(x, source);\nconst multipleAmounts = options.length > 1;\nconst injection = injectionSignals(source);\nconst suspicious = injection.length > 0 || x.containsInstructions === true;\n// Fuera del dominio (receta, publicidad, carta...): rechazo controlado, sin\n// revisión humana innecesaria. Nunca se aplica si hay señales de inyección:\n// esas van siempre a revisión con alerta de seguridad.\nconst hasText = (v) => typeof v === 'string' && v.trim() !== '';\nif (!suspicious && x.isInvoice !== true && !hasText(x.amount) && !hasText(x.dueDate) && !hasText(x.providerName)) {\n  throw new Error('PERMANENTE: el documento no es una factura ni contiene datos de una obligación; no se creó ninguna propuesta');\n}\nconst applicable = x.isInvoice === true && problems.length === 0 && !multipleAmounts && !suspicious;\n\nconst warnings = [];\nif (suspicious) warnings.push('El documento contiene instrucciones dirigidas al sistema. Se trataron como texto y NO se ejecutaron.');\nif (multipleAmounts) warnings.push('El documento muestra varios valores posibles; elige el correcto o regístralo manualmente.');\nif (job.duplicateOfDocumentId) warnings.push('Este archivo es idéntico a otro documento que ya cargaste: puede ser la misma factura.');\n\nconst proposedData = applicable\n  ? applicableProposal(x, job.caseObligationId)\n  : {\n      interpretacion: { ...x, evidence: undefined },\n      camposProblematicos: [...problems, ...(multipleAmounts ? ['varios valores posibles'] : [])],\n      ...(multipleAmounts ? { valoresPosibles: options } : {}),\n      ...(suspicious ? { alertaSeguridad: { tipo: 'posible_inyeccion', senales: injection, reportadoPorModelo: x.containsInstructions === true } } : {}),\n      requiereRevisionManual: true,\n    };\n\nconst summary = stripLinks(applicable\n  ? 'Factura de ' + x.providerName.trim() + ': ' + x.amount + ' ' + x.currency + ', vence el ' + x.dueDate + '. Confirma que los datos son correctos.'\n  : suspicious\n    ? 'Atención: el documento contiene instrucciones dirigidas al sistema; se ignoraron. Revísalo y regístralo manualmente si es legítimo.'\n    : multipleAmounts\n      ? 'La factura muestra varios valores posibles (' + options.map((o) => o.label + ': ' + o.value).join('; ') + '). No se eligió ninguno: indica cuál corresponde o regístralo manualmente.'\n      : x.isInvoice === true\n        ? 'No se pudieron interpretar todos los datos de la factura (' + problems.join(', ') + '). Revísala y regístrala manualmente.'\n        : 'El documento no parece una factura. Revísalo y regístralo manualmente si corresponde.'\n).slice(0, 500);\n\nconst fragments = (x.evidence ?? []).slice(0, 12).map((e) => ({ field: String(e.field).slice(0, 40), text: stripLinks(String(e.text)).slice(0, 200) }));\nreturn [{ json: {\n  applicable,\n  proposalBody: {\n    jobId: job.jobId,\n    claimToken: job.claimToken,\n    source: 'llm',\n    proposedData,\n    evidence: { model: cfg.model, fragments, ...(warnings.length ? { advertencias: warnings } : {}) },\n    documentId: job.documentId,\n  },\n  // Sin choices en la confirmación: una revisión con alternativas no autoriza\n  // la aplicación (el backend lo exige). Con varios montos, las alternativas\n  // se presentan para que la persona elija y registre manualmente.\n  hitlBody: {\n    jobId: job.jobId,\n    claimToken: job.claimToken,\n    decisionType: applicable ? 'data_confirmation' : multipleAmounts ? 'conflict_resolution' : 'other',\n    options: {\n      summary,\n      ...(multipleAmounts && !suspicious ? { choices: options.slice(0, 10).map((o, i) => ({ key: 'valor_' + (i + 1), label: (o.label + ': ' + o.value).slice(0, 200) })) } : {}),\n      context: {\n        consecuencias: CONSEQUENCES,\n        ...(warnings.length ? { advertencias: warnings } : {}),\n        ...(job.duplicateOfDocumentId ? { documentoDuplicado: job.duplicateOfDocumentId } : {}),\n      },\n    },\n  },\n} }];"
+        "jsCode": "// Mismo análisis en el preflight y en el procesamiento.\nfunction readGemini(response) {\n  if (response.promptFeedback?.blockReason) {\n    throw new Error('PERMANENTE: Gemini bloqueó el contenido del documento');\n  }\n  const candidate = response.candidates?.[0];\n  const finish = candidate?.finishReason;\n  if (['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'RECITATION', 'LANGUAGE'].includes(finish)) {\n    throw new Error('PERMANENTE: Gemini no aceptó interpretar este documento');\n  }\n  if (finish !== 'STOP') {\n    throw new Error('TEMPORAL: respuesta incompleta de Gemini');\n  }\n  const text = (candidate.content?.parts ?? [])\n    .filter((p) => !p.thought && typeof p.text === 'string')\n    .map((p) => p.text)\n    .join('');\n  try {\n    return JSON.parse(text);\n  } catch {\n    throw new Error('TEMPORAL: Gemini no devolvió un JSON válido');\n  }\n}\n\n// ---- Verificaciones determinísticas compartidas (Etapa 7) ----\n// El modelo solo PROPONE. Estas reglas deciden si la propuesta puede ser\n// aplicable: no inventar (anclaje en la fuente), abstenerse ante varios\n// valores, tratar las instrucciones del contenido como datos (R16) y no\n// sugerir enlaces (R17).\nconst fold = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();\nconst compact = (s) => fold(s).replace(/[^a-z0-9]+/g, '');\n\n// Montos escritos en el texto, en formato colombiano o internacional.\nfunction amountsInText(text) {\n  const out = [];\n  const re = /\\d[\\d.,]*\\d|\\d/g;\n  for (const m of String(text).matchAll(re)) {\n    const t = m[0];\n    let v = null;\n    if (/^\\d{1,3}(\\.\\d{3})+(,\\d{1,2})?$/.test(t)) v = Number(t.replace(/\\./g, '').replace(',', '.'));\n    else if (/^\\d{1,3}(,\\d{3})+(\\.\\d{1,2})?$/.test(t)) v = Number(t.replace(/,/g, ''));\n    else if (/^\\d+([.,]\\d{1,2})?$/.test(t)) v = Number(t.replace(',', '.'));\n    if (v !== null && Number.isFinite(v)) out.push({ value: v, index: m.index, raw: t });\n  }\n  return out;\n}\nconst sameAmount = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;\nfunction amountGrounded(text, amount) {\n  return amountsInText(text).some((a) => sameAmount(a.value, amount));\n}\n\n// Valores \"a pagar\" etiquetados en el documento (total, saldo pendiente...).\n// Un subtotal, el IVA o un saldo anterior no son candidatos.\nfunction payableAmounts(text) {\n  const t = fold(text);\n  const out = [];\n  const label = /(?<![a-z])(total a pagar|valor a pagar|total factura|valor total|total|saldo pendiente|saldo a pagar|saldo total|pago total|pago minimo|monto a pagar)(?![a-z])/g;\n  for (const m of t.matchAll(label)) {\n    const tail = t.slice(m.index + m[0].length, m.index + m[0].length + 40);\n    const first = amountsInText(tail.split(/\\n/)[0])[0];\n    if (first && first.value > 0) out.push({ label: m[1], value: first.value });\n  }\n  return out;\n}\n\nconst MONTHS = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12, ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, sept: 9, oct: 10, nov: 11, dic: 12 };\nconst iso = (y, m, d) => {\n  const yy = Number(y) < 100 ? 2000 + Number(y) : Number(y);\n  const s = String(yy).padStart(4, '0') + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');\n  const dt = new Date(s + 'T00:00:00Z');\n  return !Number.isNaN(dt.getTime()) && dt.toISOString().slice(0, 10) === s ? s : null;\n};\n// Fechas escritas en el texto, normalizadas a YYYY-MM-DD.\nfunction datesInText(text) {\n  const t = fold(text);\n  const out = new Set();\n  const add = (v) => { if (v) out.add(v); };\n  for (const m of t.matchAll(/(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})/g)) add(iso(m[1], m[2], m[3]));\n  for (const m of t.matchAll(/(?<!\\d)(\\d{1,2})[-/.](\\d{1,2})[-/.](\\d{4}|\\d{2})(?!\\d)/g)) add(iso(m[3], m[2], m[1]));\n  const month = Object.keys(MONTHS).sort((a, b) => b.length - a.length).join('|');\n  for (const m of t.matchAll(new RegExp('(?<!\\\\d)(\\\\d{1,2})\\\\s*(?:de\\\\s+)?(' + month + ')\\\\.?\\\\s*(?:de\\\\s+|del\\\\s+)?(\\\\d{4})', 'g'))) add(iso(m[3], MONTHS[m[2]], m[1]));\n  for (const m of t.matchAll(new RegExp('(' + month + ')\\\\.?\\\\s+(\\\\d{1,2}),?\\\\s*(?:de\\\\s+)?(\\\\d{4})', 'g'))) add(iso(m[3], MONTHS[m[1]], m[2]));\n  return out;\n}\nconst dateGrounded = (text, date) => datesInText(text).has(date);\n\n// El proveedor debe figurar en la fuente (las siglas societarias no cuentan).\nfunction providerGrounded(text, name) {\n  // Las siglas societarias no cuentan. Los nombres cortos (ETB, EPM) deben aparecer como palabra completa.\n  const words = fold(name).split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !['sas', 'sa', 'ltda', 'esp', 'cia'].includes(w));\n  const hay = compact(text);\n  const padded = ' ' + fold(text) + ' ';\n  return words.length > 0 && words.every((w) => (w.length >= 4 ? hay.includes(w) : padded.includes(' ' + w + ' ')));\n}\n\n// R16: instrucciones dirigidas al sistema dentro del contenido externo.\nconst INJECTION = [\n  /ignor(a|e|ar|en)\\s+(todas\\s+)?(las\\s+|tus\\s+)?(instrucciones|indicaciones|reglas)/,\n  /ignore\\s+(all\\s+|any\\s+)?(the\\s+)?(previous|prior|above|earlier)\\s+(instructions|rules)/,\n  /(olvida|forget)\\s+(todo|everything|tus instrucciones|your instructions)/,\n  /(system\\s*prompt|prompt\\s+del\\s+sistema|mensaje\\s+del\\s+sistema|\\bsystem\\s*:)/,\n  /(eres|you\\s+are)\\s+(ahora|now)\\b/,\n  /(actua|act)\\s+(como|as)\\s+(un|una|an?|el|the)\\b/,\n  /(marca|marcar|marque|registra|registrar)\\s+(\\w+\\s+){0,4}(como\\s+)?(pagad[oa]|cancelad[oa]|recibid[oa])/,\n  /(aprueba|aprobar|apruebe|approve|autoriza|autorizar)\\s+(\\w+\\s+){0,3}(automaticamente|sin\\s+revision|el\\s+pago|this|without)/,\n  /(transfiere|transferir|consigna|consignar|envia\\s+dinero|wire\\s+money|send\\s+money)/,\n  /(revela|revelar|muestra|reveal|print)\\s+(\\w+\\s+){0,2}(prompt|instrucciones|api\\s*key|clave|token|contrasena|password)/,\n  /(instrucciones?|mensaje)\\s+para\\s+(el\\s+|la\\s+)?(asistente|modelo|ia|agente|sistema|chatbot)/,\n  /<\\/?\\s*(documento|transcripcion|system|instrucciones)\\s*>/,\n];\nfunction injectionSignals(text) {\n  const t = fold(text);\n  return INJECTION.map((re, i) => (re.test(t) ? 'patron_' + (i + 1) : null)).filter(Boolean);\n}\n\n// R17: ningún enlace del contenido externo llega a la persona como sugerencia.\nconst stripLinks = (s) => String(s ?? '').replace(/\\b(https?:\\/\\/|www\\.)\\S+/gi, '[enlace omitido]');\n\n// Fechas relativas que no se pueden convertir de forma unívoca (E6, R15).\nconst RELATIVE_DATE = /\\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|manana|pasado manana|hoy|ayer|la otra semana|proxima semana|semana que viene|proximo mes|mes que viene|fin de mes|quincena|en \\w+ dias)\\b/;\nconst MONTH_WORD = new RegExp('\\\\b(' + Object.keys(MONTHS).filter((m) => m.length > 3).join('|') + ')\\\\b');\nfunction relativeDateOnly(text) {\n  const t = fold(text);\n  return RELATIVE_DATE.test(t) && !MONTH_WORD.test(t) && !/\\d{1,2}[-/]\\d{1,2}/.test(t);\n}\n\nconst CONSEQUENCES = 'Aprobar solo confirma los datos: no registra pagos ni mueve dinero. Después debes aplicar la propuesta de forma explícita, lo que crea un período PENDIENTE. Rechazar no registra nada. Si el plazo de 24 h vence sin decisión, no se aplica nada.';\n\n// El backend solo valida estos formatos al APLICAR. Se revisan aquí para no\n// pedirle a una persona que apruebe algo que después no se podría aplicar.\n// Duplicados, propiedad y moneda siguen siendo decisión exclusiva del backend.\nfunction findProblems(x, source) {\n  const isDate = (v) => {\n    if (typeof v !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(v)) return false;\n    const d = new Date(v + 'T00:00:00Z');\n    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;\n  };\n  const isText = (v, max) => typeof v === 'string' && v.trim() !== '' && v.trim().length <= max;\n  const categories = ['water', 'electricity', 'gas', 'internet', 'mobile', 'administration', 'other'];\n  const problems = [];\n  if (!isText(x.providerName, 120)) problems.push('proveedor');\n  else if (!providerGrounded(source, x.providerName)) problems.push('proveedor que no figura en el documento');\n  if (!isText(x.concept, 160)) problems.push('concepto');\n  if (!categories.includes(x.category)) problems.push('categoría');\n  if (!isDate(x.periodStart)) problems.push('inicio del período');\n  if (!isDate(x.periodEnd)) problems.push('fin del período');\n  if (!isDate(x.dueDate)) problems.push('fecha de vencimiento');\n  else if (!dateGrounded(source, x.dueDate)) problems.push('fecha de vencimiento que no figura en el documento');\n  if (isDate(x.periodStart) && isDate(x.periodEnd) && x.periodEnd < x.periodStart) problems.push('orden del período');\n  if (typeof x.amount !== 'string' || !/^(0|[1-9]\\d{0,11})(\\.\\d{1,2})?$/.test(x.amount) || Number(x.amount) <= 0) problems.push('valor');\n  else if (!amountGrounded(source, x.amount)) problems.push('valor que no figura en el documento');\n  if (typeof x.currency !== 'string' || !/^[A-Z]{3}$/.test(x.currency)) problems.push('moneda');\n  return problems;\n}\n\n// E1 / R2: varios valores plausibles para el monto → nunca se elige uno.\nfunction amountOptions(x, source) {\n  const values = new Map();\n  const add = (v, label) => {\n    const n = Number(String(v ?? '').replace(/[^0-9.]/g, ''));\n    if (!Number.isFinite(n) || n <= 0 || !amountGrounded(source, n)) return;\n    const key = n.toFixed(2);\n    if (!values.has(key)) values.set(key, String(label ?? '').slice(0, 60));\n  };\n  if (typeof x.amount === 'string') add(x.amount, 'Valor propuesto');\n  for (const c of Array.isArray(x.amountCandidates) ? x.amountCandidates : []) add(c?.value, c?.label);\n  for (const p of payableAmounts(source)) add(p.value, p.label);\n  return [...values.entries()].map(([value, label]) => ({ value, label }));\n}\n\n// El ID de la obligación solo sale del caso, nunca del modelo.\nfunction applicableProposal(x, caseObligationId) {\n  const occurrence = { periodStart: x.periodStart, periodEnd: x.periodEnd, dueDate: x.dueDate, amount: x.amount };\n  return caseObligationId\n    ? { action: 'create_obligation_occurrence', data: { obligationId: caseObligationId, ...occurrence, currency: x.currency } }\n    : { action: 'create_obligation_with_occurrence', data: {\n        obligation: { providerName: x.providerName.trim(), concept: x.concept.trim(), category: x.category, expectedAmount: x.amount, currency: x.currency },\n        occurrence,\n      } };\n}\n\nconst cfg = $('Configuracion').first().json;\nconst job = $('Preparar trabajo').first().json;\nconst source = String($('Extraer texto').first().json.text ?? '');\nconst x = readGemini($input.first().json);\nconst problems = findProblems(x, source);\nconst options = amountOptions(x, source);\nconst multipleAmounts = options.length > 1;\nconst injection = injectionSignals(source);\nconst suspicious = injection.length > 0 || x.containsInstructions === true;\n// Fuera del dominio (receta, publicidad, carta...): rechazo controlado, sin\n// revisión humana innecesaria. Nunca se aplica si hay señales de inyección:\n// esas van siempre a revisión con alerta de seguridad.\nconst hasText = (v) => typeof v === 'string' && v.trim() !== '';\nif (!suspicious && x.isInvoice !== true && !hasText(x.amount) && !hasText(x.dueDate) && !hasText(x.providerName)) {\n  throw new Error('PERMANENTE: el documento no es una factura ni contiene datos de una obligación; no se creó ninguna propuesta');\n}\nconst applicable = x.isInvoice === true && problems.length === 0 && !multipleAmounts && !suspicious;\n\nconst warnings = [];\nif (suspicious) warnings.push('El documento contiene instrucciones dirigidas al sistema. Se trataron como texto y NO se ejecutaron.');\nif (multipleAmounts) warnings.push('El documento muestra varios valores posibles; elige el correcto o regístralo manualmente.');\nif (job.duplicateOfDocumentId) warnings.push('Este archivo es idéntico a otro documento que ya cargaste: puede ser la misma factura.');\n\nconst proposedData = applicable\n  ? applicableProposal(x, job.caseObligationId)\n  : {\n      interpretacion: { ...x, evidence: undefined },\n      camposProblematicos: [...problems, ...(multipleAmounts ? ['varios valores posibles'] : [])],\n      ...(multipleAmounts ? { valoresPosibles: options } : {}),\n      ...(suspicious ? { alertaSeguridad: { tipo: 'posible_inyeccion', senales: injection, reportadoPorModelo: x.containsInstructions === true } } : {}),\n      requiereRevisionManual: true,\n    };\n\nconst summary = stripLinks(applicable\n  ? 'Factura de ' + x.providerName.trim() + ': ' + x.amount + ' ' + x.currency + ', vence el ' + x.dueDate + '. Confirma que los datos son correctos.'\n  : suspicious\n    ? 'Atención: el documento contiene instrucciones dirigidas al sistema; se ignoraron. Revísalo y regístralo manualmente si es legítimo.'\n    : multipleAmounts\n      ? 'La factura muestra varios valores posibles (' + options.map((o) => o.label + ': ' + o.value).join('; ') + '). No se eligió ninguno: indica cuál corresponde o regístralo manualmente.'\n      : x.isInvoice === true\n        ? 'No se pudieron interpretar todos los datos de la factura (' + problems.join(', ') + '). Revísala y regístrala manualmente.'\n        : 'El documento no parece una factura. Revísalo y regístralo manualmente si corresponde.'\n).slice(0, 500);\n\nconst fragments = (x.evidence ?? []).slice(0, 12).map((e) => ({ field: String(e.field).slice(0, 40), text: stripLinks(String(e.text)).slice(0, 200) }));\n// A-5: una factura aplicable y sin obligación ya ligada al caso se resuelve en el\n// backend (coincidencia por proveedor, período existente, período confirmado).\n// El backend decide: crear, actualizar el período o informar; nunca el modelo.\nconst useResolve = applicable && !job.caseObligationId;\nconst extraction = useResolve\n  ? { intent: 'register_invoice', providerName: x.providerName.trim(), concept: x.concept.trim(), category: x.category,\n      amount: x.amount, currency: x.currency, dueDate: x.dueDate, month: x.periodStart.slice(0, 7), containsInstructions: false }\n  : null;\nreturn [{ json: {\n  useResolve,\n  extraction,\n  applicable,\n  proposalBody: {\n    jobId: job.jobId,\n    claimToken: job.claimToken,\n    source: 'llm',\n    proposedData,\n    evidence: { model: cfg.model, fragments, ...(warnings.length ? { advertencias: warnings } : {}) },\n    documentId: job.documentId,\n  },\n  // Sin choices en la confirmación: una revisión con alternativas no autoriza\n  // la aplicación (el backend lo exige). Con varios montos, las alternativas\n  // se presentan para que la persona elija y registre manualmente.\n  hitlBody: {\n    jobId: job.jobId,\n    claimToken: job.claimToken,\n    decisionType: applicable ? 'data_confirmation' : multipleAmounts ? 'conflict_resolution' : 'other',\n    options: {\n      summary,\n      ...(multipleAmounts && !suspicious ? { choices: options.slice(0, 10).map((o, i) => ({ key: 'valor_' + (i + 1), label: (o.label + ': ' + o.value).slice(0, 200) })) } : {}),\n      context: {\n        consecuencias: CONSEQUENCES,\n        ...(warnings.length ? { advertencias: warnings } : {}),\n        ...(job.duplicateOfDocumentId ? { documentoDuplicado: job.duplicateOfDocumentId } : {}),\n      },\n    },\n  },\n} }];"
       }
     },
     {
@@ -367,7 +367,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3080,
+        3740,
         0
       ],
       "retryOnFail": true,
@@ -400,7 +400,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3300,
+        3960,
         0
       ],
       "retryOnFail": true,
@@ -421,7 +421,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ ...$('Construir propuesta').first().json.hitlBody, proposalId: $json.id }) }}",
+        "jsonBody": "={{ JSON.stringify({ ...($('Armar propuesta con resolucion').isExecuted ? $('Armar propuesta con resolucion') : $('Construir propuesta')).first().json.hitlBody, proposalId: $json.id }) }}",
         "options": {
           "timeout": 90000
         }
@@ -433,7 +433,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3520,
+        4180,
         0
       ],
       "retryOnFail": true,
@@ -466,7 +466,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        3740,
+        4400,
         0
       ],
       "parameters": {}
@@ -679,6 +679,87 @@
         770,
         -400
       ]
+    },
+    {
+      "id": "7a2c3b20-0a01-4b00-8b00-000000000a01",
+      "name": "Resolver en backend?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3080,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "7a2c3b20-0a02-4b00-8b00-000000000a02",
+              "leftValue": "={{ $json.useResolve }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7a2c3b20-0a03-4b00-8b00-000000000a03",
+      "name": "Resolver en backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3300,
+        -120
+      ],
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notes": "A-5: resolución determinística (solo lectura). Seguro de reintentar.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nhpApiService001",
+          "name": "NotiHouse-Pal API (servicio)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuracion').first().json.apiBase }}/internal/cases/{{ $('Preparar trabajo').first().json.caseId }}/assistant/resolve",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ jobId: $('Preparar trabajo').first().json.jobId, claimToken: $('Preparar trabajo').first().json.claimToken, extraction: $json.extraction }) }}",
+        "options": {
+          "timeout": 90000
+        }
+      }
+    },
+    {
+      "id": "7a2c3b20-0a04-4b00-8b00-000000000a04",
+      "name": "Armar propuesta con resolucion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        -120
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "jsCode": "// A-5: convierte el resultado determinístico de `resolve` en propuesta + revisión humana.\n// NUNCA aplica nada: aprobar y aplicar son pasos de la persona.\nconst stripLinks = (s) => String(s ?? '').replace(/\\b(https?:\\/\\/|www\\.)\\S+/gi, '[enlace omitido]');\nconst OUTCOMES = ['applicable', 'needs_choice', 'needs_completion', 'guided_manual', 'informational', 'unsupported'];\nconst built = $('Construir propuesta').first().json;\nconst r = $input.first().json;\nif (!OUTCOMES.includes(r.outcome)) throw new Error('PERMANENTE: respuesta de resolución con un resultado desconocido');\n\nconst applicable = r.outcome === 'applicable' && r.proposedData && typeof r.proposedData.action === 'string';\nconst choices = Array.isArray(r.choices) ? r.choices.slice(0, 10).map((c) => ({ key: String(c.key).slice(0, 40), label: stripLinks(c.label).slice(0, 120) })) : [];\nconst warnings = [...(built.proposalBody.evidence.advertencias ?? []), ...(Array.isArray(r.warnings) ? r.warnings : []).slice(0, 6).map((w) => stripLinks(w).slice(0, 200))];\nconst summary = stripLinks(r.summary ?? 'Revisa la factura.').slice(0, 500);\n\nconst proposedData = applicable\n  ? r.proposedData\n  : {\n      resultado: r.outcome,\n      interpretacion: built.proposalBody.proposedData,\n      faltantes: (Array.isArray(r.missing) ? r.missing : []).slice(0, 12).map((m) => String(m).slice(0, 80)),\n      opciones: choices,\n      requiereRevisionManual: true,\n    };\nconst decisionType = applicable ? 'data_confirmation' : r.outcome === 'needs_choice' ? 'conflict_resolution' : 'other';\nreturn [{ json: {\n  applicable,\n  outcome: r.outcome,\n  proposalBody: {\n    ...built.proposalBody,\n    proposedData,\n    evidence: { ...built.proposalBody.evidence, resultado: r.outcome, resolucion: 'backend', ...(warnings.length ? { advertencias: warnings } : {}) },\n  },\n  // Con alternativas (needs_choice) la revisión no autoriza ninguna aplicación.\n  hitlBody: {\n    ...built.hitlBody,\n    decisionType,\n    options: {\n      summary,\n      ...(r.outcome === 'needs_choice' && choices.length ? { choices } : {}),\n      context: { ...built.hitlBody.options.context, consecuencias: stripLinks(r.consequences ?? built.hitlBody.options.context.consecuencias).slice(0, 600), ...(warnings.length ? { advertencias: warnings } : {}), ...(r.outcome === 'needs_choice' ? { kind: 'target_selection' } : {}) },\n    },\n  },\n} }];\n"
+      }
     }
   ],
   "connections": {
@@ -878,7 +959,7 @@
       "main": [
         [
           {
-            "node": "Registrar propuesta",
+            "node": "Resolver en backend?",
             "type": "main",
             "index": 0
           }
@@ -1038,6 +1119,60 @@
         [
           {
             "node": "Programada: inactiva o en pausa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver en backend?": {
+      "main": [
+        [
+          {
+            "node": "Resolver en backend",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar propuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver en backend": {
+      "main": [
+        [
+          {
+            "node": "Armar propuesta con resolucion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clasificar fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar propuesta con resolucion": {
+      "main": [
+        [
+          {
+            "node": "Registrar propuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clasificar fallo",
             "type": "main",
             "index": 0
           }

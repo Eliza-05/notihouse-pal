@@ -125,3 +125,6 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+# Capturas y registros del navegador de pruebas (Playwright MCP)
+.playwright-mcp/

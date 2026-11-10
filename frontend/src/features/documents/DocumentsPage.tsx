@@ -69,6 +69,7 @@ export function DocumentsPage() {
         <input
           ref={inputRef}
           type="file"
+          aria-label="Elegir factura PDF"
           accept="application/pdf"
           className="visually-hidden"
           onChange={(e) => {
