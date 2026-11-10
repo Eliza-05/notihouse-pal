@@ -30,7 +30,9 @@ r = await http('POST', '/internal/gmail/attachments', { token: tD, form: f }); a
 // El workflow 02 procesa el adjunto (el resto del flujo es idéntico al del PDF manual).
 n8nRun(WF02);
 const ps = await sql('select proposed_data from case_proposals where case_id=$1', [caseId]);
-assert(ps.length === 1 && ps[0].proposed_data.action === 'create_obligation_with_occurrence', `el workflow 02 procesa el adjunto: propuesta (${ps[0]?.proposed_data?.action}); extracción simulada`);
+// A-5: el adjunto pasa por `resolve`. Si e04 ya registró esta misma factura (mismos datos) el backend responde «informational»: nada nuevo que aplicar.
+const pd = ps[0]?.proposed_data;
+assert(ps.length === 1 && (pd.action === 'create_obligation_with_occurrence' || pd.action === 'update_occurrence_details' || pd.resultado === 'informational'), `el workflow 02 procesa el adjunto vía resolve: propuesta (${pd?.action ?? pd?.resultado}); extracción simulada`);
 assert((await nOb()) === obBefore, 'sin aprobación humana no se escribió ninguna obligación');
 const tL = await login('OTHER');
 assert(((await http('GET', '/cases', { token: tL })).body.items ?? []).every((c) => c.id !== caseId), 'otro usuario no ve el caso de Gmail');

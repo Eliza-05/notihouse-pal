@@ -7,18 +7,19 @@
 import { login, http, sql, close, assert, killSwitch, sleep, textThroughN8n, decide, apply, closeCase, drainQueue } from '../lib.mjs';
 
 const t = await login('DANIEL');
+await drainQueue(); // cola vacía: el trabajo reclamado más abajo es el de este escenario
 const audit = async (scope, action) => Number((await sql("select count(*)::int n from audit_events where action=$1 and metadata->>'scope'=$2", [action, scope]))[0].n);
 const evaluate = () => http('POST', '/internal/alerts/evaluate', { service: true, body: { workerId: 'qa-e12', batchSize: 20 } });
 const resume = (scope) => killSwitch('resume', '--scope', scope, '--operator', 'qa-e12', '--reason', `QA e12 ${scope} listo`, '--test-evidence', `e12 comprobó la suspensión de ${scope}`);
 const activate = async (scope) => { const r = killSwitch('activate', '--scope', scope, '--operator', 'qa-e12', '--reason', `QA e12 ${scope}`); await sleep(1500); return r; };
 
 // ---- Propuesta aprobada, lista para aplicar (se usa con `global`).
-const a = await textThroughN8n(t, 'Registra EPM, vence el día 6 de cada mes, avísame 2 días antes');
+const a = await textThroughN8n(t, 'Registra Enel, vence el día 17 de cada mes, avísame 2 días antes');
 assert(a.proposal?.proposed_data?.action === 'create_recurring_obligation', `preparación: propuesta aplicable (${a.proposal?.proposed_data?.action})`);
 await decide(t, a.hitl.id);
 
 // ---- global
-const nEpm = async () => Number((await sql("select count(*)::int n from obligations where provider_name='EPM'"))[0].n);
+const nEpm = async () => Number((await sql("select count(*)::int n from obligations where provider_name='Enel'"))[0].n);
 const before = await nEpm();
 let r = await activate('global');
 assert(r.status === 0, 'global: activado con el mecanismo oficial');
@@ -49,7 +50,7 @@ assert((await audit('alert_evaluation', 'kill_switch.activate')) >= 1 && (await 
 // que el alcance es estrecho (no afecta a un trabajo de texto) y que su activación/reanudación quedan auditadas.
 const sent = await http('POST', '/ingestions/text', { token: t, body: { text: 'Registra Claro, vence el día 9 de cada mes' } });
 assert(sent.status === 201, `case_processing: texto recibido (${sent.status})`);
-const claim = await http('POST', '/internal/workflow-jobs/claim', { service: true, body: { workerId: 'qa-e12', limit: 5, leaseSeconds: 8, jobTypes: ['text.interpret'] } });
+const claim = await http('POST', '/internal/workflow-jobs/claim', { service: true, body: { workerId: 'qa-e12', limit: 5, leaseSeconds: 30, jobTypes: ['text.interpret'] } });
 const job = claim.body.jobs?.find((j) => j.case.id === sent.body.caseId);
 assert(!!job, 'case_processing: trabajo reclamado');
 const body = { jobId: job.id, claimToken: job.claimToken, source: 'llm', proposedData: { resultado: 'unsupported', requiereRevisionManual: true }, evidence: { origen: 'qa-e12' } };
@@ -59,8 +60,8 @@ assert(blocked.status === 201, `case_processing: no afecta al trabajo de texto (
 resume('case_processing'); await sleep(1500);
 assert(true, 'case_processing: reanudado');
 assert((await audit('case_processing', 'kill_switch.activate')) >= 1 && (await audit('case_processing', 'kill_switch.resume')) >= 1, 'case_processing: activación y reanudación auditadas');
-// Limpieza: el trabajo reclamado vence a los 8 s; n8n lo reprocesa y se rechaza la revisión resultante (sin casos abiertos).
-await sleep(9000);
+// Limpieza: el trabajo reclamado vence a los 30 s; n8n lo reprocesa y se rechaza la revisión resultante (sin casos abiertos).
+await sleep(32000);
 await drainQueue();
 for (const h of await sql("select id::text from hitl_requests where case_id=$1 and status='pending'", [job.case.id])) await decide(t, h.id, 'rejected', 'limpieza QA e12');
 await closeCase(job.case.id);

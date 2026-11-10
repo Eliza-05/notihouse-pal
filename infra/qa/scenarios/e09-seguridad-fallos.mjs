@@ -102,7 +102,9 @@ assert(Boolean(job), 'reclamación de document.process con token de servicio');
 if (job) {
   const ext = { intent: 'register_invoice', providerName: null };
   r = await http('POST', `/internal/cases/${job.case.id}/assistant/resolve`, { service: true, body: { jobId: job.id, claimToken: job.claimToken, extraction: ext } });
-  assert(r.status === 403, `403 resolve con un trabajo document.process (decisión de contrato: lista cerrada) (${r.status})`);
+  assert(r.status === 200 && r.body.outcome === 'needs_completion', `resolve con document.process y register_invoice incompleto → needs_completion (A-5, ${r.status})`);
+  r = await http('POST', `/internal/cases/${job.case.id}/assistant/resolve`, { service: true, body: { jobId: job.id, claimToken: job.claimToken, extraction: { intent: 'create_recurring_rental', tenantAlias: 'X', amount: '1000.00', dueDay: 5 } } });
+  assert(r.status === 200 && r.body.outcome === 'unsupported', `un PDF no puede pedir arriendos/recurrencias: unsupported (${r.status}/${r.body.outcome})`);
   r = await http('POST', `/internal/workflow-jobs/${job.id}/complete`, { service: true, body: { claimToken: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url'), result: {} } });
   assert(r.status === 409, `409 completar con claimToken equivocado (${r.status})`);
   r = await http('POST', '/internal/cases/00000000-0000-4000-8000-000000000000/assistant/resolve', { service: true, body: { jobId: job.id, claimToken: job.claimToken, extraction: ext } });
