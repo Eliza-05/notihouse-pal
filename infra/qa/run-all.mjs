@@ -10,7 +10,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const scenarios = ['e01-obligacion-texto.mjs', 'e02-modificacion-d12.mjs', 'e03-voz.mjs', 'e04-pdf.mjs', 'e05-recurrencia.mjs', 'e06-arriendos.mjs', 'e07-hitl.mjs', 'e08-gmail-simulado.mjs', 'e10-resolucion.mjs', 'e09-seguridad-fallos.mjs'];
+const scenarios = ['e01-obligacion-texto.mjs', 'e02-modificacion-d12.mjs', 'e03-voz.mjs', 'e04-pdf.mjs', 'e05-recurrencia.mjs', 'e06-arriendos.mjs', 'e07-hitl.mjs', 'e08-gmail-simulado.mjs', 'e10-resolucion.mjs', 'e11-a5-facturas-existentes.mjs', 'e09-seguridad-fallos.mjs'];
 let failed = 0;
 for (const s of scenarios) {
   console.log(`\n=== ${s}`);

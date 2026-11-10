@@ -29,20 +29,18 @@ assert((await nOb()) === 1, 'obligación y período creados');
 n8nRun(WF03);
 assert((await sql('select status from cases where id=$1', [up.body.caseId]))[0].status === 'completed', 'workflow 03 cierra el caso');
 
-// Misma factura otra vez (período ya generado). LIMITACIÓN A-5 para PDF: el workflow 02 no usa resolve
-// (el backend lo prohíbe para document.process), por lo que propone create_* y el backend rechaza aplicarlo (409).
+// Misma factura otra vez (período ya generado). A-5: el workflow 02 usa `resolve`; el backend detecta que el período
+// ya tiene esos datos y devuelve «informational» (sin acción aplicable), así que no hay nada que aplicar ni duplicar.
 const dup = await send();
 console.log(`  [info] mismo PDF otra vez -> HTTP ${dup.status}`);
 if (dup.status === 201) {
   n8nRun(WF02);
   const p2 = (await sql('select id::text, proposed_data from case_proposals where case_id=$1', [dup.body.caseId]))[0];
-  const h2 = (await sql('select id::text from hitl_requests where case_id=$1', [dup.body.caseId]))[0];
-  if (h2 && p2) {
-    await decide(t, h2.id);
-    const a2 = await apply(t, dup.body.caseId, p2.id);
-    console.log(`  [info] propuesta ${p2.proposed_data.action} sobre período existente -> aplicar = HTTP ${a2.status}`);
-    assert([400, 409].includes(a2.status), `el duplicado no crea otra obligación/período (aplicar = ${a2.status})`);
-  }
+  const h2 = (await sql('select id::text, decision_type from hitl_requests where case_id=$1', [dup.body.caseId]))[0];
+  assert(p2 && !p2.proposed_data.action && p2.proposed_data.resultado === 'informational', `la factura repetida no propone ninguna acción (${p2?.proposed_data?.resultado ?? p2?.proposed_data?.action})`);
+  assert(h2?.decision_type === 'other', 'revisión informativa (no aplicable)');
+  const a2 = await apply(t, dup.body.caseId, p2.id);
+  assert([400, 409, 422].includes(a2.status), `aplicar una propuesta no aplicable se rechaza (${a2.status})`);
 }
 assert((await nOb()) === 1, 'sigue habiendo una sola obligación (sin duplicados)');
 await close();
