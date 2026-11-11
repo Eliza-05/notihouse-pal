@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../lib/auth/useAuth'
 import { useAlertSummary } from '../features/alerts/hooks'
+import { UserMenu } from './UserMenu'
 import './tokens.css'
 import './AppShell.css'
 
@@ -90,14 +91,6 @@ function useTheme() {
   return { isDark, toggle }
 }
 
-function initials(name: string) {
-  const parts = name
-    .replace(/@.*/, '')
-    .split(/[\s._-]+/)
-    .filter(Boolean)
-  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || 'NH'
-}
-
 function todayLabel() {
   const text = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())
   return text.charAt(0).toUpperCase() + text.slice(1)
@@ -112,7 +105,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [moreOpen, setMoreOpen] = useState(false)
   const unread = summary?.unread ?? null
 
-  const displayName = user?.displayName ?? user?.email ?? ''
   const firstName = user?.displayName?.split(' ')[0]
 
   const activeIndex = NAV_ITEMS.findIndex((item) => isItemActive(item, pathname))
@@ -218,12 +210,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 {isDark ? <Moon aria-hidden="true" /> : <Sun aria-hidden="true" />}
               </button>
-              <span className="avatar" title={displayName} aria-hidden="true">
-                {initials(displayName)}
-              </span>
-              <button type="button" className="icon-btn" onClick={logout} aria-label="Cerrar sesión" title="Cerrar sesión">
-                <LogOut aria-hidden="true" />
-              </button>
+              <UserMenu isDark={isDark} onToggleTheme={toggle} />
             </div>
           </header>
 
