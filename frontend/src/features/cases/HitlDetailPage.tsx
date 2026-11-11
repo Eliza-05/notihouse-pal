@@ -8,15 +8,7 @@ import { HITL_DECISION_TYPE_LABELS, OBLIGATION_FREQUENCY_LABELS, label } from '.
 import { useObligation } from '../obligations/hooks'
 import { useApplyProposal, useDecideHitl, useHitlRequest } from './hooks'
 import { parseProposal } from './proposalSchema'
-
-const APPLICABLE_ACTIONS = new Set([
-  'create_obligation_occurrence',
-  'create_obligation_with_occurrence',
-  'create_recurring_obligation',
-  'update_obligation_schedule',
-  'update_occurrence_details',
-  'create_recurring_rental',
-])
+import { canApplyProposal, humanizeFieldKeys, reviewMode } from './reviewMode'
 
 function ScheduleDiff({ obligationId, changes }: { obligationId: string; changes: { dueDay?: number | null; reminderDaysBefore?: number; expectedAmount?: string | null } }) {
   const { data: obligation } = useObligation(obligationId)
@@ -99,15 +91,9 @@ export function HitlDetailPage() {
     }
   }
 
-  const canApply =
-    hitl.status === 'approved' &&
-    !!proposal &&
-    proposal.reviewStatus === 'accepted' &&
-    proposal.source !== 'stt' &&
-    choices.length === 0 &&
-    hitl.decisionType === 'data_confirmation' &&
-    parsed?.kind === 'known' &&
-    APPLICABLE_ACTIONS.has(parsed.value.action)
+  const mode = reviewMode(hitl, parsed)
+  const canApply = canApplyProposal(hitl, parsed)
+  const context = hitl.options.context ?? {}
 
   return (
     <div className="stack">
@@ -115,7 +101,8 @@ export function HitlDetailPage() {
       <div className="card">
         <h1 style={{ marginTop: 0 }}>{label(HITL_DECISION_TYPE_LABELS, hitl.decisionType)}</h1>
         <p className="text-muted">Sugerencia de IA — requiere tu confirmación</p>
-        {hitl.options.summary && <p>{hitl.options.summary}</p>}
+        {hitl.options.summary && <p>{humanizeFieldKeys(hitl.options.summary)}</p>}
+        <ContextNotes context={context} />
         <p className="text-muted">Plazo: {formatInstant(hitl.dueAt)}</p>
 
         {overdue && (
@@ -139,6 +126,11 @@ export function HitlDetailPage() {
           <p>
             Obligación <strong>{parsed.value.data.obligation.providerName}</strong>, vence día{' '}
             {parsed.value.data.obligation.dueDay} de cada ciclo ({label(OBLIGATION_FREQUENCY_LABELS, parsed.value.data.obligation.frequency ?? "monthly").toLowerCase()}). Se generará el período de cada ciclo.
+            {parsed.value.data.obligation.expectedAmount ? (
+              <> Monto esperado: <strong>{formatMoney(parsed.value.data.obligation.expectedAmount, parsed.value.data.obligation.currency ?? 'COP')}</strong>.</>
+            ) : (
+              <> Sin monto esperado definido: se completará al registrar cada período.</>
+            )}
           </p>
         )}
 
@@ -199,7 +191,7 @@ export function HitlDetailPage() {
             {decideError && <p className="field-error" role="alert">{decideError}</p>}
             <div className="row">
               <button type="button" className="btn btn-primary" disabled={decide.isPending} onClick={() => handleDecision('approved')}>
-                Aprobar
+                {mode === 'applicable' ? 'Aprobar' : mode === 'choice' ? 'Confirmar mi elección' : 'Entendido'}
               </button>
               <button type="button" className="btn btn-secondary" disabled={decide.isPending} onClick={() => handleDecision('rejected')}>
                 Rechazar
@@ -212,7 +204,11 @@ export function HitlDetailPage() {
           <p role="status">Aprobada. Aún no se ha creado nada: pulsa Aplicar para registrar el cambio.</p>
         )}
         {hitl.status === 'approved' && !applyResult && !canApply && (
-          <p role="status">Aprobada. No hay nada que aplicar automáticamente: no se creó ni se cambió ningún dato.</p>
+          <p role="status">
+            {mode === 'informational'
+              ? 'Listo, quedó registrado que lo viste. No se creó ni se cambió ningún dato.'
+              : 'Elección registrada. No hay nada que aplicar automáticamente: no se creó ni se cambió ningún dato.'}
+          </p>
         )}
         {hitl.status === 'rejected' && <p role="status">Rechazada: no se registró nada.</p>}
         {hitl.status === 'expired' && <p role="status">Vencida sin decisión: no se aplicará nada.</p>}
@@ -224,7 +220,7 @@ export function HitlDetailPage() {
             </button>
           </div>
         )}
-        {hitl.status === 'approved' && !canApply && !applyResult && parsed?.kind !== 'guided' && (
+        {hitl.status === 'approved' && mode === 'choice' && !applyResult && (
           <p className="text-muted">Debes registrarlo manualmente desde el formulario correspondiente.</p>
         )}
         {applyError && <p className="field-error" role="alert">{applyError}</p>}
@@ -237,4 +233,34 @@ export function HitlDetailPage() {
 /** Propuesta sin acción aplicable que el flujo marcó para completar a mano (faltan datos, informativa, no soportada). */
 function isManualOnly(raw: unknown): boolean {
   return typeof raw === 'object' && raw !== null && (raw as { requiereRevisionManual?: unknown }).requiereRevisionManual === true
+}
+
+const CONTEXT_LABELS: Record<string, string> = {
+  advertencias: 'Advertencias',
+  consecuencias: 'Qué pasaría',
+  documentoDuplicado: 'Posible duplicado',
+}
+
+/** Muestra solo textos (o listas de textos) conocidos del contexto; nunca vuelca JSON técnico. */
+function ContextNotes({ context }: { context: Record<string, unknown> }) {
+  const rows = Object.entries(CONTEXT_LABELS).flatMap(([key, title]) => {
+    const v = context[key]
+    const items = typeof v === 'string' ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+    return items.length ? [{ key, title, items }] : []
+  })
+  if (rows.length === 0) return null
+  return (
+    <div style={{ margin: '0.5rem 0' }}>
+      {rows.map((r) => (
+        <div key={r.key}>
+          <strong>{r.title}</strong>
+          <ul>
+            {r.items.map((t, i) => (
+              <li key={i}>{humanizeFieldKeys(t)}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
 }

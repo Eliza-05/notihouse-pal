@@ -20,28 +20,28 @@ function qs(params: object): string {
   return '?' + entries.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&')
 }
 
-export function listCases(params: ListCasesParams = {}) {
-  return api<Page<Case>>(`/cases${qs(params)}`)
+export function listCases(params: ListCasesParams = {}, signal?: AbortSignal) {
+  return api<Page<Case>>(`/cases${qs(params)}`, { signal })
 }
 
-export function getCase(id: string) {
-  return api<Case>(`/cases/${id}`)
+export function getCase(id: string, signal?: AbortSignal) {
+  return api<Case>(`/cases/${id}`, { signal })
 }
 
-export function listProposals(caseId: string, params: ListProposalsParams = {}) {
-  return api<Page<Proposal>>(`/cases/${caseId}/proposals${qs(params)}`)
+export function listProposals(caseId: string, params: ListProposalsParams = {}, signal?: AbortSignal) {
+  return api<Page<Proposal>>(`/cases/${caseId}/proposals${qs(params)}`, { signal })
 }
 
 export function applyProposal(caseId: string, proposalId: string) {
   return api<ProposalApplicationResponse>(`/cases/${caseId}/proposals/${proposalId}/apply`, { method: 'POST', body: {} })
 }
 
-export function listHitlRequests(params: ListHitlParams = {}) {
-  return api<Page<HitlRequest>>(`/hitl-requests${qs(params)}`)
+export function listHitlRequests(params: ListHitlParams = {}, signal?: AbortSignal) {
+  return api<Page<HitlRequest>>(`/hitl-requests${qs(params)}`, { signal })
 }
 
-export function getHitlRequest(id: string) {
-  return api<HitlDetail>(`/hitl-requests/${id}`)
+export function getHitlRequest(id: string, signal?: AbortSignal) {
+  return api<HitlDetail>(`/hitl-requests/${id}`, { signal })
 }
 
 export function decideHitl(id: string, input: DecideHitlInput) {

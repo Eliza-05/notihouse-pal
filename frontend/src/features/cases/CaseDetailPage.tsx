@@ -1,15 +1,35 @@
+import { useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { formatInstant } from '../../lib/format/dates'
 import { CASE_STATUS_LABELS, CASE_TYPE_LABELS, PROPOSAL_REVIEW_STATUS_LABELS, SOURCE_LABELS, label } from '../../lib/format/labels'
-import { useCase, useHitlRequests, useProposals } from './hooks'
+import { queryKey } from '../../lib/api/queryKey'
+import { useAuth } from '../../lib/auth/useAuth'
+import { useCase, useCaseHitl, useProposals } from './hooks'
 
 export function CaseDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { data: caseRow, isLoading, isError, error, refetch } = useCase(id)
   const { data: proposals } = useProposals(id)
-  const { data: hitl } = useHitlRequests({ caseId: id, pageSize: 10 })
+  const { data: hitl } = useCaseHitl(id, caseRow?.status)
+  const qc = useQueryClient()
+  const { user } = useAuth()
+
+  // Cuando el estado del caso cambia (p. ej. processing → awaiting_human) se
+  // vuelven a pedir revisión y propuestas, para que la pantalla sea coherente
+  // con el nuevo estado sin recargar la página.
+  const lastStatus = useRef<string | undefined>(undefined)
+  const status = caseRow?.status
+  useEffect(() => {
+    if (!status || !id) return
+    if (lastStatus.current !== undefined && lastStatus.current !== status) {
+      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'hitl') })
+      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'proposals', id) })
+    }
+    lastStatus.current = status
+  }, [status, id, qc, user])
 
   if (isLoading) return <LoadingBlock label="Cargando caso…" />
   if (isError || !caseRow) return <ErrorBlock error={error} onRetry={refetch} />

@@ -1,31 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKey } from '../../lib/api/queryKey'
 import { useAuth } from '../../lib/auth/useAuth'
+import { caseHitlInterval, caseInterval, caseListInterval, invalidateAfterDecision } from '../../lib/api/polling'
 import * as api from './api'
 import type { DecideHitlInput, ListCasesParams, ListHitlParams, ListProposalsParams } from '../../lib/api/types'
-
-const TERMINAL = new Set(['completed', 'failed', 'cancelled'])
 
 export function useCases(params: ListCasesParams) {
   const { user } = useAuth()
   return useQuery({
     queryKey: queryKey(user!.id, 'cases', params),
-    queryFn: () => api.listCases(params),
+    queryFn: ({ signal }) => api.listCases(params, signal),
+    staleTime: 0,
+    refetchInterval: (query) => caseListInterval(query.state.data?.items.map((c) => c.status)),
+    refetchIntervalInBackground: false,
   })
 }
 
-/** Consulta el caso con intervalos espaciados (§11.10): se detiene en estado terminal o `awaiting_human`. */
+/** Consulta el caso con polling inteligente: 5 s en proceso, 10 s esperando decisión, nada en estado terminal. */
 export function useCase(id: string | undefined) {
   const { user } = useAuth()
   return useQuery({
     queryKey: queryKey(user!.id, 'case', id),
-    queryFn: () => api.getCase(id!),
+    queryFn: ({ signal }) => api.getCase(id!, signal),
     enabled: !!id,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status
-      if (!status || TERMINAL.has(status) || status === 'awaiting_human') return false
-      return 5_000
-    },
+    staleTime: 0,
+    refetchInterval: (query) => caseInterval(query.state.data?.status),
     refetchIntervalInBackground: false,
   })
 }
@@ -34,8 +33,9 @@ export function useProposals(caseId: string | undefined, params: ListProposalsPa
   const { user } = useAuth()
   return useQuery({
     queryKey: queryKey(user!.id, 'proposals', caseId, params),
-    queryFn: () => api.listProposals(caseId!, params),
+    queryFn: ({ signal }) => api.listProposals(caseId!, params, signal),
     enabled: !!caseId,
+    staleTime: 0,
   })
 }
 
@@ -45,14 +45,7 @@ export function useApplyProposal() {
   return useMutation({
     mutationFn: ({ caseId, proposalId }: { caseId: string; proposalId: string }) => api.applyProposal(caseId, proposalId),
     retry: false,
-    onSuccess: (_d, { caseId }) => {
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'case', caseId) })
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'proposals', caseId) })
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'obligations') })
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'rentals') })
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'attention') })
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'dashboard') })
-    },
+    onSuccess: () => invalidateAfterDecision(qc, user!.id),
   })
 }
 
@@ -60,7 +53,22 @@ export function useHitlRequests(params: ListHitlParams) {
   const { user } = useAuth()
   return useQuery({
     queryKey: queryKey(user!.id, 'hitl', params),
-    queryFn: () => api.listHitlRequests(params),
+    queryFn: ({ signal }) => api.listHitlRequests(params, signal),
+    staleTime: 0,
+  })
+}
+
+/** Revisiones de un caso, sincronizadas con el estado del caso: "Revisar" aparece solo al pasar a `awaiting_human`. */
+export function useCaseHitl(caseId: string | undefined, caseStatus: string | undefined) {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: queryKey(user!.id, 'hitl', { caseId, pageSize: 10 }),
+    queryFn: ({ signal }) => api.listHitlRequests({ caseId, pageSize: 10 }, signal),
+    enabled: !!caseId,
+    staleTime: 0,
+    refetchInterval: (query) =>
+      caseHitlInterval(caseStatus, !!query.state.data?.items.some((h) => h.status === 'pending')),
+    refetchIntervalInBackground: false,
   })
 }
 
@@ -68,8 +76,9 @@ export function useHitlRequest(id: string | undefined) {
   const { user } = useAuth()
   return useQuery({
     queryKey: queryKey(user!.id, 'hitl-detail', id),
-    queryFn: () => api.getHitlRequest(id!),
+    queryFn: ({ signal }) => api.getHitlRequest(id!, signal),
     enabled: !!id,
+    staleTime: 0,
   })
 }
 
@@ -79,12 +88,6 @@ export function useDecideHitl(id: string) {
   return useMutation({
     mutationFn: (input: DecideHitlInput) => api.decideHitl(id, input),
     retry: false,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'hitl') })
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'hitl-detail', id) })
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'cases') })
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'attention') })
-      qc.invalidateQueries({ queryKey: queryKey(user!.id, 'dashboard') })
-    },
+    onSuccess: () => invalidateAfterDecision(qc, user!.id),
   })
 }

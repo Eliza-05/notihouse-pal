@@ -9,6 +9,6 @@ function qs(params: object): string {
   return '?' + entries.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&')
 }
 
-export function listAttention(params: ListAttentionParams = {}) {
-  return api<AttentionPage>(`/attention${qs(params)}`)
+export function listAttention(params: ListAttentionParams = {}, signal?: AbortSignal) {
+  return api<AttentionPage>(`/attention${qs(params)}`, { signal })
 }
