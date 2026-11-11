@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import './Modal.css'
 
 export function Modal({
@@ -21,7 +22,12 @@ export function Modal({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
-  return (
+  // Portal al contenedor .app-shell: fuera de cualquier .card (cuyo
+  // backdrop-filter atraparía el position:fixed) pero dentro del ámbito
+  // de los tokens visuales.
+  const host = document.querySelector('.app-shell') ?? document.body
+
+  return createPortal(
     <div className="modal-overlay" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
         className="modal-panel"
@@ -41,6 +47,7 @@ export function Modal({
         </div>
         <div className="modal-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    host,
   )
 }
