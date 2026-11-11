@@ -14,6 +14,8 @@
  *     N8N_GMAIL_SENDERS   remitentes autorizados, separados por comas
  *   Se escriben en las constantes BUZON_AUTORIZADO y REMITENTES_AUTORIZADOS de la copia
  *   que se importa. Sin ellas esas constantes quedan vacías y el workflow se detiene.
+ *   Solo para el workflow 05b (alias de entrega): además N8N_GMAIL_ALIAS (buzon+etiqueta@dominio, del MISMO
+ *   buzón autorizado) se escribe en ALIAS_ENTREGA. Para el 05 original esa variable se rechaza.
  *   La salida solo muestra las direcciones parcialmente ocultas.
  * - Opciones SOLO PARA QA LOCAL (modifican únicamente la copia importada, nunca el repo):
  *     --api-base <url>     sustituye apiBase (solo http://host.docker.internal:<puerto>/api/v1 o localhost)
@@ -67,16 +69,28 @@ const emailRe = /^[^\s@'"\\]+@[^\s@'"\\]+\.[^\s@'"\\]+$/;
 const mask = (a) => a.replace(/^(.{2})[^@]*(@.).*(\..+)$/, '$1***$2***$3');
 const mailbox = (process.env.N8N_GMAIL_MAILBOX ?? '').trim().toLowerCase();
 const senders = (process.env.N8N_GMAIL_SENDERS ?? '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
-if (mailbox || senders.length) {
+const alias = (process.env.N8N_GMAIL_ALIAS ?? '').trim().toLowerCase();
+const usesAlias = (wf.nodes.find((n) => n.name === 'Configuracion')?.parameters?.jsCode ?? '').includes("const ALIAS_ENTREGA = '';");
+if (alias && !usesAlias) throw new Error('N8N_GMAIL_ALIAS solo se admite en el workflow 05b (alias de entrega): no se importa.');
+if (mailbox || senders.length || alias) {
   if (!emailRe.test(mailbox) || senders.length === 0 || !senders.every((x) => emailRe.test(x))) throw new Error('N8N_GMAIL_MAILBOX debe ser una dirección y N8N_GMAIL_SENDERS una o más, separadas por comas.');
+  if (usesAlias) {
+    // El alias es buzon+etiqueta@dominio de ESA cuenta (la identidad OAuth no se sustituye por el alias).
+    const [aLocal, aDomain] = alias.split('@'); const [mLocal, mDomain] = mailbox.split('@');
+    const strip = (l) => l.split('+')[0].replace(/\./g, '');
+    if (!emailRe.test(alias) || !aLocal.includes('+') || aLocal.endsWith('+') || aDomain !== mDomain || strip(aLocal) !== strip(mLocal) || aLocal === mLocal) {
+      throw new Error('N8N_GMAIL_ALIAS debe ser buzon+etiqueta@dominio del mismo buzón autorizado (y distinto de él).');
+    }
+  }
   const node = wf.nodes.find((n) => n.name === 'Configuracion');
   const before = node.parameters.jsCode;
-  const after = before
+  let after = before
     .replace("const BUZON_AUTORIZADO = '';", () => `const BUZON_AUTORIZADO = '${mailbox}';`)
     .replace('const REMITENTES_AUTORIZADOS = [];', () => `const REMITENTES_AUTORIZADOS = [${senders.map((x) => `'${x}'`).join(', ')}];`);
-  if (after === before || after.includes("BUZON_AUTORIZADO = '';")) throw new Error('El nodo Configuracion no tiene las constantes vacías esperadas: no se importa.');
+  if (usesAlias) after = after.replace("const ALIAS_ENTREGA = '';", () => `const ALIAS_ENTREGA = '${alias}';`);
+  if (after === before || after.includes("BUZON_AUTORIZADO = '';") || after.includes("ALIAS_ENTREGA = '';")) throw new Error('El nodo Configuracion no tiene las constantes vacías esperadas o falta N8N_GMAIL_ALIAS: no se importa.');
   node.parameters.jsCode = after;
-  console.log(`  Buzón autorizado: ${mask(mailbox)}; remitentes: ${senders.map(mask).join(', ')}`);
+  console.log(`  Buzón autorizado (identidad OAuth): ${mask(mailbox)}${usesAlias ? `; alias de entrega: ${mask(alias)}` : ''}; remitentes: ${senders.map(mask).join(', ')}`);
 }
 
 // El JSON del repo nunca puede traer los interruptores en true (se comprueba ANTES de las opciones QA).

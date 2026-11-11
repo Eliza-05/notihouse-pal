@@ -19,7 +19,7 @@ for (const f of files) {
   const raw = readFileSync(join(DIR, f), 'utf8');
   let w;
   try { w = JSON.parse(raw); } catch (e) { check(`${f}: JSON válido`, false, e.message); continue; }
-  wfs[f.slice(0, 2)] = w;
+  wfs[f.split("-")[0]] = w; // 05 y 05b son workflows distintos
   check(`${f}: JSON válido`, true);
   check(`${f}: inactivo (los disparadores programados no se activan solos)`, w.active === false);
   const names = w.nodes.map((n) => n.name);
@@ -74,6 +74,25 @@ check('A-4: interruptor propio AUTORIZAR_RECURRENCIA (false por defecto)', /cons
 // ---- A-6: el 03 no depende del tipo de acción
 const w03 = wfs['03'];
 check('A-6: el workflow 03 reclama solo hitl.decision y no inspecciona la acción aplicada', /hitl\.decision/.test(JSON.stringify(node(w03, 'Reclamar').parameters)) && !/create_recurring|update_obligation|update_occurrence/.test(JSON.stringify(w03)));
+
+// ---- 05b: Gmail por alias (variante manual del 05 para un solo alias de entrega)
+const w05 = wfs['05']; const w05b = wfs['05b'];
+check('05b: existe junto al 05 original, con otro id y otro nombre', Boolean(w05b) && w05b.id === 'nhpGmailCamila01' && w05b.id !== w05.id && /05b/.test(w05b.name));
+const c05b = node(w05b, 'Configuracion').parameters.jsCode;
+check('05b: sin disparador programado (solo ejecución manual)', w05b.nodes.filter((n) => /trigger|schedule|cron|webhook/i.test(n.type)).map((n) => n.type).join() === 'n8n-nodes-base.manualTrigger');
+check('05b: buzón OAuth, alias y remitentes vacíos en el repo (los escribe el importador)', /BUZON_AUTORIZADO = '';/.test(c05b) && /ALIAS_ENTREGA = '';/.test(c05b) && /REMITENTES_AUTORIZADOS = \[\];/.test(c05b));
+check('05b: etiqueta exclusiva nh-camila, prefijo nh- y ventana de 2 días', /ETIQUETA = 'nh-camila'/.test(c05b) && /PREFIJO_ETIQUETAS = 'nh-'/.test(c05b) && /VENTANA = '2d'/.test(c05b));
+check('05b: lectura e ingesta separadas y en false', /AUTORIZAR_LECTURA_GMAIL = false;/.test(c05b) && /AUTORIZAR_INGESTA = false;/.test(c05b));
+check('05b: identidad OAuth (Verificar buzon) separada de la dirección de entrega', /actual !== cfg\.mailbox/.test(node(w05b, 'Verificar buzon').parameters.jsCode) && /ALIAS_ENTREGA no es un alias/.test(node(w05b, 'Validar configuracion').parameters.jsCode));
+check('05b: la consulta exige etiqueta, adjunto PDF, remitente y ventana', /label:' \+ cfg\.label \+ ' has:attachment filename:pdf newer_than:' \+ cfg\.window \+ ' from:\(/.test(node(w05b, 'Validar configuracion').parameters.jsCode));
+check('05b: «Extraer adjuntos» incrusta resolveDelivery y rechaza sin descargar', /function resolveDelivery/.test(node(w05b, 'Extraer adjuntos').parameters.jsCode) && /destinatario_rechazado/.test(node(w05b, 'Extraer adjuntos').parameters.jsCode));
+check('05b: al backend va el alias resuelto, nunca la identidad OAuth', /mailbox: deliveryMailbox/.test(node(w05b, 'Decodificar').parameters.jsCode) && !/Verificar buzon/.test(node(w05b, 'Decodificar').parameters.jsCode));
+check('05b: pide labelIds y el mapa de etiquetas (GET users.labels.list, solo lectura)', /labelIds/.test(c05b) && node(w05b, 'Etiquetas de Gmail').parameters.method === 'GET' && /\/labels$/.test(node(w05b, 'Etiquetas de Gmail').parameters.url));
+check('05b: orden Verificar buzon → Etiquetas de Gmail → Ingesta autorizada?', conn(w05b, 'Verificar buzon')[0][0] === 'Etiquetas de Gmail' && conn(w05b, 'Etiquetas de Gmail')[0][0] === 'Ingesta autorizada?' && conn(w05b, 'Etiquetas de Gmail')[1][0] === 'Fallo de Gmail');
+check('05b: todo acceso a Gmail es GET y solo hay lectura', w05b.nodes.filter((n) => n.credentials?.googleOAuth2Api).every((n) => n.parameters.method === 'GET') && !/\/modify|\/trash|\/send|\/batchModify|\/delete/.test(JSON.stringify(w05b)));
+check('05b: usa la misma credencial OAuth y el mismo token de servicio que el 05', JSON.stringify([...new Set(w05b.nodes.flatMap((n) => Object.values(n.credentials ?? {}).map((c) => c.name)))].sort()) === JSON.stringify([...new Set(w05.nodes.flatMap((n) => Object.values(n.credentials ?? {}).map((c) => c.name)))].sort()));
+check('05b: no conserva datos de ejecución', w05b.settings.saveDataSuccessExecution === 'none' && w05b.settings.saveDataErrorExecution === 'none' && w05b.settings.saveManualExecutions === false);
+check('05: el workflow original sigue con su disparador programado y sin alias (intacto)', w05.nodes.some((n) => n.name === 'Disparo programado') && !/ALIAS_ENTREGA/.test(node(w05, 'Configuracion').parameters.jsCode) && w05.id === 'nhpGmailIngest01');
 
 console.log(bad ? `\nFALLARON ${bad} de ${ok + bad}` : `\nTodo correcto: ${ok} comprobaciones`);
 process.exitCode = bad ? 1 : 0;
