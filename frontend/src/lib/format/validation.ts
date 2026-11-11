@@ -1,27 +1,35 @@
 import { z } from 'zod'
+import { copErrorMessage, isZeroMoney, parseCop } from './cop'
 
 /** Mismo patrón que el backend (§4): decimal no negativo, hasta 2 decimales. */
 export const MONEY_PATTERN = /^(0|[1-9]\d{0,11})(\.\d{1,2})?$/
 
-function moneyBase() {
-  return z.string().trim().regex(MONEY_PATTERN, 'Usa un monto válido, p. ej. 145000.00')
-}
-function moneyOptional() {
-  return moneyBase().optional().or(z.literal(''))
+/**
+ * Montos de formulario: el campo guarda el TEXTO VISIBLE ("1.200.000,50", ver lib/format/cop.ts).
+ * El valor para el backend ("1200000.50") se obtiene al enviar con `toWireMoney`.
+ * Vacío es válido salvo que sea obligatorio (nunca se convierte en cero).
+ */
+function copBase(opts: { required: boolean; positive: boolean }) {
+  return z.string().superRefine((text, ctx) => {
+    const r = parseCop(text)
+    if (!r.ok) {
+      ctx.addIssue({ code: 'custom', message: copErrorMessage(r.error) })
+      return
+    }
+    if (r.value === '') {
+      if (opts.required) ctx.addIssue({ code: 'custom', message: 'Ingresa el monto' })
+      return
+    }
+    if (opts.positive && isZeroMoney(r.value)) ctx.addIssue({ code: 'custom', message: 'Debe ser mayor que cero' })
+  })
 }
 
-export function moneyField(opts: { required: true }): ReturnType<typeof moneyBase>
-export function moneyField(opts?: { required?: boolean }): ReturnType<typeof moneyOptional>
-export function moneyField(opts: { required?: boolean } = {}) {
-  return opts.required ? moneyBase() : moneyOptional()
-}
+/** Monto COP opcional (admite cero, como el backend para obligaciones/períodos). */
+export const moneyField = (opts: { required?: boolean } = {}) => copBase({ required: !!opts.required, positive: false })
 
-export const positiveMoneyField = () =>
-  z
-    .string()
-    .trim()
-    .regex(MONEY_PATTERN, 'Usa un monto válido, p. ej. 145000.00')
-    .refine((v) => Number(v) > 0, 'Debe ser mayor que cero')
+/** Monto COP mayor que cero (canon y cobros); opcional con `required: false`. */
+export const positiveMoneyField = (opts: { required?: boolean } = {}) =>
+  copBase({ required: opts.required ?? true, positive: true })
 
 /** "YYYY-MM-DD", el mismo patrón que acepta `<input type="date">`. */
 function calendarDateBase() {

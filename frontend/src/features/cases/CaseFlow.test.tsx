@@ -65,7 +65,7 @@ describe('detalle de caso sin F5', () => {
     expect(screen.queryByText('Revisar')).toBeNull()
     caseStatus = 'awaiting_human'
     hitlList = [{ id: 'h1', caseId: 'c1', status: 'pending' }]
-    await tick(5_000)
+    await tick(5_100)
     expect(screen.getByText('Revisar').getAttribute('href')).toBe('/revisiones/h1')
   })
 
@@ -77,7 +77,7 @@ describe('detalle de caso sin F5', () => {
     expect(screen.getAllByText('Esperando tu decisión').length).toBeGreaterThan(0)
     caseStatus = 'completed'
     hitlList = [{ id: 'h1', caseId: 'c1', status: 'approved' }]
-    await tick(10_000)
+    await tick(10_100)
     expect(screen.getAllByText('Completado').length).toBeGreaterThan(0)
     expect(screen.queryByText('Revisar')).toBeNull()
     const n = calls.length

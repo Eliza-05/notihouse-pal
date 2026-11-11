@@ -1,8 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { Modal } from '../../components/Modal'
 import { ApiError } from '../../lib/api/errors'
+import { MoneyInput } from '../../components/MoneyInput'
+import { moneyToDisplay, toWireMoney } from '../../lib/format/cop'
 import { calendarDateField, positiveMoneyField } from '../../lib/format/validation'
 import { useCreateCharge, useUpdateCharge } from './hooks'
 import type { RentCharge } from '../../lib/api/types'
@@ -12,7 +14,7 @@ const schema = z
     periodStart: calendarDateField({ required: true }),
     periodEnd: calendarDateField({ required: true }),
     dueDate: calendarDateField({ required: true }),
-    expectedAmount: positiveMoneyField().optional().or(z.literal('')),
+    expectedAmount: positiveMoneyField({ required: false }),
   })
   .refine((v) => v.periodEnd >= v.periodStart, { message: 'El fin del período no puede ser anterior al inicio', path: ['periodEnd'] })
 type FormValues = z.infer<typeof schema>
@@ -31,6 +33,7 @@ export function ChargeFormModal({
   const update = useUpdateCharge(rentalId)
   const {
     register,
+    control,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
@@ -40,7 +43,7 @@ export function ChargeFormModal({
       periodStart: charge?.periodStart ?? '',
       periodEnd: charge?.periodEnd ?? '',
       dueDate: charge?.dueDate ?? '',
-      expectedAmount: charge?.expectedAmount ?? '',
+      expectedAmount: moneyToDisplay(charge?.expectedAmount),
     },
   })
 
@@ -53,7 +56,7 @@ export function ChargeFormModal({
             periodStart: values.periodStart,
             periodEnd: values.periodEnd,
             dueDate: values.dueDate,
-            expectedAmount: values.expectedAmount || undefined,
+            expectedAmount: toWireMoney(values.expectedAmount),
           },
         })
       } else {
@@ -61,7 +64,7 @@ export function ChargeFormModal({
           periodStart: values.periodStart,
           periodEnd: values.periodEnd,
           dueDate: values.dueDate,
-          expectedAmount: values.expectedAmount || undefined,
+          expectedAmount: toWireMoney(values.expectedAmount),
         })
       }
       onClose()
@@ -91,7 +94,9 @@ export function ChargeFormModal({
           </div>
           <div className="field">
             <label htmlFor="expectedAmount">Monto (opcional, copia el canon si se omite)</label>
-            <input id="expectedAmount" inputMode="decimal" placeholder="950000.00" {...register('expectedAmount')} />
+            <Controller name="expectedAmount" control={control} render={({ field }) => (
+              <MoneyInput id="expectedAmount" placeholder="950.000" name={field.name} value={field.value} onChange={field.onChange} onBlur={field.onBlur} aria-invalid={!!errors.expectedAmount} />
+            )} />
             {errors.expectedAmount && <span className="field-error">{errors.expectedAmount.message}</span>}
           </div>
         </div>

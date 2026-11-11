@@ -1,8 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { Modal } from '../../components/Modal'
 import { ApiError } from '../../lib/api/errors'
+import { MoneyInput } from '../../components/MoneyInput'
+import { moneyToDisplay, toWireMoney } from '../../lib/format/cop'
 import { calendarDateField, moneyField } from '../../lib/format/validation'
 import { useCreateOccurrence, useUpdateOccurrence } from './hooks'
 import type { ObligationOccurrence } from '../../lib/api/types'
@@ -31,6 +33,7 @@ export function OccurrenceFormModal({
   const update = useUpdateOccurrence(obligationId)
   const {
     register,
+    control,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
@@ -40,7 +43,7 @@ export function OccurrenceFormModal({
       periodStart: occurrence?.periodStart ?? '',
       periodEnd: occurrence?.periodEnd ?? '',
       dueDate: occurrence?.dueDate ?? '',
-      amount: occurrence?.amount ?? '',
+      amount: moneyToDisplay(occurrence?.amount),
     },
   })
 
@@ -53,7 +56,7 @@ export function OccurrenceFormModal({
             periodStart: values.periodStart,
             periodEnd: values.periodEnd,
             dueDate: values.dueDate,
-            amount: values.amount || null,
+            amount: toWireMoney(values.amount) ?? null,
           },
         })
       } else {
@@ -61,7 +64,7 @@ export function OccurrenceFormModal({
           periodStart: values.periodStart,
           periodEnd: values.periodEnd,
           dueDate: values.dueDate,
-          amount: values.amount || undefined,
+          amount: toWireMoney(values.amount),
         })
       }
       onClose()
@@ -91,7 +94,9 @@ export function OccurrenceFormModal({
           </div>
           <div className="field">
             <label htmlFor="amount">Monto (opcional, copia el esperado si se omite)</label>
-            <input id="amount" inputMode="decimal" placeholder="145000.00" {...register('amount')} />
+            <Controller name="amount" control={control} render={({ field }) => (
+              <MoneyInput id="amount" placeholder="145.000" name={field.name} value={field.value} onChange={field.onChange} onBlur={field.onBlur} aria-invalid={!!errors.amount} />
+            )} />
             {errors.amount && <span className="field-error">{errors.amount.message}</span>}
           </div>
         </div>
