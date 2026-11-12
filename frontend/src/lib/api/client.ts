@@ -20,13 +20,22 @@ if (!BASE_URL || !(BASE_URL.startsWith('https://') || BASE_URL.startsWith('http:
  */
 interface AuthHooks {
   getToken: () => string | null
-  /** Se invoca ante cualquier 401 (salvo en el propio login): limpia la sesión. */
-  onUnauthorized: () => void
+  /**
+   * Se invoca ante un 401 (salvo en el propio login). Recibe el token con el que SE ENVIÓ la
+   * petición: la sesión solo se cierra si ese token sigue siendo el vigente, de modo que la
+   * respuesta tardía de una sesión anterior no cierra una sesión nueva.
+   */
+  onUnauthorized: (sentToken: string | null) => void
 }
 
 let authHooks: AuthHooks = {
   getToken: () => null,
   onUnauthorized: () => {},
+}
+
+/** Punto único para avisar de un 401 recibido con `sentToken` (también lo usa la descarga autenticada). */
+export function reportUnauthorized(sentToken: string | null): void {
+  authHooks.onUnauthorized(sentToken)
 }
 
 export function configureApiAuth(hooks: AuthHooks): void {
@@ -72,9 +81,11 @@ export async function api<T>(path: string, options: ApiRequestOptions = {}): Pro
     finalBody = JSON.stringify(body)
   }
 
+  // Token con el que sale ESTA petición: si responde 401, solo cuenta contra esa sesión.
+  let sentToken: string | null = null
   if (!skipAuth) {
-    const token = authHooks.getToken()
-    if (token) finalHeaders.set('Authorization', `Bearer ${token}`)
+    sentToken = authHooks.getToken()
+    if (sentToken) finalHeaders.set('Authorization', `Bearer ${sentToken}`)
   }
 
   // Un solo AbortController: lo cancela el llamador (React Query al desmontar) o nuestro temporizador.
@@ -104,7 +115,7 @@ export async function api<T>(path: string, options: ApiRequestOptions = {}): Pro
   }
 
   if (res.status === 401 && !skipAuth) {
-    authHooks.onUnauthorized()
+    authHooks.onUnauthorized(sentToken)
   }
 
   if (!res.ok) {
