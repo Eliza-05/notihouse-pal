@@ -26,7 +26,7 @@ const MONTHS = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, ju
 
 function interpret(text) {
   const t = text.toLowerCase();
-  const x = { intent: 'unsupported', providerName: null, concept: null, category: null, propertyName: null, tenantAlias: null, amount: null, currency: null, dueDay: null, reminderDaysBefore: null, reminderDay: null, frequency: null, month: null, dueDate: null, missing: [], ambiguities: [], evidence: [], containsInstructions: false };
+  const x = { intent: 'unsupported', providerName: null, concept: null, category: null, propertyName: null, tenantAlias: null, amount: null, currency: null, dueDay: null, reminderDaysBefore: null, reminderDay: null, frequency: null, month: null, dueDate: null, startDate: null, missing: [], ambiguities: [], evidence: [], containsInstructions: false };
   const ev = (field, frag) => { const i = text.toLowerCase().indexOf(frag.toLowerCase()); if (i >= 0) x.evidence.push({ field, text: text.slice(i, i + frag.length) }); };
   if (/ignora (todas )?las instrucciones|ignore (all )?previous|system prompt|marca (esto )?como pagad/.test(t)) x.containsInstructions = true;
   const p = PROVIDERS.find(([n]) => new RegExp('\\b' + n + '\\b', 'i').test(text));
@@ -41,7 +41,13 @@ function interpret(text) {
   if (/cada mes|mensual/i.test(text)) { x.frequency = 'monthly'; ev('frequency', /cada mes|mensual/i.exec(text)[0]); }
   const iso = /(\d{4})-(\d{2})-(\d{2})/.exec(text);
   const long = /(\d{1,2}) de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre) de (\d{4})/i.exec(text);
-  if (iso) { x.dueDate = iso[0]; ev('dueDate', iso[0]); } else if (long) { x.dueDate = `${long[3]}-${String(MONTHS[long[2].toLowerCase()]).padStart(2, '0')}-${long[1].padStart(2, '0')}`; ev('dueDate', long[0]); }
+  // «a partir del <fecha>» es la fecha de INICIO de un arriendo, no un vencimiento.
+  const from = /a partir (?:del?|de la)\s+(\d{1,2} de [a-zá-ú]+ de \d{4}|\d{4}-\d{2}-\d{2})/i.exec(text);
+  if (from) {
+    const lm = /(\d{1,2}) de ([a-zá-ú]+) de (\d{4})/i.exec(from[1]);
+    x.startDate = lm ? `${lm[3]}-${String(MONTHS[lm[2].toLowerCase()] ?? 0).padStart(2, '0')}-${lm[1].padStart(2, '0')}` : from[1];
+    ev('startDate', from[1]);
+  } else if (iso) { x.dueDate = iso[0]; ev('dueDate', iso[0]); } else if (long) { x.dueDate = `${long[3]}-${String(MONTHS[long[2].toLowerCase()]).padStart(2, '0')}-${long[1].padStart(2, '0')}`; ev('dueDate', long[0]); }
   const prop = /(Casa \d+|Apartamento \w+)/i.exec(text);
   if (prop) { x.propertyName = prop[1]; ev('propertyName', prop[1]); }
   const ten = /inquilin[oa]\s+([A-ZÁÉÍÓÚ][\wáéíóúñ]+)/.exec(text);

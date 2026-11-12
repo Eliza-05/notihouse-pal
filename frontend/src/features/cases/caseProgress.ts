@@ -67,7 +67,7 @@ export function friendlyReason(reason: string | null | undefined, source?: strin
     return `El asistente no pudo interpretar ${subject} esta vez. Inténtalo de nuevo en unos minutos${source === 'document' || source === 'gmail' ? ' o sube otro archivo' : ''}.`
   }
   // Texto del backend cuando se agotan los reintentos: «La automatización "text.interpret" falló de forma definitiva».
-  if (/automatizaci[oó]n|falló de forma definitiva|(text|voice|document|case|gmail)\.[a-z_]+/i.test(clean) || !isFriendlyMessage(clean)) {
+  if (/automatizaci[oó]n|falló de forma definitiva|\b(text|voice|document|case|gmail)\.[a-z_]+\b/i.test(clean) || !isFriendlyMessage(clean)) {
     return 'No pudimos completar el análisis. El asistente no está disponible en este momento. Revisa el estado de tu solicitud antes de volver a intentarlo.'
   }
   return clean

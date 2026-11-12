@@ -1,6 +1,7 @@
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { and, asc, count, eq, ilike, inArray, ne } from 'drizzle-orm';
 import { escapeLikePattern } from '../../common/dto-helpers.js';
+import { isCalendarDate } from '../../common/validators.js';
 import {
   DRIZZLE,
   type Database,
@@ -722,6 +723,17 @@ export class AssistantResolveService {
         'Me falta información para registrar el arriendo: ' + missing.join(', ') + '.',
       );
     }
+    // La persona dio una fecha de inicio que no se pudo interpretar con seguridad (relativa, inválida o que no
+    // figura en el mensaje): no se sustituye por «hoy» en silencio, se pide confirmarla.
+    if (
+      extraction.startDate == null &&
+      (extraction.missing ?? []).includes('startDate')
+    ) {
+      return needsCompletion(
+        ['startDate'],
+        'No pude interpretar con seguridad la startDate del arriendo. Indícala con día, mes y año (por ejemplo, "a partir del 1 de diciembre de 2026").',
+      );
+    }
     const candidates = await this.findPropertyCandidates(
       tx,
       ownerId,
@@ -746,6 +758,11 @@ export class AssistantResolveService {
       };
     }
     const today = this.dueDates.reference().today;
+    // Fecha explícita del usuario (validada como día real por el DTO); si no hay, se usa hoy (Bogotá) y se advierte.
+    const explicitStart = isCalendarDate(extraction.startDate)
+      ? extraction.startDate
+      : null;
+    const startsOn = explicitStart ?? today;
     return {
       outcome: 'applicable',
       proposedData: {
@@ -755,7 +772,7 @@ export class AssistantResolveService {
             propertyId: match.candidate.id,
             expectedAmount: extraction.amount,
             dueDay: extraction.dueDay,
-            startsOn: today,
+            startsOn,
             ...(extraction.tenantAlias
               ? { tenantAlias: extraction.tenantAlias }
               : {}),
@@ -764,8 +781,12 @@ export class AssistantResolveService {
       },
       choices: [],
       missing: [],
-      warnings: [],
-      summary: `Registrar el cobro de arriendo de ${match.candidate.name} por ${extraction.amount}, día ${extraction.dueDay} de cada mes.`,
+      warnings: explicitStart
+        ? []
+        : [
+            `No indicaste desde cuándo rige el arriendo: se usará hoy (${longDateEs(today)}). Si es otra fecha, rechaza esta propuesta y vuelve a pedirlo indicando «a partir del…».`,
+          ],
+      summary: `Registrar el cobro de arriendo de ${match.candidate.name} por ${extraction.amount}, día ${extraction.dueDay} de cada mes, desde el ${longDateEs(startsOn)}.`,
       consequences: STANDARD_CONSEQUENCES,
     };
   }
@@ -984,14 +1005,22 @@ const FIELD_LABELS: Record<string, string> = {
   category: 'categoría',
   dueDay: 'día de vencimiento',
   dueDate: 'fecha de vencimiento',
+  startDate: 'fecha de inicio',
   amount: 'valor',
   propertyName: 'inmueble',
   tenantAlias: 'alias del arrendatario',
 };
 
+const MONTHS_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+/** «2026-12-01» → «1 de diciembre de 2026» (sin zonas horarias: es un día de calendario). */
+function longDateEs(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number) as [number, number, number];
+  return `${d} de ${MONTHS_ES[m - 1]} de ${y}`;
+}
+
 function needsCompletion(missing: string[], summary: string): ResolveResponseDto {
   const friendly = summary.replace(
-    /(providerName|concept|category|dueDay|dueDate|amount|propertyName|tenantAlias)/g,
+    /\b(providerName|concept|category|dueDay|dueDate|startDate|amount|propertyName|tenantAlias)\b/g,
     (f) => FIELD_LABELS[f] ?? f,
   );
   return {
