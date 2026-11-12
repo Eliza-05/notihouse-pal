@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react'
-import { ApiError, isNetworkError } from '../lib/api/errors'
+import { ApiError } from '../lib/api/errors'
+import { friendlyError } from '../lib/api/messages'
 
 /** Indicador de carga que respeta la forma del contenido (§8, nunca pantalla en blanco). */
 export function LoadingBlock({ label = 'Cargando…' }: { label?: string }) {
   return (
-    <div className="state-block" role="status">
+    <div className="state-block" role="status" aria-busy="true">
       <span className="spinner" aria-hidden="true" />
       <p>{label}</p>
     </div>
@@ -30,7 +31,7 @@ export function ErrorBlock({ error, onRetry }: { error: unknown; onRetry?: () =>
     <div className="state-block" role="alert">
       <h3>No pudimos cargar esto</h3>
       <p>{message}</p>
-      {correlationId && <p className="text-muted">Id para soporte: {correlationId}</p>}
+      {correlationId && <p className="text-muted" style={{ fontSize: '0.78rem' }}>Código para soporte: {correlationId.slice(0, 8)}</p>}
       {onRetry && (
         <button type="button" className="btn btn-secondary btn-sm" onClick={onRetry} style={{ marginTop: '0.7rem' }}>
           Reintentar
@@ -40,13 +41,7 @@ export function ErrorBlock({ error, onRetry }: { error: unknown; onRetry?: () =>
   )
 }
 
+/** Mensaje en lenguaje claro para cualquier error (ver lib/api/messages). */
 export function describeError(error: unknown): string {
-  if (isNetworkError(error)) return 'No pudimos conectar con el servidor. Verifica tu conexión e intenta de nuevo.'
-  if (error instanceof ApiError) {
-    if (error.status === 401) return 'Tu sesión venció. Vuelve a iniciar sesión.'
-    if (error.status === 503) return 'El servicio está iniciando o no disponible por ahora. Reintenta en unos segundos.'
-    if (error.status === 429) return 'Demasiadas solicitudes. Espera un momento e inténtalo de nuevo.'
-    return error.messages.join(' ')
-  }
-  return 'Ocurrió un error inesperado.'
+  return friendlyError(error, 'load')
 }

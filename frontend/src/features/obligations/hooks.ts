@@ -59,6 +59,16 @@ export function useUpdateObligation() {
   })
 }
 
+export function useArchiveObligation() {
+  const { user } = useAuth()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.archiveObligation(id),
+    retry: false,
+    onSuccess: (_d, id) => invalidateObligations(qc, user!.id, id),
+  })
+}
+
 export function useOccurrences(obligationId: string | undefined, status?: OccurrenceStatus) {
   const { user } = useAuth()
   return useQuery({

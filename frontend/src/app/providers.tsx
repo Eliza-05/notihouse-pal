@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, type ReactNode } from 'react'
+import { ToastProvider, useToast } from '../components/Toasts'
 import { useAuth } from '../lib/auth/useAuth'
 
 const queryClient = new QueryClient({
@@ -23,15 +24,18 @@ const queryClient = new QueryClient({
 function AuthCacheSync() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const toast = useToast()
   const previousUserId = useRef<string | null>(null)
 
   useEffect(() => {
     const currentUserId = user?.id ?? null
     if (previousUserId.current !== currentUserId) {
       queryClient.clear()
+      // Los avisos flotantes también son de la sesión anterior: no deben verse con otra cuenta.
+      toast.clear()
       previousUserId.current = currentUserId
     }
-  }, [user, queryClient])
+  }, [user, queryClient, toast])
 
   return null
 }
@@ -39,8 +43,10 @@ function AuthCacheSync() {
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthCacheSync />
-      {children}
+      <ToastProvider>
+        <AuthCacheSync />
+        {children}
+      </ToastProvider>
     </QueryClientProvider>
   )
 }

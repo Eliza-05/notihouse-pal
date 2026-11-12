@@ -198,4 +198,5 @@ export const proposalApplicationAction = pgEnum('proposal_application_action', [
   'update_obligation_schedule',
   'update_occurrence_details',
   'create_recurring_rental',
+  'archive_obligation',
 ]);

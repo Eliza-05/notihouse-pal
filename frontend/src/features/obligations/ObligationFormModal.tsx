@@ -1,8 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
-import { ApiError } from '../../lib/api/errors'
+import { useToast } from '../../components/Toasts'
+import { MoneyInput } from '../../components/MoneyInput'
+import { friendlyError } from '../../lib/api/messages'
+import { moneyToDisplay, toWireMoney } from '../../lib/format/cop'
 import { moneyField } from '../../lib/format/validation'
 import { OBLIGATION_CATEGORY_LABELS, OBLIGATION_FREQUENCY_LABELS } from '../../lib/format/labels'
 import { useProperties } from '../properties/hooks'
@@ -34,6 +38,7 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
 
   const {
     register,
+    control,
     handleSubmit,
     watch,
     setError,
@@ -45,7 +50,7 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
       concept: obligation?.concept ?? '',
       category: obligation?.category ?? 'other',
       propertyId: obligation?.propertyId ?? '',
-      expectedAmount: obligation?.expectedAmount ?? '',
+      expectedAmount: moneyToDisplay(obligation?.expectedAmount),
       frequency: obligation?.frequency ?? 'monthly',
       dueDay: obligation?.dueDay != null ? String(obligation.dueDay) : '',
       reminderDaysBefore: obligation ? String(obligation.reminderDaysBefore) : '3',
@@ -57,6 +62,7 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
   const dueDay = watch('dueDay')
   const reminderDaysBefore = watch('reminderDaysBefore')
 
+  const toast = useToast()
   async function onSubmit(values: FormValues) {
     const dueDayNum = values.dueDay ? Number(values.dueDay) : undefined
     const reminderNum = values.reminderDaysBefore ? Number(values.reminderDaysBefore) : undefined
@@ -73,7 +79,7 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
             concept: values.concept,
             category: values.category,
             propertyId: values.propertyId || null,
-            expectedAmount: values.expectedAmount || null,
+            expectedAmount: toWireMoney(values.expectedAmount) ?? null,
             frequency: values.frequency,
             dueDay: dueDayNum ?? null,
             reminderDaysBefore: reminderNum,
@@ -87,7 +93,7 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
           concept: values.concept,
           category: values.category,
           propertyId: values.propertyId || undefined,
-          expectedAmount: values.expectedAmount || undefined,
+          expectedAmount: toWireMoney(values.expectedAmount),
           frequency: values.frequency,
           dueDay: dueDayNum,
           reminderDaysBefore: reminderNum,
@@ -95,9 +101,10 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
           autoGenerate: values.autoGenerate,
         })
       }
+      toast.success(isEdit ? 'Cambios guardados.' : 'Obligación registrada.')
       onClose()
     } catch (err) {
-      if (err instanceof ApiError) setError('providerName', { message: err.messages.join(' ') })
+      setError('providerName', { message: friendlyError(err, 'save') })
     }
   }
 
@@ -145,7 +152,9 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
           </div>
           <div className="field">
             <label htmlFor="expectedAmount">Monto esperado (opcional)</label>
-            <input id="expectedAmount" inputMode="decimal" placeholder="145000.00" {...register('expectedAmount')} />
+            <Controller name="expectedAmount" control={control} render={({ field }) => (
+              <MoneyInput id="expectedAmount" placeholder="145.000" name={field.name} value={field.value} onChange={field.onChange} onBlur={field.onBlur} aria-invalid={!!errors.expectedAmount} />
+            )} />
             {errors.expectedAmount && <span className="field-error">{errors.expectedAmount.message}</span>}
           </div>
           <div className="field">
@@ -195,9 +204,9 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Guardando…' : 'Guardar'}
-          </button>
+          <LoadingButton type="submit" loading={isSubmitting} loadingText="Guardando…">
+            Guardar
+          </LoadingButton>
         </div>
       </form>
     </Modal>

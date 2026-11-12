@@ -1,0 +1,100 @@
+/* Indicadores de carga: spinner, botón con carga y esqueletos. Usa los tokens existentes (tokens.css). */
+
+.nh-spin {
+  display: inline-block;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.85;
+  animation: nh-spin-kf 0.7s linear infinite;
+}
+@keyframes nh-spin-kf {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Botón: el contenido se alinea y el spinner no cambia el alto. */
+.nh-loading-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.nh-loading-btn.is-loading {
+  cursor: progress;
+}
+
+/* Esqueletos */
+.nh-skeleton {
+  display: block;
+  background: var(--accent-soft, rgba(196, 34, 59, 0.1));
+  position: relative;
+  overflow: hidden;
+}
+.nh-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--surface-strong, rgba(255, 255, 255, 0.6)), transparent);
+  animation: nh-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes nh-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.nh-skel-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+.nh-skel-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+}
+.nh-skel-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.nh-skel-table {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.nh-skel-tr {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+.nh-skel-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line, rgba(158, 27, 48, 0.1));
+}
+.nh-skel-stat,
+.nh-skel-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Sin movimiento: se conserva el bloque, se detiene el brillo y el giro se vuelve muy lento. */
+@media (prefers-reduced-motion: reduce) {
+  .nh-skeleton::after {
+    animation: none;
+    display: none;
+  }
+  .nh-spin {
+    animation-duration: 2.4s;
+  }
+}

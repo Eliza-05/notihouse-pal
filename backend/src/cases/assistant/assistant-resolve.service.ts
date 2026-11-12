@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, ilike, inArray, ne } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, inArray, ne } from 'drizzle-orm';
 import { escapeLikePattern } from '../../common/dto-helpers.js';
 import {
   DRIZZLE,
@@ -23,7 +23,11 @@ import {
   type ResolveResponseDto,
 } from './assistant.dto.js';
 import { matchCandidates } from './candidate-matching.js';
-import { reminderDaysBeforeFromAbsoluteDay } from './reminder-conversion.js';
+import {
+  buildScheduleChange,
+  hasScheduleParams,
+  type ScheduleParams,
+} from './schedule-change.js';
 
 const STANDARD_CONSEQUENCES =
   'Aprobar solo confirma. Después debes aplicar. No se cambia ningún pago ya registrado.';
@@ -42,6 +46,10 @@ interface ObligationCandidate {
   expectedAmount: string | null;
   currency: string;
   propertyName: string | null;
+}
+
+interface ArchiveCandidate extends ObligationCandidate {
+  status: 'active' | 'paused' | 'archived';
 }
 
 interface PropertyCandidate {
@@ -137,6 +145,8 @@ export class AssistantResolveService {
         return this.resolveRegisterInvoice(tx, ownerId, extraction);
       case 'update_obligation_schedule':
         return this.resolveUpdateObligationSchedule(tx, ownerId, extraction);
+      case 'archive_obligation':
+        return this.resolveArchiveObligation(tx, ownerId, extraction);
       case 'create_recurring_rental':
         return this.resolveCreateRecurringRental(tx, ownerId, extraction);
       case 'declare_payment':
@@ -441,72 +451,71 @@ export class AssistantResolveService {
     ownerId: string,
     extraction: ExtractionDto,
   ): Promise<ResolveResponseDto> {
-    if (!extraction.providerName) {
+    if (
+      !extraction.providerName &&
+      !extraction.concept &&
+      !extraction.category
+    ) {
       return needsCompletion(
         ['providerName'],
-        'No sé a qué obligación te refieres: indica el proveedor.',
+        'No sé a qué obligación te refieres: indica el proveedor o el servicio.',
       );
     }
-    const hasChange =
-      extraction.dueDay != null ||
-      extraction.reminderDaysBefore != null ||
-      extraction.reminderDay != null ||
-      extraction.amount != null;
-    if (!hasChange) {
+    const params: ScheduleParams = {
+      dueDay: extraction.dueDay,
+      reminderDaysBefore: extraction.reminderDaysBefore,
+      reminderDay: extraction.reminderDay,
+      amount: extraction.amount,
+    };
+    if (!hasScheduleParams(params)) {
       return needsCompletion(
         ['changes'],
         'No identifiqué qué quieres cambiar (día, aviso o monto).',
       );
     }
-    const candidates = await this.findObligationCandidates(
+    const candidates = await this.findArchiveCandidates(
       tx,
       ownerId,
-      extraction.providerName,
-      extraction.propertyName,
+      extraction,
+      false,
     );
     const match = matchCandidates(candidates);
     if (match.kind === 'none') {
       return needsCompletion(
         ['obligationId'],
-        `No encontré ninguna obligación propia que coincida con "${extraction.providerName}".`,
+        'No encontré ninguna obligación propia que coincida con lo que indicaste.',
       );
     }
     if (match.kind === 'many') {
-      return needsChoiceFromObligations(
-        match.candidates,
-        `Varias obligaciones coinciden con "${extraction.providerName}". ¿Cuál es?`,
-      );
+      return {
+        ...needsChoiceFromObligations(
+          match.candidates,
+          'Varias obligaciones coinciden con tu mensaje. ¿Cuál quieres modificar?',
+          true,
+        ),
+        continuation: {
+          intent: 'update_obligation_schedule',
+          params: {
+            ...(params.dueDay != null ? { dueDay: params.dueDay } : {}),
+            ...(params.reminderDaysBefore != null
+              ? { reminderDaysBefore: params.reminderDaysBefore }
+              : {}),
+            ...(params.reminderDay != null
+              ? { reminderDay: params.reminderDay }
+              : {}),
+            ...(params.amount != null ? { amount: params.amount } : {}),
+          },
+        },
+        consequences:
+          'Elegir una no cambia nada todavía: después deberás aprobar y aplicar el cambio sobre esa obligación.',
+      };
     }
 
     const obligation = match.candidate;
-    const warnings: string[] = [];
-    const expected: Record<string, unknown> = {};
-    const changes: Record<string, unknown> = {};
-    if (extraction.dueDay != null) {
-      expected.dueDay = obligation.dueDay;
-      changes.dueDay = extraction.dueDay;
-    }
-    if (extraction.reminderDaysBefore != null) {
-      expected.reminderDaysBefore = obligation.reminderDaysBefore;
-      changes.reminderDaysBefore = extraction.reminderDaysBefore;
-    } else if (extraction.reminderDay != null) {
-      const targetDueDay = extraction.dueDay ?? obligation.dueDay;
-      if (targetDueDay == null) {
-        warnings.push(
-          'No se pudo convertir el aviso porque la obligación no tiene día de vencimiento',
-        );
-      } else {
-        expected.reminderDaysBefore = obligation.reminderDaysBefore;
-        changes.reminderDaysBefore = reminderDaysBeforeFromAbsoluteDay(
-          targetDueDay,
-          extraction.reminderDay,
-        );
-      }
-    }
-    if (extraction.amount != null) {
-      expected.expectedAmount = obligation.expectedAmount;
-      changes.expectedAmount = extraction.amount;
-    }
+    const { expected, changes, warnings } = buildScheduleChange(
+      obligation,
+      params,
+    );
     if (Object.keys(changes).length === 0) {
       return needsCompletion(
         ['changes'],
@@ -525,6 +534,175 @@ export class AssistantResolveService {
       summary: `Cambiar la agenda de ${obligation.providerName}${obligation.propertyName ? ` (${obligation.propertyName})` : ''}.`,
       consequences: STANDARD_CONSEQUENCES,
     };
+  }
+
+  // -------------------------------------------------------- archive (A-7+)
+
+  /**
+   * Candidatas para archivar: por proveedor y/o concepto y/o categoría
+   * ("elimina el internet" no trae proveedor). Solo del propietario. Con
+   * `archived = true` se detecta que ya estaba archivada.
+   */
+  private async findArchiveCandidates(
+    tx: DbTransaction,
+    ownerId: string,
+    extraction: ExtractionDto,
+    archived: boolean,
+  ): Promise<ArchiveCandidate[]> {
+    const filters = [
+      eq(obligations.ownerId, ownerId),
+      archived
+        ? eq(obligations.status, 'archived')
+        : ne(obligations.status, 'archived'),
+    ];
+    if (extraction.providerName) {
+      filters.push(
+        ilike(
+          obligations.providerName,
+          `%${escapeLikePattern(extraction.providerName)}%`,
+        ),
+      );
+    }
+    if (extraction.concept) {
+      filters.push(
+        ilike(obligations.concept, `%${escapeLikePattern(extraction.concept)}%`),
+      );
+    }
+    if (extraction.category) {
+      filters.push(eq(obligations.category, extraction.category));
+    }
+    const rows = await tx
+      .select({
+        id: obligations.id,
+        providerName: obligations.providerName,
+        concept: obligations.concept,
+        propertyId: obligations.propertyId,
+        dueDay: obligations.dueDay,
+        reminderDaysBefore: obligations.reminderDaysBefore,
+        expectedAmount: obligations.expectedAmount,
+        currency: obligations.currency,
+        propertyName: properties.name,
+        status: obligations.status,
+      })
+      .from(obligations)
+      .leftJoin(properties, eq(properties.id, obligations.propertyId))
+      .where(and(...filters))
+      .orderBy(asc(obligations.providerName), asc(obligations.id))
+      .limit(20);
+    if (!extraction.propertyName) return rows;
+    const wanted = extraction.propertyName.toLowerCase();
+    const scoped = rows.filter((r) =>
+      r.propertyName?.toLowerCase().includes(wanted),
+    );
+    return scoped.length > 0 ? scoped : rows;
+  }
+
+  /**
+   * `archive_obligation`: NUNCA borra. Sin ningún dato para identificarla →
+   * pide completar; varias coincidencias → alternativas reales (nunca elige);
+   * una sola → propuesta aplicable (la aprobación y la aplicación siguen
+   * siendo de la persona). Una coincidencia aproximada no basta: debe ser
+   * única entre las obligaciones propias no archivadas.
+   */
+  private async resolveArchiveObligation(
+    tx: DbTransaction,
+    ownerId: string,
+    extraction: ExtractionDto,
+  ): Promise<ResolveResponseDto> {
+    if (
+      !extraction.providerName &&
+      !extraction.concept &&
+      !extraction.category
+    ) {
+      return needsCompletion(
+        ['obligationId'],
+        'No sé qué obligación quieres archivar: indica el proveedor o el servicio.',
+      );
+    }
+    const candidates = await this.findArchiveCandidates(
+      tx,
+      ownerId,
+      extraction,
+      false,
+    );
+    const match = matchCandidates(candidates);
+    if (match.kind === 'none') {
+      const already = await this.findArchiveCandidates(
+        tx,
+        ownerId,
+        extraction,
+        true,
+      );
+      if (already.length > 0) {
+        return {
+          outcome: 'informational',
+          proposedData: null,
+          choices: [],
+          missing: [],
+          warnings: [],
+          summary: `La obligación de ${already[0]!.providerName} ya estaba archivada; no hay nada que cambiar.`,
+          consequences: INFORMATIONAL_CONSEQUENCES,
+        };
+      }
+      return needsCompletion(
+        ['obligationId'],
+        'No encontré ninguna obligación propia que coincida con lo que indicaste.',
+      );
+    }
+    if (match.kind === 'many') {
+      return {
+        ...needsChoiceFromObligations(
+          match.candidates,
+          'Varias obligaciones coinciden con tu mensaje. ¿Cuál quieres archivar?',
+          true,
+        ),
+        continuation: { intent: 'archive_obligation' as const },
+        consequences:
+          'Elegir una no archiva nada todavía: después deberás aprobar y aplicar el archivado de esa obligación.',
+      };
+    }
+    const obligation = match.candidate;
+    const pending = await this.countOpenOccurrences(
+      tx,
+      ownerId,
+      obligation.id,
+    );
+    return {
+      outcome: 'applicable',
+      proposedData: {
+        action: 'archive_obligation',
+        data: {
+          obligationId: obligation.id,
+          expected: {
+            providerName: obligation.providerName,
+            concept: obligation.concept,
+          },
+        },
+      },
+      choices: [],
+      missing: [],
+      warnings: archiveWarnings(pending),
+      summary: archiveSummary(obligation),
+      consequences: ARCHIVE_CONSEQUENCES,
+    };
+  }
+
+  private async countOpenOccurrences(
+    tx: DbTransaction,
+    ownerId: string,
+    obligationId: string,
+  ): Promise<number> {
+    const [row] = await tx
+      .select({ n: count() })
+      .from(obligationOccurrences)
+      .where(
+        and(
+          eq(obligationOccurrences.obligationId, obligationId),
+          eq(obligationOccurrences.ownerId, ownerId),
+          inArray(obligationOccurrences.status, ['pending', 'overdue']),
+        ),
+      );
+    return row?.n ?? 0;
   }
 
   // ----------------------------------------------------------------- rentals
@@ -827,16 +1005,43 @@ function needsCompletion(missing: string[], summary: string): ResolveResponseDto
   };
 }
 
+const ARCHIVE_CONSEQUENCES =
+  'Aprobar solo confirma. Después debes aplicar para archivarla. Se conserva todo el historial y los períodos pendientes no cambian.';
+
+function archiveSummary(o: ObligationCandidate): string {
+  return `Archivar la obligación de ${o.providerName} (${o.concept})${o.propertyName ? ` de ${o.propertyName}` : ''}. Dejará de generar nuevos períodos; el historial se conserva.`;
+}
+
+function archiveWarnings(pending: number): string[] {
+  if (pending === 0) return [];
+  return [
+    pending === 1
+      ? 'Tiene 1 período pendiente que se conserva sin cambios y seguirás viendo hasta que lo resuelvas.'
+      : `Tiene ${pending} períodos pendientes que se conservan sin cambios y seguirás viendo hasta que los resuelvas.`,
+  ];
+}
+
+function moneyLabel(amount: string | null, currency: string): string {
+  if (amount == null) return '';
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return '';
+  const body = new Intl.NumberFormat('es-CO', {
+    maximumFractionDigits: 2,
+  }).format(n);
+  return ` · $${body}${currency === 'COP' ? '' : ` ${currency}`}`;
+}
+
 function needsChoiceFromObligations(
   candidates: ObligationCandidate[],
   summary: string,
+  withAmount = false,
 ): ResolveResponseDto {
   return {
     outcome: 'needs_choice',
     proposedData: null,
     choices: candidates.map((o) => ({
       key: o.id,
-      label: `${o.providerName} · ${o.concept}${o.propertyName ? ` · ${o.propertyName}` : ''}`,
+      label: `${o.providerName} · ${o.concept}${o.propertyName ? ` · ${o.propertyName}` : ''}${withAmount ? moneyLabel(o.expectedAmount, o.currency) : ''}`,
     })),
     missing: [],
     warnings: [],

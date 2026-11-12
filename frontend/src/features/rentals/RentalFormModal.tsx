@@ -1,8 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
-import { ApiError } from '../../lib/api/errors'
+import { useToast } from '../../components/Toasts'
+import { friendlyError } from '../../lib/api/messages'
+import { MoneyInput } from '../../components/MoneyInput'
+import { moneyToDisplay, toWireMoney } from '../../lib/format/cop'
 import { calendarDateField, positiveMoneyField } from '../../lib/format/validation'
 import { useProperties } from '../properties/hooks'
 import { useCreateRental, useUpdateRental } from './hooks'
@@ -28,6 +32,7 @@ export function RentalFormModal({ rental, onClose }: { rental?: Rental; onClose:
   const { data: properties } = useProperties({ pageSize: 100, status: 'active' })
   const {
     register,
+    control,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
@@ -36,7 +41,7 @@ export function RentalFormModal({ rental, onClose }: { rental?: Rental; onClose:
     defaultValues: {
       propertyId: rental?.propertyId ?? '',
       tenantAlias: rental?.tenantAlias ?? '',
-      expectedAmount: rental?.expectedAmount ?? '',
+      expectedAmount: moneyToDisplay(rental?.expectedAmount),
       dueDay: rental ? String(rental.dueDay) : '',
       startsOn: rental?.startsOn ?? '',
       endsOn: rental?.endsOn ?? '',
@@ -44,6 +49,7 @@ export function RentalFormModal({ rental, onClose }: { rental?: Rental; onClose:
     },
   })
 
+  const toast = useToast()
   async function onSubmit(values: FormValues) {
     try {
       if (isEdit) {
@@ -51,7 +57,7 @@ export function RentalFormModal({ rental, onClose }: { rental?: Rental; onClose:
           id: rental.id,
           input: {
             tenantAlias: values.tenantAlias || null,
-            expectedAmount: values.expectedAmount,
+            expectedAmount: toWireMoney(values.expectedAmount)!,
             dueDay: Number(values.dueDay),
             startsOn: values.startsOn,
             endsOn: values.endsOn || null,
@@ -62,16 +68,17 @@ export function RentalFormModal({ rental, onClose }: { rental?: Rental; onClose:
         await create.mutateAsync({
           propertyId: values.propertyId,
           tenantAlias: values.tenantAlias || undefined,
-          expectedAmount: values.expectedAmount,
+          expectedAmount: toWireMoney(values.expectedAmount)!,
           dueDay: Number(values.dueDay),
           startsOn: values.startsOn,
           endsOn: values.endsOn || undefined,
           autoGenerate: values.autoGenerate,
         })
       }
+      toast.success(isEdit ? 'Cambios guardados.' : 'Arriendo registrado.')
       onClose()
     } catch (err) {
-      if (err instanceof ApiError) setError('propertyId', { message: err.messages.join(' ') })
+      setError('propertyId', { message: friendlyError(err, 'save') })
     }
   }
 
@@ -97,7 +104,9 @@ export function RentalFormModal({ rental, onClose }: { rental?: Rental; onClose:
           </div>
           <div className="field">
             <label htmlFor="expectedAmount">Canon mensual</label>
-            <input id="expectedAmount" inputMode="decimal" placeholder="950000.00" {...register('expectedAmount')} />
+            <Controller name="expectedAmount" control={control} render={({ field }) => (
+              <MoneyInput id="expectedAmount" placeholder="950.000" name={field.name} value={field.value} onChange={field.onChange} onBlur={field.onBlur} aria-invalid={!!errors.expectedAmount} />
+            )} />
             {errors.expectedAmount && <span className="field-error">{errors.expectedAmount.message}</span>}
           </div>
           <div className="field">
@@ -126,9 +135,9 @@ export function RentalFormModal({ rental, onClose }: { rental?: Rental; onClose:
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Guardando…' : 'Guardar'}
-          </button>
+          <LoadingButton type="submit" loading={isSubmitting} loadingText="Guardando…">
+            Guardar
+          </LoadingButton>
         </div>
       </form>
     </Modal>

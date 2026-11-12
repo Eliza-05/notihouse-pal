@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { SkeletonTable } from '../../components/Feedback'
+import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { Pagination } from '../../components/Pagination'
 import { formatCalendarDate } from '../../lib/format/dates'
 import { ALERT_SEVERITY_LABELS, ALERT_STATE_LABELS, ALERT_TYPE_LABELS, label } from '../../lib/format/labels'
 import { resourcePathToRoute } from '../../lib/navigation'
 import { ApiError } from '../../lib/api/errors'
+import { friendlyError } from '../../lib/api/messages'
 import { useAlerts, useDismissAlert, useMarkAlertRead } from './hooks'
 import type { Alert, AlertState } from '../../lib/api/types'
 
@@ -45,7 +47,7 @@ export function AlertsPage() {
         setDismissError('Ya no requiere atención: se actualizó.')
         void refetch()
       } else {
-        setDismissError('No se pudo descartar la alerta.')
+        setDismissError(friendlyError(err, 'save'))
       }
     }
   }
@@ -78,7 +80,7 @@ export function AlertsPage() {
 
       {dismissError && <p role="alert" className="field-error">{dismissError}</p>}
 
-      {isLoading && <LoadingBlock label="Cargando alertas…" />}
+      {isLoading && <SkeletonTable rows={5} cols={5} label="Cargando alertas…" />}
       {isError && <ErrorBlock error={error} onRetry={refetch} />}
       {!isLoading && !isError && data && data.items.length === 0 && (
         <EmptyBlock

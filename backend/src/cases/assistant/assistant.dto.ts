@@ -22,6 +22,7 @@ export const EXTRACTION_INTENTS = [
   'create_recurring_obligation',
   'register_invoice',
   'update_obligation_schedule',
+  'archive_obligation',
   'create_recurring_rental',
   'declare_payment',
   'declare_rent_received',
@@ -176,6 +177,19 @@ export class ResolveCaseDto extends ClaimReferenceDto {
   extraction: ExtractionDto;
 }
 
+/** Continuación de una solicitud ambigua (A-7): qué hacer con la alternativa elegida. */
+export type ResolveContinuation =
+  | { intent: 'archive_obligation' }
+  | {
+      intent: 'update_obligation_schedule';
+      params: {
+        dueDay?: number;
+        reminderDaysBefore?: number;
+        reminderDay?: number;
+        amount?: string;
+      };
+    };
+
 export class ResolveChoiceDto {
   @ApiProperty({ example: 'a' })
   key: string;
@@ -198,6 +212,13 @@ export class ResolveResponseDto {
 
   @ApiProperty({ type: [ResolveChoiceDto] })
   choices: ResolveChoiceDto[];
+
+  @ApiPropertyOptional({
+    type: Object,
+    description:
+      'Solo con needs_choice: operación y parámetros que el BACKEND (nunca la IA) continuará cuando la persona elija una alternativa',
+  })
+  continuation?: ResolveContinuation;
 
   @ApiProperty({ type: [String] })
   missing: string[];

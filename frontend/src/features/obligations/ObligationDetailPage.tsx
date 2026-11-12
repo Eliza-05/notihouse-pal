@@ -1,14 +1,17 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
+import { SkeletonCard, SkeletonTable } from '../../components/Feedback'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
-import { formatCalendarDate, describeDueDate } from '../../lib/format/dates'
+import { formatCalendarDate, formatPeriod, describeDueDate } from '../../lib/format/dates'
 import { formatMoney } from '../../lib/format/money'
-import { OBLIGATION_CATEGORY_LABELS, OBLIGATION_STATUS_LABELS, OCCURRENCE_STATUS_LABELS, label } from '../../lib/format/labels'
+import { OBLIGATION_CATEGORY_LABELS, OBLIGATION_FREQUENCY_LABELS, OBLIGATION_STATUS_LABELS, OCCURRENCE_STATUS_LABELS, label } from '../../lib/format/labels'
 import { useObligation, useOccurrences } from './hooks'
+import { isRecurring, obligationAmountRow } from './presentation'
 import { ObligationFormModal } from './ObligationFormModal'
 import { OccurrenceFormModal } from './OccurrenceFormModal'
 import { ConfirmOccurrenceModal } from './ConfirmOccurrenceModal'
+import { ArchiveObligationModal } from './ArchiveObligationModal'
 import type { ObligationOccurrence } from '../../lib/api/types'
 
 const OPEN_STATUSES = new Set(['pending', 'overdue'])
@@ -21,9 +24,14 @@ export function ObligationDetailPage() {
   const [creatingOcc, setCreatingOcc] = useState(false)
   const [editingOcc, setEditingOcc] = useState<ObligationOccurrence | null>(null)
   const [confirming, setConfirming] = useState<ObligationOccurrence | null>(null)
+  const [archiving, setArchiving] = useState(false)
 
-  if (isLoading) return <LoadingBlock label="Cargando obligación…" />
+  if (isLoading) return <SkeletonCard lines={5} label="Cargando obligación…" />
   if (isError || !obligation) return <ErrorBlock error={error} onRetry={refetch} />
+
+  const amountRow = obligationAmountRow(obligation, occurrences?.items)
+  const recurring = isRecurring(obligation)
+  const openCount = (occurrences?.items ?? []).filter((o) => OPEN_STATUSES.has(o.status)).length
 
   return (
     <div className="stack">
@@ -35,8 +43,25 @@ export function ObligationDetailPage() {
             {obligation.concept} · {label(OBLIGATION_CATEGORY_LABELS, obligation.category)}
           </p>
         </div>
-        <StatusBadge label={label(OBLIGATION_STATUS_LABELS, obligation.status)} tone={toneFor.obligation(obligation.status)} />
+        <div className="row">
+          <StatusBadge label={label(OBLIGATION_STATUS_LABELS, obligation.status)} tone={toneFor.obligation(obligation.status)} />
+          {obligation.status !== 'archived' && (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArchiving(true)}>
+              Archivar obligación
+            </button>
+          )}
+        </div>
       </div>
+
+      {obligation.status === 'archived' && (
+        <div className="card" role="status">
+          <p style={{ margin: 0 }}>
+            <strong>Esta obligación está archivada.</strong> Ya no genera períodos nuevos y no admite cambios. Conservamos su historial para que puedas consultarlo.
+            {openCount > 0 &&
+              ` Tiene ${openCount} período${openCount === 1 ? '' : 's'} sin resolver que sigue${openCount === 1 ? '' : 'n'} visible${openCount === 1 ? '' : 's'} hasta que ${openCount === 1 ? 'lo' : 'los'} confirmes o anules.`}
+          </p>
+        </div>
+      )}
 
       <div className="card">
         <div className="row-between">
@@ -49,16 +74,28 @@ export function ObligationDetailPage() {
         </div>
         <div className="form-grid">
           <p>
-            <strong>Monto esperado:</strong> {formatMoney(obligation.expectedAmount, obligation.currency)}
+            <strong>{amountRow.label}:</strong> {amountRow.value}
+          </p>
+          {(recurring || obligation.dueDay !== null) && (
+            <p>
+              <strong>Día de vencimiento:</strong> {obligation.dueDay ? `el día ${obligation.dueDay} de cada ciclo` : '—'}
+            </p>
+          )}
+          {recurring && (
+            <p>
+              <strong>Se repite:</strong> {label(OBLIGATION_FREQUENCY_LABELS, obligation.frequency)}
+            </p>
+          )}
+          <p>
+            <strong>Aviso:</strong> {obligation.reminderDaysBefore} día(s) antes del vencimiento
           </p>
           <p>
-            <strong>Día de vencimiento:</strong> {obligation.dueDay ?? '—'}
-          </p>
-          <p>
-            <strong>Aviso:</strong> {obligation.reminderDaysBefore} día(s) antes
-          </p>
-          <p>
-            <strong>Generación automática:</strong> {obligation.autoGenerate ? 'Activa' : 'Inactiva'}
+            <strong>Generación automática:</strong>{' '}
+            {obligation.status === 'archived'
+              ? 'Detenida: la obligación está archivada.'
+              : recurring
+                ? 'Activa: los próximos períodos se crean solos.'
+                : 'Inactiva: cada período se registra manualmente.'}
           </p>
         </div>
       </div>
@@ -73,7 +110,7 @@ export function ObligationDetailPage() {
           )}
         </div>
 
-        {loadingOcc && <LoadingBlock label="Cargando períodos…" />}
+        {loadingOcc && <SkeletonTable rows={2} cols={5} label="Cargando períodos…" />}
         {!loadingOcc && occurrences && occurrences.items.length === 0 && (
           <EmptyBlock title="Esta obligación aún no tiene períodos" />
         )}
@@ -95,7 +132,7 @@ export function ObligationDetailPage() {
                   return (
                     <tr key={occ.id}>
                       <td>
-                        {formatCalendarDate(occ.periodStart)} – {formatCalendarDate(occ.periodEnd)}
+                        {formatPeriod(occ.periodStart, occ.periodEnd)}
                       </td>
                       <td>
                         {formatCalendarDate(occ.dueDate)}
@@ -117,7 +154,7 @@ export function ObligationDetailPage() {
                               Editar
                             </button>
                             <button type="button" className="btn btn-primary btn-sm" onClick={() => setConfirming(occ)}>
-                              Confirmar
+                              Confirmar pago
                             </button>
                           </>
                         )}
@@ -138,6 +175,9 @@ export function ObligationDetailPage() {
       )}
       {confirming && (
         <ConfirmOccurrenceModal obligationId={obligation.id} occurrence={confirming} onClose={() => setConfirming(null)} />
+      )}
+      {archiving && (
+        <ArchiveObligationModal obligation={obligation} openCount={openCount} onClose={() => setArchiving(false)} />
       )}
     </div>
   )

@@ -79,9 +79,17 @@ export const CASE_STATUS_LABELS: Record<string, string> = {
   received: 'Recibido (en cola)',
   processing: 'En proceso',
   awaiting_human: 'Esperando tu decisión',
-  completed: 'Completado',
+  completed: 'Cerrado',
   failed: 'Fallido',
   cancelled: 'Cancelado',
+}
+
+export const DOCUMENT_SOURCE_LABELS: Record<string, string> = {
+  document: 'Subido por ti',
+  gmail: 'Correo',
+  voice: 'Nota de voz',
+  form: 'Formulario',
+  text: 'Asistente',
 }
 
 export const DOCUMENT_TYPE_LABELS: Record<string, string> = {

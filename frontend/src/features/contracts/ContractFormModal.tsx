@@ -1,8 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
-import { ApiError } from '../../lib/api/errors'
+import { useToast } from '../../components/Toasts'
+import { friendlyError } from '../../lib/api/messages'
 import { calendarDateField } from '../../lib/format/validation'
 import { useProperties } from '../properties/hooks'
 import { useRentals } from '../rentals/hooks'
@@ -44,6 +46,7 @@ export function ContractFormModal({ contract, onClose }: { contract?: Contract; 
   const propertyId = watch('propertyId')
   const { data: rentals } = useRentals({ propertyId: propertyId || undefined, pageSize: 50 })
 
+  const toast = useToast()
   async function onSubmit(values: FormValues) {
     const notice = values.noticePeriodDays ? Number(values.noticePeriodDays) : undefined
     try {
@@ -61,9 +64,10 @@ export function ContractFormModal({ contract, onClose }: { contract?: Contract; 
           noticePeriodDays: notice,
         })
       }
+      toast.success(isEdit ? 'Cambios guardados.' : 'Contrato registrado.')
       onClose()
     } catch (err) {
-      if (err instanceof ApiError) setError('endsOn', { message: err.messages.join(' ') })
+      setError('endsOn', { message: friendlyError(err, 'save') })
     }
   }
 
@@ -116,9 +120,9 @@ export function ContractFormModal({ contract, onClose }: { contract?: Contract; 
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Guardando…' : 'Guardar'}
-          </button>
+          <LoadingButton type="submit" loading={isSubmitting} loadingText="Guardando…">
+            Guardar
+          </LoadingButton>
         </div>
       </form>
     </Modal>

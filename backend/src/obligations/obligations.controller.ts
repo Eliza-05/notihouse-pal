@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -23,6 +24,7 @@ import type { AuthenticatedUser } from '../auth/authenticated-user.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { CorrelationId } from '../common/correlation-id.decorator.js';
 import {
+  ArchiveObligationResponseDto,
   CreateObligationDto,
   ListObligationsQueryDto,
   ObligationPageDto,
@@ -97,5 +99,21 @@ export class ObligationsController {
     @Body() dto: UpdateObligationDto,
   ) {
     return this.service.update(user, correlationId, id, dto);
+  }
+  @Post(':id/archive')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Archivar la obligación (no genera más períodos; conserva el historial y los períodos pendientes)',
+  })
+  @ApiOkResponse({ type: ArchiveObligationResponseDto })
+  @ApiNotFoundResponse({ description: 'Inexistente o de otro propietario' })
+  @ApiConflictResponse({ description: 'La obligación ya estaba archivada' })
+  archive(
+    @CurrentUser() user: AuthenticatedUser,
+    @CorrelationId() correlationId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.service.archive(user, correlationId, id);
   }
 }

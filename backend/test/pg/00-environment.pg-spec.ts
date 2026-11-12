@@ -169,6 +169,7 @@ describe('B. Migraciones reproducidas en PostgreSQL 18 real', () => {
       '0002_alerts_and_proposal_applications',
       '0003_auto_generate_recurrence',
       '0004_proposal_actions_expansion',
+      '0005_archive_obligation_action',
     ]);
     const applied = await owner.query<{ hash: string }>(
       `SELECT hash FROM drizzle.__drizzle_migrations ORDER BY created_at`,

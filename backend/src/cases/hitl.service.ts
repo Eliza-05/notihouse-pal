@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, count, desc, eq, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service.js';
 import {
   type ProcessActor,
@@ -18,7 +18,12 @@ import {
   type Database,
   type DbTransaction,
 } from '../database/database.constants.js';
-import { caseProposals, hitlRequests } from '../database/schema/index.js';
+import {
+  caseProposals,
+  hitlRequests,
+  obligationOccurrences,
+  obligations,
+} from '../database/schema/index.js';
 import { WorkflowJobsService } from '../integrations/workflow-jobs.service.js';
 import {
   type CaseRow,
@@ -27,7 +32,9 @@ import {
   lockCase,
   transitionCase,
 } from './case-lifecycle.js';
-import { proposalColumns } from './cases.service.js';
+import { buildScheduleChange, type ScheduleParams } from './assistant/schedule-change.js';
+import { proposalReadColumns } from './cases.service.js';
+import { parseProposalAction } from './proposal-actions.js';
 import type {
   DecideHitlDto,
   HitlDetailDto,
@@ -61,11 +68,38 @@ interface StoredDecision {
   outcome: HitlOutcome;
   choice?: string;
   comment?: string;
+  /** Revisión de aprobación creada por el backend tras elegir (archivado). */
+  followUpRequestId?: string;
 }
 
 interface StoredOptions {
   summary?: string;
   choices?: { key: string; label: string }[];
+  context?: Record<string, unknown>;
+}
+
+/** Intenciones que el backend continúa tras elegir una alternativa (A-7). */
+const CONTINUATION_INTENTS = [
+  'archive_obligation',
+  'update_obligation_schedule',
+] as const;
+type ContinuationIntent = (typeof CONTINUATION_INTENTS)[number];
+
+function continuationOf(options: StoredOptions): {
+  intent: ContinuationIntent;
+  params: ScheduleParams;
+} | null {
+  const raw = options.context?.continuation;
+  if (!raw || typeof raw !== 'object') return null;
+  const { intent, params } = raw as { intent?: unknown; params?: unknown };
+  if (!(CONTINUATION_INTENTS as readonly unknown[]).includes(intent)) {
+    return null;
+  }
+  return {
+    intent: intent as ContinuationIntent,
+    params:
+      params && typeof params === 'object' ? (params as ScheduleParams) : {},
+  };
 }
 
 /**
@@ -230,6 +264,30 @@ export class HitlService {
           dto.decision,
         );
       }
+      // A-7 (archivado): elegir una alternativa NO archiva nada. El backend
+      // revalida la obligación elegida contra el propietario y crea una
+      // propuesta `archive_obligation` con su propia revisión de aprobación.
+      let finalRow = row;
+      let followUpRequestId: string | null = null;
+      const continuation = continuationOf(current!.options as StoredOptions);
+      if (dto.decision === 'approved' && decision.choice && continuation) {
+        followUpRequestId = await this.continueSelection(
+          tx,
+          actor,
+          event,
+          caseRow,
+          user,
+          decision.choice,
+          id,
+          continuation,
+        );
+        const withFollowUp = { ...decision, followUpRequestId };
+        await tx
+          .update(hitlRequests)
+          .set({ decision: withFollowUp })
+          .where(eq(hitlRequests.id, id));
+        finalRow = { ...row, decision: withFollowUp };
+      }
       if (
         caseRow.status === 'awaiting_human' &&
         !(await hasPendingHitl(tx, caseRow.id))
@@ -237,6 +295,9 @@ export class HitlService {
         await transitionCase(tx, this.audit, caseRow, 'processing', actor);
       }
       // n8n conoce la decisión por polling; el trabajo no ejecuta nada por sí mismo.
+      // Con continuación el caso sigue abierto (nueva revisión pendiente): el
+      // cierre lo provoca la decisión sobre esa revisión, no esta elección.
+      if (followUpRequestId) return { row: finalRow } as const;
       await this.jobs.enqueue(tx, actor, {
         caseId: caseRow.id,
         ownerId: caseRow.ownerId,
@@ -251,7 +312,7 @@ export class HitlService {
           proposalId: row.proposalId,
         },
       });
-      return { row } as const;
+      return { row: finalRow } as const;
     });
 
     if ('expired' in outcome) throw new ConflictException(HITL_EXPIRED);
@@ -347,6 +408,174 @@ export class HitlService {
     return true;
   }
 
+  /**
+   * Continuación segura del archivado tras elegir entre varias obligaciones.
+   * La clave elegida debe ser un UUID de una obligación del PROPIETARIO que
+   * siga sin archivar (se vuelve a comprobar aquí, no se confía en la lista
+   * guardada). Crea la propuesta específica y su revisión de aprobación; no
+   * archiva nada: eso solo ocurre al aprobar y aplicar esa revisión.
+   */
+  private async continueSelection(
+    tx: DbTransaction,
+    actor: ProcessActor & { kind: 'user' },
+    event: { ownerId: string; correlationId: string; component: string },
+    caseRow: CaseRow,
+    user: AuthenticatedUser,
+    choiceKey: string,
+    choiceRequestId: string,
+    continuation: { intent: ContinuationIntent; params: ScheduleParams },
+  ): Promise<string> {
+    const unavailable = new ConflictException(
+      'La alternativa elegida ya no está disponible (cambió o ya fue archivada). Rechaza esta revisión y vuelve a pedirlo.',
+    );
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(choiceKey)) {
+      throw unavailable;
+    }
+    const [obligation] = await tx
+      .select({
+        id: obligations.id,
+        providerName: obligations.providerName,
+        concept: obligations.concept,
+        status: obligations.status,
+        dueDay: obligations.dueDay,
+        reminderDaysBefore: obligations.reminderDaysBefore,
+        expectedAmount: obligations.expectedAmount,
+      })
+      .from(obligations)
+      .where(
+        and(
+          eq(obligations.id, choiceKey),
+          eq(obligations.ownerId, user.profileId),
+          ne(obligations.status, 'archived'),
+        ),
+      )
+      .for('update');
+    if (!obligation) throw unavailable;
+    const [{ n: pending }] = await tx
+      .select({ n: count() })
+      .from(obligationOccurrences)
+      .where(
+        and(
+          eq(obligationOccurrences.obligationId, obligation.id),
+          eq(obligationOccurrences.ownerId, user.profileId),
+          sql`${obligationOccurrences.status} IN ('pending', 'overdue')`,
+        ),
+      );
+    // La propuesta la construye el BACKEND con la obligación revalidada.
+    let proposedData: { action: string; data: Record<string, unknown> };
+    let summary: string;
+    let consequences: string;
+    const warnings: string[] = [];
+    if (continuation.intent === 'archive_obligation') {
+      proposedData = {
+        action: 'archive_obligation',
+        data: {
+          obligationId: obligation.id,
+          expected: {
+            providerName: obligation.providerName,
+            concept: obligation.concept,
+          },
+        },
+      };
+      summary = `Archivar la obligación de ${obligation.providerName} (${obligation.concept}). Dejará de generar nuevos períodos; el historial se conserva.`;
+      consequences =
+        'Aprobar solo confirma. Después debes aplicar para archivarla. Se conserva todo el historial y los períodos pendientes no cambian.';
+      if (pending > 0) {
+        warnings.push(
+          pending === 1
+            ? 'Tiene 1 período pendiente que se conserva sin cambios y seguirás viendo hasta que lo resuelvas.'
+            : `Tiene ${pending} períodos pendientes que se conservan sin cambios y seguirás viendo hasta que los resuelvas.`,
+        );
+      }
+    } else {
+      const change = buildScheduleChange(obligation, continuation.params);
+      if (Object.keys(change.changes).length === 0) throw unavailable;
+      proposedData = {
+        action: 'update_obligation_schedule',
+        data: {
+          obligationId: obligation.id,
+          expected: change.expected,
+          changes: change.changes,
+        },
+      };
+      summary = `Cambiar la agenda de ${obligation.providerName} (${obligation.concept}).`;
+      consequences =
+        'Aprobar solo confirma. Después debes aplicar. No se cambia ningún pago ya registrado.';
+      warnings.push(...change.warnings);
+    }
+    // Misma validación estricta que al aplicar: una propuesta inválida no se crea.
+    await parseProposalAction(proposedData);
+    const [latest] = await tx
+      .select({ version: caseProposals.version })
+      .from(caseProposals)
+      .where(eq(caseProposals.caseId, caseRow.id))
+      .orderBy(desc(caseProposals.version))
+      .limit(1);
+    const [proposal] = await tx
+      .insert(caseProposals)
+      .values({
+        caseId: caseRow.id,
+        ownerId: caseRow.ownerId,
+        version: (latest?.version ?? 0) + 1,
+        source: 'user',
+        proposedData,
+        evidence: {
+          kind: 'seleccion',
+          origen: 'eleccion_de_alternativa',
+          choiceRequestId,
+        },
+        reviewStatus: 'pending_review',
+      })
+      .returning({ id: caseProposals.id, version: caseProposals.version });
+    await recordProcessEvent(this.audit, tx, actor, {
+      ...event,
+      action: 'case_proposal.create',
+      resource: 'case_proposal',
+      resourceId: proposal!.id,
+      details: {
+        caseId: caseRow.id,
+        version: proposal!.version,
+        source: 'user',
+        action: continuation.intent,
+        continuationOf: choiceRequestId,
+        appliedToBusinessData: false,
+      },
+    });
+    const [request] = await tx
+      .insert(hitlRequests)
+      .values({
+        caseId: caseRow.id,
+        ownerId: caseRow.ownerId,
+        assignedTo: caseRow.ownerId,
+        proposalId: proposal!.id,
+        decisionType: 'data_confirmation',
+        options: {
+          summary,
+          context: {
+            continuationOf: choiceRequestId,
+            consecuencias: consequences,
+            ...(warnings.length > 0 ? { advertencias: warnings } : {}),
+          },
+        },
+        status: 'pending',
+      })
+      .returning({ id: hitlRequests.id });
+    await recordProcessEvent(this.audit, tx, actor, {
+      ...event,
+      action: 'hitl_request.create',
+      resource: 'hitl_request',
+      resourceId: request!.id,
+      details: {
+        caseId: caseRow.id,
+        decisionType: 'data_confirmation',
+        proposalId: proposal!.id,
+        continuationOf: choiceRequestId,
+        choices: 0,
+      },
+    });
+    return request!.id;
+  }
+
   private buildDecision(
     options: StoredOptions,
     dto: DecideHitlDto,
@@ -427,7 +656,7 @@ export class HitlService {
   ): Promise<HitlDetailDto> {
     if (!row.proposalId) return { ...row, proposal: null };
     const [proposal] = await executor
-      .select(proposalColumns)
+      .select(proposalReadColumns)
       .from(caseProposals)
       .where(eq(caseProposals.id, row.proposalId));
     return { ...row, proposal: proposal ?? null };

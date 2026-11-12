@@ -1,8 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
+import { useToast } from '../../components/Toasts'
 import { ApiError } from '../../lib/api/errors'
+import { friendlyError } from '../../lib/api/messages'
 import { useCreateProperty, useUpdateProperty } from './hooks'
 import type { Property } from '../../lib/api/types'
 
@@ -27,6 +30,7 @@ export function PropertyFormModal({ property, onClose }: { property?: Property; 
     defaultValues: { name: property?.name ?? '', address: property?.address ?? '', description: property?.description ?? '' },
   })
 
+  const toast = useToast()
   async function onSubmit(values: FormValues) {
     try {
       if (isEdit) {
@@ -45,12 +49,13 @@ export function PropertyFormModal({ property, onClose }: { property?: Property; 
           description: values.description || undefined,
         })
       }
+      toast.success(isEdit ? 'Cambios guardados.' : 'Inmueble registrado.')
       onClose()
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setError('name', { message: 'Ya existe un inmueble con ese nombre' })
-      } else if (err instanceof ApiError) {
-        setError('name', { message: err.messages.join(' ') })
+      } else {
+        setError('name', { message: friendlyError(err, 'save') })
       }
     }
   }
@@ -75,9 +80,9 @@ export function PropertyFormModal({ property, onClose }: { property?: Property; 
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Guardando…' : 'Guardar'}
-          </button>
+          <LoadingButton type="submit" loading={isSubmitting} loadingText="Guardando…">
+            Guardar
+          </LoadingButton>
         </div>
       </form>
     </Modal>

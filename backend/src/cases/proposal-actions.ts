@@ -5,7 +5,9 @@ import {
   IsDefined,
   IsInt,
   IsOptional,
+  IsString,
   IsUUID,
+  MaxLength,
   Matches,
   Max,
   Min,
@@ -170,6 +172,33 @@ export class CreateRecurringRentalActionData {
   rental: ProposedRentalDto;
 }
 
+/** Control optimista del archivado: nombre y concepto vigentes cuando se preparó la propuesta. */
+export class ArchiveExpectedDto {
+  @IsString()
+  @MaxLength(120)
+  providerName: string;
+
+  @IsString()
+  @MaxLength(160)
+  concept: string;
+}
+
+/**
+ * `archive_obligation`: archiva (NUNCA borra) la obligación identificada
+ * inequívocamente por `resolve` o elegida por la persona entre alternativas
+ * reales. Misma regla de negocio que el archivado manual. `expected` evita
+ * archivar una obligación que cambió desde que se preparó la propuesta.
+ */
+export class ArchiveObligationActionData {
+  @IsUUID()
+  obligationId: string;
+
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => ArchiveExpectedDto)
+  expected: ArchiveExpectedDto;
+}
+
 export type ParsedProposalAction =
   | { action: 'create_obligation_occurrence'; data: CreateOccurrenceActionData }
   | {
@@ -188,7 +217,8 @@ export type ParsedProposalAction =
       action: 'update_occurrence_details';
       data: UpdateOccurrenceDetailsActionData;
     }
-  | { action: 'create_recurring_rental'; data: CreateRecurringRentalActionData };
+  | { action: 'create_recurring_rental'; data: CreateRecurringRentalActionData }
+  | { action: 'archive_obligation'; data: ArchiveObligationActionData };
 
 const ENVELOPE_KEYS = ['action', 'data'];
 
@@ -199,6 +229,7 @@ const ACTION_CLASSES = {
   update_obligation_schedule: UpdateObligationScheduleActionData,
   update_occurrence_details: UpdateOccurrenceDetailsActionData,
   create_recurring_rental: CreateRecurringRentalActionData,
+  archive_obligation: ArchiveObligationActionData,
 } as const satisfies Record<ProposalAction, new () => object>;
 
 /**

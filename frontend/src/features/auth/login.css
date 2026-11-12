@@ -264,3 +264,10 @@
     transform-origin: 50% 0%;
   }
 }
+
+.login-screen__busy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}

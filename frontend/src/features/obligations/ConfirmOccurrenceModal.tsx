@@ -1,6 +1,10 @@
 import { useState } from 'react'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
-import { ApiError } from '../../lib/api/errors'
+import { useToast } from '../../components/Toasts'
+import { friendlyError } from '../../lib/api/messages'
+import { formatMoneyWithCurrency } from '../../lib/format/money'
+import { formatLongDate } from '../../lib/format/dates'
 import { useConfirmOccurrence } from './hooks'
 import type { ConfirmationResult, ObligationOccurrence } from '../../lib/api/types'
 
@@ -17,22 +21,28 @@ export function ConfirmOccurrenceModal({
   const [reference, setReference] = useState('')
   const [error, setError] = useState<string | null>(null)
   const confirm = useConfirmOccurrence(obligationId)
+  const toast = useToast()
 
   async function handleConfirm() {
     setError(null)
     try {
       await confirm.mutateAsync({ occurrenceId: occurrence.id, input: { result, reference: reference || undefined } })
+      toast.success(result === 'paid' ? 'Declaraste el período como pagado.' : 'Declaraste el período como atendido.')
       onClose()
     } catch (err) {
-      setError(err instanceof ApiError ? err.messages.join(' ') : 'No se pudo registrar la confirmación.')
+      setError(friendlyError(err, 'save'))
     }
   }
 
   return (
-    <Modal title="Confirmar período" onClose={onClose}>
+    <Modal title="Confirmar pago del período" onClose={onClose}>
+      <p>
+        Período con vencimiento el {formatLongDate(occurrence.dueDate)}
+        {occurrence.amount ? <> por <strong>{formatMoneyWithCurrency(occurrence.amount, occurrence.currency)}</strong></> : null}.
+      </p>
       <p>
         Declaras que <strong>{result === 'paid' ? 'pagaste' : 'atendiste'}</strong> esta obligación. NotiHouse-Pal no
-        realiza ni verifica pagos: tú declaras que pagaste.
+        realiza ni verifica pagos: es tu declaración. Después de confirmarlo, este período ya no se podrá editar desde la aplicación.
       </p>
       <div className="field">
         <label htmlFor="result">Resultado</label>
@@ -50,9 +60,9 @@ export function ConfirmOccurrenceModal({
         <button type="button" className="btn btn-secondary" onClick={onClose}>
           Cancelar
         </button>
-        <button type="button" className="btn btn-primary" disabled={confirm.isPending} onClick={handleConfirm}>
-          {confirm.isPending ? 'Confirmando…' : 'Confirmar'}
-        </button>
+        <LoadingButton loading={confirm.isPending} loadingText="Guardando…" onClick={handleConfirm}>
+          {result === 'paid' ? 'Declarar como pagado' : 'Declarar como atendido'}
+        </LoadingButton>
       </div>
     </Modal>
   )

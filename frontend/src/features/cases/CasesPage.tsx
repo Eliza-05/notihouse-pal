@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
+import { SkeletonTable } from '../../components/Feedback'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { Pagination } from '../../components/Pagination'
 import { formatInstant } from '../../lib/format/dates'
@@ -17,7 +18,7 @@ export function CasesPage() {
     <div className="stack">
       <h1>Mis solicitudes</h1>
       <p className="text-muted">
-        Cada factura, nota de voz o mensaje enviado al asistente queda registrado aquí como un caso independiente.
+        Cada factura, nota de voz o mensaje enviado al asistente queda registrado aquí como una solicitud independiente. «Cerrado» significa que el proceso terminó; abre la solicitud para ver si su propuesta se aplicó.
       </p>
 
       <select aria-label="Filtrar por estado" value={status} onChange={(e) => { setStatus(e.target.value as CaseStatus | ''); setPage(1) }} style={{ maxWidth: 220 }}>
@@ -29,7 +30,7 @@ export function CasesPage() {
         ))}
       </select>
 
-      {isLoading && <LoadingBlock label="Cargando solicitudes…" />}
+      {isLoading && <SkeletonTable rows={6} cols={5} label="Cargando solicitudes…" />}
       {isError && <ErrorBlock error={error} onRetry={refetch} />}
       {!isLoading && !isError && data && data.items.length === 0 && (
         <EmptyBlock title="Aún no has enviado documentos ni notas de voz" />

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { SkeletonTable } from '../../components/Feedback'
+import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { Pagination } from '../../components/Pagination'
 import { formatCalendarDate, describeDueDate } from '../../lib/format/dates'
@@ -7,7 +8,10 @@ import { CONTRACT_STATUS_LABELS, label } from '../../lib/format/labels'
 import { useProperties } from '../properties/hooks'
 import { useContracts, useUpdateContract } from './hooks'
 import { ContractFormModal } from './ContractFormModal'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
+import { useToast } from '../../components/Toasts'
+import { friendlyError } from '../../lib/api/messages'
 import type { Contract, ContractStatus } from '../../lib/api/types'
 
 export function ContractsPage() {
@@ -15,6 +19,8 @@ export function ContractsPage() {
   const [status, setStatus] = useState<ContractStatus | ''>('')
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Contract | null>(null)
+  const toast = useToast()
+  const [actionError, setActionError] = useState<string | null>(null)
   const [terminating, setTerminating] = useState<Contract | null>(null)
   const { data: properties } = useProperties({ pageSize: 100 })
   const { data, isLoading, isError, error, refetch } = useContracts({ page, pageSize: 20, status: status || undefined })
@@ -39,7 +45,7 @@ export function ContractsPage() {
         ))}
       </select>
 
-      {isLoading && <LoadingBlock label="Cargando contratos…" />}
+      {isLoading && <SkeletonTable rows={4} cols={5} label="Cargando contratos…" />}
       {isError && <ErrorBlock error={error} onRetry={refetch} />}
       {!isLoading && !isError && data && data.items.length === 0 && (
         <EmptyBlock
@@ -100,22 +106,29 @@ export function ContractsPage() {
       {editing && <ContractFormModal contract={editing} onClose={() => setEditing(null)} />}
       {terminating && (
         <Modal title="Terminar contrato" onClose={() => setTerminating(null)}>
-          <p>¿Marcar este contrato como terminado? Esta acción es final.</p>
+          <p>¿Marcar este contrato como terminado? Esta acción es final: después no podrás volver a abrirlo desde la aplicación.</p>
+          {actionError && <p className="field-error" role="alert">{actionError}</p>}
           <div className="row" style={{ justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setTerminating(null)}>
+            <button type="button" className="btn btn-secondary" onClick={() => setTerminating(null)} disabled={update.isPending}>
               Cancelar
             </button>
-            <button
-              type="button"
+            <LoadingButton
               className="btn btn-danger"
-              disabled={update.isPending}
+              loading={update.isPending}
+              loadingText="Terminando…"
               onClick={async () => {
-                await update.mutateAsync({ id: terminating.id, input: { status: 'terminated' } })
-                setTerminating(null)
+                setActionError(null)
+                try {
+                  await update.mutateAsync({ id: terminating.id, input: { status: 'terminated' } })
+                  toast.success('El contrato quedó como terminado.')
+                  setTerminating(null)
+                } catch (err) {
+                  setActionError(friendlyError(err, 'save'))
+                }
               }}
             >
-              Terminar
-            </button>
+              Sí, terminar contrato
+            </LoadingButton>
           </div>
         </Modal>
       )}

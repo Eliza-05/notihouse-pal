@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import './Modal.css'
 
 export function Modal({
@@ -12,6 +13,14 @@ export function Modal({
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
+  // Al cerrar, el foco vuelve al control que abrió el diálogo (accesibilidad por teclado).
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    return () => {
+      if (opener && document.contains(opener)) opener.focus()
+    }
+  }, [])
+
   useEffect(() => {
     ref.current?.focus()
     function onKeyDown(e: KeyboardEvent) {
@@ -21,7 +30,12 @@ export function Modal({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
-  return (
+  // Portal al contenedor .app-shell: fuera de cualquier .card (cuyo
+  // backdrop-filter atraparía el position:fixed) pero dentro del ámbito
+  // de los tokens visuales.
+  const host = document.querySelector('.app-shell') ?? document.body
+
+  return createPortal(
     <div className="modal-overlay" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
         className="modal-panel"
@@ -41,6 +55,7 @@ export function Modal({
         </div>
         <div className="modal-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    host,
   )
 }

@@ -1,7 +1,12 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Mic, Square, Trash2 } from 'lucide-react'
-import { ApiError } from '../../lib/api/errors'
+import { useQueryClient } from '@tanstack/react-query'
+import { LoadingButton, Spinner } from '../../components/Feedback'
+import { useToast } from '../../components/Toasts'
+import { friendlyError } from '../../lib/api/messages'
+import { queryKey } from '../../lib/api/queryKey'
+import { useAuth } from '../../lib/auth/useAuth'
 import { useAudioRecorder } from '../../lib/useAudioRecorder'
 import { uploadVoice } from './api'
 
@@ -14,6 +19,9 @@ function extensionFor(mimeType: string): string {
 }
 
 export function VoicePage() {
+  const toast = useToast()
+  const qc = useQueryClient()
+  const { user } = useAuth()
   const recorder = useAudioRecorder()
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
@@ -27,8 +35,10 @@ export function VoicePage() {
       const res = await uploadVoice(blob, `nota.${extensionFor(mimeType)}`, crypto.randomUUID())
       setSentCaseId(res.caseId)
       recorder.reset()
+      void qc.invalidateQueries({ queryKey: queryKey(user!.id, 'cases') })
+      toast.success('Recibimos tu nota de voz.')
     } catch (err) {
-      setSendError(err instanceof ApiError ? err.messages.join(' ') : 'No se pudo enviar la nota de voz.')
+      setSendError(friendlyError(err, 'upload'))
     } finally {
       setSending(false)
     }
@@ -62,14 +72,9 @@ export function VoicePage() {
               <button type="button" className="btn btn-secondary" onClick={recorder.reset}>
                 <Trash2 size={16} /> Regrabar
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={sending}
-                onClick={() => send(recorder.result!.blob, recorder.result!.mimeType)}
-              >
-                {sending ? 'Enviando…' : 'Enviar'}
-              </button>
+              <LoadingButton loading={sending} loadingText="Enviando…" onClick={() => send(recorder.result!.blob, recorder.result!.mimeType)}>
+                Enviar nota
+              </LoadingButton>
             </div>
           </div>
         )}
@@ -78,6 +83,11 @@ export function VoicePage() {
         <p className="text-muted" style={{ marginTop: '0.75rem' }}>
           O sube un archivo de audio en su lugar.
         </p>
+        {sending && (
+          <p role="status" className="row" style={{ justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}>
+            <Spinner size={16} /> Enviando tu nota de voz…
+          </p>
+        )}
         <input
           ref={fileInputRef}
           type="file"
@@ -94,7 +104,7 @@ export function VoicePage() {
       {sendError && <p role="alert" className="field-error">{sendError}</p>}
       {sentCaseId && (
         <p role="status">
-          Nota recibida. <Link to={`/casos/${sentCaseId}`}>Seguir el estado</Link>
+          Recibimos tu nota de voz y la estamos transcribiendo. Puedes seguir usando la aplicación. <Link to={`/casos/${sentCaseId}`}>Ver el avance</Link>
         </p>
       )}
     </div>

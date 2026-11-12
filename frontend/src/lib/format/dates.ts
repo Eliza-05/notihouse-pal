@@ -52,3 +52,24 @@ export function describeDueDate(dueDate: CalendarDate): string {
 export function isPastDue(dueDate: CalendarDate): boolean {
   return daysBetween(today(), dueDate) < 0
 }
+
+const LONG_MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+/** «22 de diciembre de 2026» — para textos explicativos (propuestas, avisos). Sin pasar por Date/zonas. */
+export function formatLongDate(date: CalendarDate | null | undefined): string {
+  if (!date) return '—'
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(date)
+  if (!m) return date
+  const month = LONG_MONTHS[Number(m[2]) - 1]
+  return month ? `${Number(m[3])} de ${month} de ${m[1]}` : date
+}
+
+/** «1 al 30 de noviembre de 2026» (o con ambos meses si difieren). */
+export function formatPeriod(start: CalendarDate | null | undefined, end: CalendarDate | null | undefined): string {
+  if (!start || !end) return '—'
+  const a = /^(\d{4})-(\d{2})-(\d{2})/.exec(start)
+  const b = /^(\d{4})-(\d{2})-(\d{2})/.exec(end)
+  if (!a || !b) return `${start} – ${end}`
+  if (a[1] === b[1] && a[2] === b[2]) return `${Number(a[3])} al ${formatLongDate(end)}`
+  return `${formatLongDate(start)} al ${formatLongDate(end)}`
+}
