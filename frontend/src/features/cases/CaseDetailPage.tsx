@@ -5,10 +5,11 @@ import { ErrorBlock } from '../../components/StateBlocks'
 import { SkeletonCard, Spinner } from '../../components/Feedback'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { formatInstant } from '../../lib/format/dates'
-import { CASE_STATUS_LABELS, CASE_TYPE_LABELS, PROPOSAL_REVIEW_STATUS_LABELS, SOURCE_LABELS, label } from '../../lib/format/labels'
+import { CASE_STATUS_LABELS, PROPOSAL_REVIEW_STATUS_LABELS, SOURCE_LABELS, label } from '../../lib/format/labels'
 import { queryKey } from '../../lib/api/queryKey'
 import { useAuth } from '../../lib/auth/useAuth'
 import { caseProgress, type StepState } from './caseProgress'
+import { caseTitle, proposalAction } from './caseTitle'
 import { useCase, useCaseHitl, useProposals } from './hooks'
 import { parseProposal } from './proposalSchema'
 import { reviewHeading } from './reviewSummary'
@@ -56,7 +57,7 @@ export function CaseDetailPage() {
       <Link to="/casos">← Volver a mis solicitudes</Link>
       <div className="card row-between">
         <div>
-          <h1 style={{ margin: 0 }}>{label(CASE_TYPE_LABELS, caseRow.type)}</h1>
+          <h1 style={{ margin: 0 }}>{caseTitle(caseRow, proposalAction(proposals?.items))}</h1>
           <p className="text-muted" style={{ margin: 0 }}>
             Origen: {label(SOURCE_LABELS, caseRow.source)} · Recibida {formatInstant(caseRow.createdAt)}
           </p>

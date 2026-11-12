@@ -39,6 +39,17 @@ function archiveReview(status: 'pending' | 'approved', appliedAt?: string | null
   }
 }
 
+const MISSING = 'Me falta información para crear la obligación: proveedor, concepto, categoría, día de vencimiento.'
+function infoReview(status: 'pending' | 'approved') {
+  hitl = {
+    id: 'h3', caseId: 'c1', proposalId: 'p3', decisionType: 'data_confirmation', status, overdue: false,
+    options: { summary: MISSING, context: {} },
+    decision: status === 'approved' ? { outcome: 'approved' } : null, dueAt: '2026-11-12T17:28:21Z',
+    respondedAt: status === 'approved' ? '2026-11-11T17:33:13Z' : null, createdAt: 't', updatedAt: 't',
+    proposal: { id: 'p3', caseId: 'c1', version: 2, source: 'llm', proposedData: { resultado: 'needs_completion', faltantes: ['concept'], requiereRevisionManual: true }, documentId: null, reviewStatus: status === 'pending' ? 'pending_review' : 'accepted', createdAt: 't', updatedAt: 't' },
+  }
+}
+
 function choiceReview(withContinuation = true) {
   hitl = {
     id: 'h1', caseId: 'c1', proposalId: 'p1', decisionType: 'conflict_resolution', status: 'pending', overdue: false,
@@ -90,13 +101,18 @@ beforeEach(() => {
       archiveReview('approved', null)
       return hitl
     }
-    if (path === '/hitl-requests/h1' || path === '/hitl-requests/h2') return hitl
+    if (path === '/hitl-requests/h3/decision') {
+      decisions.push(opts?.body as { decision: string })
+      infoReview('approved')
+      return hitl
+    }
+    if (path === '/hitl-requests/h1' || path === '/hitl-requests/h2' || path === '/hitl-requests/h3') return hitl
     if (path === '/cases/c1/proposals/p2/apply') {
       applyCalls++
       archiveReview('approved', '2026-11-11T18:00:00Z')
       return { alreadyApplied: false, createdObligationId: null, resource: { type: 'obligation', id: 'o1', obligationId: 'o1' } }
     }
-    if (path === '/obligations/o1') return { id: 'o1', providerName: 'Internet Claro Hogar', concept: 'Servicio de internet', status: 'active' }
+    if (path === '/obligations/o1') return { id: 'o1', providerName: 'Internet Claro Hogar', concept: 'Servicio de internet', expectedAmount: '55000.00', currency: 'COP', status: 'active' }
   }
 })
 afterEach(() => {
@@ -176,5 +192,41 @@ describe('selector de alternativas con continuación (A-7)', () => {
     expect(decisions).toEqual([{ decision: 'approved', choice: 'o2', comment: undefined }])
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Archivar obligación de Internet Claro Hogar')
     expect(screen.getByRole('button', { name: 'Aprobar propuesta' })).toBeTruthy()
+  })
+})
+
+describe('ajustes de UX del cierre', () => {
+  it('A-7: la propuesta muestra la obligación seleccionada con datos reales («proveedor · concepto · $55.000»)', async () => {
+    archiveReview('pending')
+    mount('/revisiones/h2')
+    await settle()
+    expect(screen.getByText('Obligación seleccionada')).toBeTruthy()
+    expect(screen.getByText('Internet Claro Hogar · Servicio de internet · $55.000')).toBeTruthy()
+  })
+
+  it('revisión informativa: título breve y los datos faltantes completos debajo', async () => {
+    infoReview('pending')
+    mount('/revisiones/h3')
+    await settle()
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Falta información para crear la obligación')
+    expect(screen.getByText(MISSING)).toBeTruthy()
+  })
+
+  it('«Entendido» no dice «Aprobaste esta revisión» ni «Aprobaste la propuesta»', async () => {
+    infoReview('pending')
+    mount('/revisiones/h3')
+    await settle()
+    fireEvent.click(screen.getByRole('button', { name: 'Entendido' }))
+    await settle()
+    expect(decisions).toEqual([{ decision: 'approved', choice: undefined, comment: undefined }]) // mismo envío HITL de siempre
+    expect(screen.getByText(/Marcaste esta revisión como entendida/)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/Aprobaste/)
+  })
+
+  it('una revisión de archivado sí aprobada sigue diciendo «Aprobaste esta revisión»', async () => {
+    archiveReview('approved', null)
+    mount('/revisiones/h2')
+    await settle()
+    expect(screen.getByText(/Aprobaste esta revisión/)).toBeTruthy()
   })
 })

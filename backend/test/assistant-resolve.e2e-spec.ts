@@ -584,6 +584,86 @@ describe('Assistant resolve (e2e, I2)', () => {
     ).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
+  describe('create_recurring_rental: fecha de inicio (startDate)', () => {
+    const makeProperty = async () => {
+      const propertyName = `Apartamento Ensayo ${randomUUID()}`;
+      const id = (await h.as(laura).post('/properties', { name: propertyName }).expect(201)).body.id as string;
+      return { propertyName, id };
+    };
+    const rentalsCount = async () => (await h.as(laura).get('/rentals').expect(200)).body.total as number;
+    const base = (propertyName: string) => ({
+      intent: 'create_recurring_rental',
+      propertyName,
+      tenantAlias: 'Prueba',
+      amount: '1200000.00',
+      dueDay: 5,
+    });
+
+    it('fecha explícita: startsOn = startDate (futura), día de cobro y valor intactos, sin escrituras', async () => {
+      const p = await makeProperty();
+      const before = await rentalsCount();
+      const job = await sendAndClaim(`Registra un arriendo mensual para el inmueble ${p.propertyName}, con el inquilino Prueba, por 1.200.000 pesos, con cobro el día 5 de cada mes, a partir del 1 de diciembre de 2026 ${randomUUID()}`);
+      const res = await resolve(job, { ...base(p.propertyName), startDate: '2026-12-01' }).expect(200);
+      expect(res.body.outcome).toBe('applicable');
+      expect(res.body.proposedData).toEqual({
+        action: 'create_recurring_rental',
+        data: { rental: { propertyId: p.id, expectedAmount: '1200000.00', dueDay: 5, startsOn: '2026-12-01', tenantAlias: 'Prueba' } },
+      });
+      expect(res.body.warnings).toEqual([]);
+      expect(res.body.summary).toContain('desde el 1 de diciembre de 2026');
+      expect(await rentalsCount()).toBe(before); // resolver no escribe
+    });
+
+    it('la fecha de inicio no se confunde con dueDate ni con el día de cobro', async () => {
+      const p = await makeProperty();
+      const job = await sendAndClaim(`Arriendo ${p.propertyName} ${randomUUID()}`);
+      const res = await resolve(job, { ...base(p.propertyName), dueDate: '2027-03-20', startDate: '2026-12-01' }).expect(200);
+      const rental = res.body.proposedData.data.rental as { startsOn: string; dueDay: number };
+      expect(rental.startsOn).toBe('2026-12-01');
+      expect(rental.dueDay).toBe(5);
+      // Solo dueDate (sin startDate) NO se usa como inicio: cae en «hoy» y lo advierte.
+      const job2 = await sendAndClaim(`Arriendo dos ${p.propertyName} ${randomUUID()}`);
+      const res2 = await resolve(job2, { ...base(p.propertyName), dueDate: '2027-03-20' }).expect(200);
+      const r2 = res2.body.proposedData.data.rental as { startsOn: string };
+      expect(r2.startsOn).not.toBe('2027-03-20');
+    });
+
+    it('sin fecha: usa hoy (Bogotá) y lo muestra en advertencias y resumen', async () => {
+      const p = await makeProperty();
+      const job = await sendAndClaim(`Arriendo sin fecha ${p.propertyName} ${randomUUID()}`);
+      const res = await resolve(job, base(p.propertyName)).expect(200);
+      const startsOn = (res.body.proposedData.data.rental as { startsOn: string }).startsOn;
+      expect(startsOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(res.body.outcome).toBe('applicable');
+      expect(res.body.warnings).toHaveLength(1);
+      expect(res.body.warnings[0]).toContain('No indicaste desde cuándo rige el arriendo');
+      expect(res.body.summary).toContain('desde el ');
+    });
+
+    it('fecha explícita pero no interpretable (n8n la marca en missing): pide confirmación, no genera propuesta', async () => {
+      const p = await makeProperty();
+      const job = await sendAndClaim(`Arriendo a partir de mañana ${p.propertyName} ${randomUUID()}`);
+      const res = await resolve(job, { ...base(p.propertyName), startDate: null, missing: ['startDate'], ambiguities: ['fecha relativa'] }).expect(200);
+      expect(res.body.outcome).toBe('needs_completion');
+      expect(res.body.proposedData).toBeNull();
+      expect(res.body.missing).toEqual(['startDate']);
+      expect(res.body.summary).toContain('fecha de inicio');
+      expect(res.body.summary).not.toContain('startDate');
+    });
+
+    it.each(['2026-02-30', '2026-13-01', '01/12/2026', 'mañana', '2026-1-1'])('fecha inválida %s: el contrato la rechaza (400), nunca se aplica', async (bad) => {
+      const p = await makeProperty();
+      const job = await sendAndClaim(`Arriendo inválido ${p.propertyName} ${randomUUID()}`);
+      await resolve(job, { ...base(p.propertyName), startDate: bad }).expect(400);
+    });
+
+    it('inmueble ambiguo o inexistente sigue pidiendo elegir/completar aunque haya fecha', async () => {
+      const job = await sendAndClaim(`Arriendo inexistente ${randomUUID()}`);
+      const res = await resolve(job, { ...base(`Inexistente ${randomUUID()}`), startDate: '2026-12-01' }).expect(200);
+      expect(res.body.outcome).toBe('needs_completion');
+    });
+  });
+
   it('create_recurring_rental: needs_completion when the property is unknown', async () => {
     const job = await sendAndClaim(`Arriendo sin inmueble ${randomUUID()}`);
     const res = await resolve(job, {

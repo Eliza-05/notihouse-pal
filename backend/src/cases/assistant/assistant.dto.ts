@@ -144,6 +144,17 @@ export class ExtractionDto {
   @IsCalendarDate()
   dueDate?: string | null;
 
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '2026-12-01',
+    description:
+      'Fecha desde la que rige un arriendo ("a partir del 1 de diciembre de 2026"). Distinta de dueDate (vencimiento de una factura) y de dueDay (día de cobro)',
+  })
+  @IsOptional()
+  @IsCalendarDate()
+  startDate?: string | null;
+
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsString({ each: true })

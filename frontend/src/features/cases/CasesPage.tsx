@@ -5,8 +5,9 @@ import { SkeletonTable } from '../../components/Feedback'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { Pagination } from '../../components/Pagination'
 import { formatInstant } from '../../lib/format/dates'
-import { CASE_STATUS_LABELS, CASE_TYPE_LABELS, SOURCE_LABELS, label } from '../../lib/format/labels'
+import { CASE_STATUS_LABELS, SOURCE_LABELS, label } from '../../lib/format/labels'
 import { useCases } from './hooks'
+import { CaseTitleCell } from './CaseTitleCell'
 import type { CaseStatus } from '../../lib/api/types'
 
 export function CasesPage() {
@@ -51,7 +52,9 @@ export function CasesPage() {
               <tbody>
                 {data.items.map((c) => (
                   <tr key={c.id}>
-                    <td>{label(CASE_TYPE_LABELS, c.type)}</td>
+                    <td>
+                      <CaseTitleCell item={c} />
+                    </td>
                     <td>{label(SOURCE_LABELS, c.source)}</td>
                     <td>
                       <StatusBadge label={label(CASE_STATUS_LABELS, c.status)} tone={toneFor.case(c.status)} />

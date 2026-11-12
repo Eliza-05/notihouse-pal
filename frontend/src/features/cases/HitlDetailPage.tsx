@@ -72,6 +72,19 @@ function ScheduleDiff({ obligationId, changes }: { obligationId: string; changes
   )
 }
 
+/**
+ * La obligación sobre la que actúa una propuesta (A-7), con sus datos reales: «Claro · Internet · $55.000».
+ * Mientras carga (o si no se puede leer) usa el proveedor y concepto de la propuesta, si los trae.
+ */
+function SelectedObligation({ obligationId, fallback }: { obligationId: string; fallback?: { providerName: string; concept: string } }) {
+  const { data } = useObligation(obligationId)
+  const provider = data?.providerName ?? fallback?.providerName
+  const concept = data?.concept ?? fallback?.concept
+  const money = data?.expectedAmount ? formatMoney(data.expectedAmount, data.currency) : null
+  const text = [provider, concept, money].filter(Boolean).join(' · ')
+  return <strong>{text || 'Cargando…'}</strong>
+}
+
 /** Qué datos se registrarán, con importes y fechas en formato colombiano (nunca «87400.00» ni «2026-12-22»). */
 function ProposalFacts({ proposal }: { proposal: KnownProposal }) {
   switch (proposal.action) {
@@ -123,6 +136,7 @@ function ProposalFacts({ proposal }: { proposal: KnownProposal }) {
         <>
           <Facts
             rows={[
+              ['Obligación seleccionada', <SelectedObligation key="sel" obligationId={proposal.data.obligationId} fallback={proposal.data.expected} />],
               ['Proveedor', proposal.data.expected.providerName],
               ['Concepto', proposal.data.expected.concept],
             ]}
@@ -135,7 +149,12 @@ function ProposalFacts({ proposal }: { proposal: KnownProposal }) {
         </>
       )
     case 'update_obligation_schedule':
-      return <ScheduleDiff obligationId={proposal.data.obligationId} changes={proposal.data.changes} />
+      return (
+        <>
+          <Facts rows={[['Obligación seleccionada', <SelectedObligation key="sel" obligationId={proposal.data.obligationId} />]]} />
+          <ScheduleDiff obligationId={proposal.data.obligationId} changes={proposal.data.changes} />
+        </>
+      )
     case 'update_occurrence_details':
       return (
         <Facts
@@ -402,7 +421,7 @@ export function HitlDetailPage() {
         {hitl.decision && hitl.respondedAt && (
           <div className="review-record">
             <p className="text-muted" style={{ margin: 0 }}>
-              {hitl.decision.outcome === 'rejected' ? 'Rechazaste' : 'Aprobaste'} esta revisión · {formatInstant(hitl.respondedAt)}
+              {decisionRecord(hitl.decision.outcome, info.stage)} · {formatInstant(hitl.respondedAt)}
             </p>
             {decisionComment && (
               <blockquote className="review-quote">
@@ -415,6 +434,17 @@ export function HitlDetailPage() {
       </div>
     </div>
   )
+}
+
+/**
+ * Línea de registro de la decisión. «Entendido» se envía como `approved` (misma transición de servidor), pero la
+ * persona no aprobó nada: solo vio la información; y elegir una alternativa tampoco es aprobar una propuesta.
+ */
+function decisionRecord(outcome: string | undefined, stage: string): string {
+  if (outcome === 'rejected') return 'Rechazaste esta revisión'
+  if (stage === 'acknowledged') return 'Marcaste esta revisión como entendida'
+  if (stage === 'choice_recorded') return 'Registraste tu elección'
+  return 'Aprobaste esta revisión'
 }
 
 /** Propuesta sin acción aplicable que el flujo marcó para completar a mano (faltan datos, informativa, no soportada). */

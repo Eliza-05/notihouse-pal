@@ -115,5 +115,18 @@ export function reviewHeading(
   if (parsed?.kind === 'transcript') {
     return { title: 'Revisar transcripción de tu nota de voz', description: summary || 'Confirma lo que entendimos de tu nota.' }
   }
-  return { title: summary ? short(summary, 60) : fallbackTitle, description: summary || fallbackTitle }
+  return { title: informationalTitle(summary, fallbackTitle), description: summary || fallbackTitle }
+}
+
+/**
+ * Título breve de una revisión informativa: solo la primera frase del resumen («Falta información para crear la
+ * obligación»). El detalle completo (los datos que faltan) queda en la descripción, debajo, sin recortar.
+ */
+export function informationalTitle(summary: string, fallbackTitle: string): string {
+  const head = summary
+    .split(/[:.](?:\s|$)/)[0]
+    ?.trim()
+    .replace(/^Me falta información/i, 'Falta información')
+  if (!head) return fallbackTitle
+  return head.length <= 60 ? head : fallbackTitle
 }

@@ -67,7 +67,7 @@ async function persistent(label, mode) {
   console.log(`   · API caso: status=${api.status} statusReason=${JSON.stringify(api.statusReason)}`);
   assert(['failed', 'cancelled'].includes(rr.caso.status), `${label}: agotados los intentos el caso queda «failed», no colgado (${rr.caso.status}/${rr.job?.status})`);
   assert(Boolean(rr.caso.status_reason), `${label}: el caso explica la causa (${rr.caso.status_reason})`);
-  assert(!/gemini|n8n|workflow|json|stack|http \d|api/i.test(rr.caso.status_reason ?? ''), `${label}: razón sin tecnicismos crudos (${rr.caso.status_reason})`);
+  assert(!/gemini|n8n|workflow|json|stack|http \d|\bapi\b/i.test(rr.caso.status_reason ?? ''), `${label}: razón sin tecnicismos crudos (${rr.caso.status_reason})`);
   return { caseId, rr };
 }
 await persistent('Gemini 429 persistente', 429);
