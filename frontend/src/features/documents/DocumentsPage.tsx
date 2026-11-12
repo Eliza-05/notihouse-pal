@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Upload } from 'lucide-react'
+import { Eye, FileText, Upload } from 'lucide-react'
 import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
 import { SkeletonTable, Spinner } from '../../components/Feedback'
 import { useToast } from '../../components/Toasts'
@@ -13,19 +13,30 @@ import * as api from './api'
 
 const MAX_SIZE = 10 * 1024 * 1024
 
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`
+}
+
 export function DocumentsPage() {
   const { data, isLoading, isError, error, refetch } = useDocuments({ pageSize: 50 })
   const upload = useUploadDocument()
   const [uploadError, setUploadError] = useState<string | null>(null)
+  // Archivo elegido y validado, pendiente de confirmar: no sale del navegador hasta «Enviar documento».
+  const [selected, setSelected] = useState<File | null>(null)
   const [received, setReceived] = useState<{ caseId: string; duplicate: boolean; fileName: string } | null>(null)
   const toast = useToast()
   const inputRef = useRef<HTMLInputElement>(null)
   const uploadKey = useRef(createRequestKeeper())
 
-  async function handleFile(file: File) {
-    if (upload.isPending) return // sin dobles envíos mientras hay una subida en curso
+  /** Valida y deja el archivo en espera de confirmación. Reemplaza (descarta) cualquier selección anterior. */
+  function selectFile(file: File) {
+    if (upload.isPending) return // sin cambios de archivo mientras hay una subida en curso
     setUploadError(null)
     setReceived(null)
+    setSelected(null)
+    if (inputRef.current) inputRef.current.value = ''
     if (file.type !== 'application/pdf') {
       setUploadError('Solo se admiten facturas en PDF. Elige un archivo con extensión .pdf.')
       return
@@ -38,15 +49,33 @@ export function DocumentsPage() {
       setUploadError('El archivo es demasiado grande (máximo 10 MB). Prueba con uno más liviano.')
       return
     }
+    setSelected(file)
+  }
+
+  function previewSelected() {
+    if (!selected) return
+    try {
+      const url = URL.createObjectURL(selected)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch {
+      setUploadError('No pudimos abrir la vista previa. Puedes enviar el documento de todos modos.')
+    }
+  }
+
+  async function confirmUpload() {
+    const file = selected
+    if (!file || upload.isPending) return // sin dobles envíos mientras hay una subida en curso
+    setUploadError(null)
     try {
       const res = await upload.mutateAsync({ file, requestId: uploadKey.current.for(`${file.name}:${file.size}:${file.lastModified}`) })
       uploadKey.current.done()
+      setSelected(null)
       setReceived({ caseId: res.caseId, duplicate: res.duplicateContent, fileName: file.name })
       toast.success('Recibimos tu documento.')
     } catch (err) {
+      // El archivo sigue seleccionado: se puede reintentar (misma clave de idempotencia) o elegir otro.
       setUploadError(friendlyError(err, 'upload'))
-    } finally {
-      if (inputRef.current) inputRef.current.value = ''
     }
   }
 
@@ -66,47 +95,75 @@ export function DocumentsPage() {
         resultado aparecen en Mis solicitudes.
       </p>
 
-      <div
-        className="card"
-        style={{ borderStyle: 'dashed', textAlign: 'center', cursor: upload.isPending ? 'progress' : 'pointer' }}
-        role="button"
-        tabIndex={0}
-        aria-busy={upload.isPending || undefined}
-        aria-label="Subir factura PDF: arrastra un archivo aquí o presiona Enter para elegirlo"
-        onKeyDown={(e) => {
-          if ((e.key === 'Enter' || e.key === ' ') && !upload.isPending) {
-            e.preventDefault()
-            inputRef.current?.click()
-          }
+      <input
+        ref={inputRef}
+        type="file"
+        aria-label="Elegir factura PDF"
+        accept="application/pdf"
+        className="visually-hidden"
+        tabIndex={-1}
+        disabled={upload.isPending}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) selectFile(file)
         }}
-        onClick={() => !upload.isPending && inputRef.current?.click()}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault()
-          const file = e.dataTransfer.files[0]
-          if (file) void handleFile(file)
-        }}
-      >
-        <Upload size={28} style={{ marginBottom: '0.5rem' }} />
-        <p>Arrastra una factura PDF aquí o haz clic para elegir el archivo</p>
-        <input
-          ref={inputRef}
-          type="file"
-          aria-label="Elegir factura PDF"
-          accept="application/pdf"
-          className="visually-hidden"
-          disabled={upload.isPending}
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) void handleFile(file)
+      />
+      {!selected && (
+        <div
+          className="card"
+          style={{ borderStyle: 'dashed', textAlign: 'center', cursor: 'pointer' }}
+          role="button"
+          tabIndex={0}
+          aria-label="Subir factura PDF: arrastra un archivo aquí o presiona Enter para elegirlo"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              inputRef.current?.click()
+            }
           }}
-        />
-        {upload.isPending && (
-          <p role="status" className="row" style={{ justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}>
-            <Spinner size={16} /> Enviando tu factura…
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault()
+            const file = e.dataTransfer.files[0]
+            if (file) selectFile(file)
+          }}
+        >
+          <Upload size={28} style={{ marginBottom: '0.5rem' }} />
+          <p>Arrastra una factura PDF aquí o haz clic para elegir el archivo</p>
+          <p className="text-muted" style={{ marginBottom: 0 }}>Antes de enviarla podrás revisar el archivo.</p>
+        </div>
+      )}
+      {selected && (
+        <div className="card stack" aria-busy={upload.isPending || undefined} aria-label="Archivo seleccionado" role="group">
+          <div className="row" style={{ alignItems: 'center', gap: '0.75rem' }}>
+            <FileText size={32} aria-hidden="true" />
+            <div style={{ minWidth: 0 }}>
+              <strong style={{ overflowWrap: 'anywhere' }}>{selected.name}</strong>
+              <div className="text-muted">PDF · {formatSize(selected.size)}</div>
+            </div>
+          </div>
+          <p className="text-muted" style={{ margin: 0 }}>
+            Revisa que sea el archivo correcto. No se envía hasta que lo confirmes.
           </p>
-        )}
-      </div>
+          {upload.isPending && (
+            <p role="status" className="row" style={{ alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+              <Spinner size={16} /> Enviando tu factura…
+            </p>
+          )}
+          <div className="row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-primary" disabled={upload.isPending} onClick={() => void confirmUpload()}>
+              Enviar documento
+            </button>
+            <button type="button" className="btn btn-secondary" disabled={upload.isPending} onClick={() => inputRef.current?.click()}>
+              Elegir otro archivo
+            </button>
+            <button type="button" className="btn btn-secondary" disabled={upload.isPending} onClick={previewSelected}>
+              <Eye size={16} aria-hidden="true" /> Ver vista previa
+            </button>
+          </div>
+        </div>
+      )}
       {uploadError && <p role="alert" className="field-error">{uploadError}</p>}
       {received && (
         <div className="card" role="status">

@@ -4,7 +4,7 @@ import { SkeletonTable } from '../../components/Feedback'
 import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { Pagination } from '../../components/Pagination'
-import { formatCalendarDate } from '../../lib/format/dates'
+import { formatCalendarDate, humanizeDates } from '../../lib/format/dates'
 import { ALERT_SEVERITY_LABELS, ALERT_STATE_LABELS, ALERT_TYPE_LABELS, label } from '../../lib/format/labels'
 import { resourcePathToRoute } from '../../lib/navigation'
 import { ApiError } from '../../lib/api/errors'
@@ -111,7 +111,7 @@ export function AlertsPage() {
                       <StatusBadge label={label(ALERT_SEVERITY_LABELS, alert.severity)} tone={toneFor.alertSeverity(alert.severity)} />
                     </td>
                     <td>{formatCalendarDate(alert.relevantDate)}</td>
-                    <td>{alert.message}</td>
+                    <td>{humanizeDates(alert.message)}</td>
                     <td>{label(ALERT_STATE_LABELS, alert.state)}</td>
                     <td>{alert.read ? 'Sí' : 'No'}</td>
                     <td className="row">

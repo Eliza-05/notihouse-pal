@@ -2,7 +2,7 @@ import { useExpiryWarning } from '../lib/auth/useAuth'
 import './SessionExpiryBanner.css'
 
 /**
- * Aviso discreto de vencimiento de sesión (JWT de 30 min, sin renovación). No guarda
+ * Aviso discreto de vencimiento de sesión (JWT de 2 h, sin renovación). No guarda
  * borradores ni nada sensible: solo recuerda terminar lo que se esté haciendo, porque al
  * vencer habrá que iniciar sesión de nuevo.
  */

@@ -71,7 +71,7 @@ Intervalo inicial: **60 segundos**, configurable (por ejemplo `VITE_ALERTS_POLL_
 6. **Al cerrar sesión**: detener el intervalo, abortar la consulta en curso y borrar contadores, listas y cachés (incluida la de React Query, SWR o similar).
 7. **Al cambiar de usuario**: igual que al cerrar sesión, antes de la primera consulta del nuevo usuario. El backend responde `Cache-Control: no-store`: no hay caché HTTP entre cuentas, pero la caché de la aplicación sí debe limpiarse.
 8. **Aviso emergente (toast) solo una vez por alerta**: guarden los `id` ya notificados (en memoria o en `sessionStorage`, por usuario) y muestren el toast solo para `id` nuevos. Al abrir la campana, marcar como leída la alerta que el usuario abre (`POST /alerts/:id/read`), no todas.
-9. **Errores**: 401 → la sesión expiró (JWT de 30 min, sin refresh): redirigir al login. 503 o error de red → mantener el último contador y mostrar un indicador discreto; reintentar en el siguiente ciclo, sin bucles. Render Free puede tardar cerca de un minuto en despertar.
+9. **Errores**: 401 → la sesión expiró (JWT de 2 h, sin refresh): redirigir al login. 503 o error de red → mantener el último contador y mostrar un indicador discreto; reintentar en el siguiente ciclo, sin bucles. Render Free puede tardar cerca de un minuto en despertar.
 
 Pseudocódigo orientativo:
 

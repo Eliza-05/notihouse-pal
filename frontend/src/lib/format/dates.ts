@@ -64,6 +64,11 @@ export function formatLongDate(date: CalendarDate | null | undefined): string {
   return month ? `${Number(m[3])} de ${month} de ${m[1]}` : date
 }
 
+/** Reemplaza fechas ISO sueltas (`2026-11-13`) dentro de un texto del servidor por «13 de noviembre de 2026». */
+export function humanizeDates(text: string): string {
+  return text.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (d) => formatLongDate(d))
+}
+
 /** «1 al 30 de noviembre de 2026» (o con ambos meses si difieren). */
 export function formatPeriod(start: CalendarDate | null | undefined, end: CalendarDate | null | undefined): string {
   if (!start || !end) return '—'

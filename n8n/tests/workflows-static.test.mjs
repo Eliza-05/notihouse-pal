@@ -94,5 +94,26 @@ check('05b: usa la misma credencial OAuth y el mismo token de servicio que el 05
 check('05b: no conserva datos de ejecución', w05b.settings.saveDataSuccessExecution === 'none' && w05b.settings.saveDataErrorExecution === 'none' && w05b.settings.saveManualExecutions === false);
 check('05: el workflow original sigue con su disparador programado y sin alias (intacto)', w05.nodes.some((n) => n.name === 'Disparo programado') && !/ALIAS_ENTREGA/.test(node(w05, 'Configuracion').parameters.jsCode) && w05.id === 'nhpGmailIngest01');
 
+// 05b: el resumen distingue rechazos definitivos (no registrado, sin error de ejecución) de fallos temporales (error de ejecución).
+{
+  const runResumen = async (outcomes, ingestAuthorized = true) => {
+    const items = outcomes.map(([outcome, httpStatus]) => ({ json: { outcome, httpStatus, attachmentId: 'a', filename: 'f.pdf', from: 'x@y.test', subject: 's' } }));
+    const fn = new AsyncFunction('$', '$input', node(w05b, 'Resumen').parameters.jsCode);
+    const $ = (name) => ({ first: () => ({ json: name === 'Configuracion' ? { ingestAuthorized } : {} }) });
+    return fn($, { all: () => items });
+  };
+  const rejected = await runResumen([['registrado', 201], ['rechazado', 400], ['rechazado', 413], ['rechazado', 415]]);
+  const out = rejected[0].json;
+  check('05b: Resumen marca «con_rechazos» y avisa que NO se registraron (400/413/415), sin error de ejecución', out.resultado === 'con_rechazos' && /NO fueron registrados/.test(out.aviso) && out.conteo.rechazado === 3 && out.conteo.registrado === 1);
+  const notes = out.detalle.filter((d) => d.outcome === 'rechazado');
+  check('05b: cada rechazo lleva registrado=false y un mensaje sin detalle técnico (sin URL, stack ni cuerpo)', notes.length === 3 && notes.every((d) => d.registrado === false && /^No se registr/.test(d.mensaje) && !/http|stack|C2PA|PDF_ACTIVE/i.test(d.mensaje)));
+  check('05b: el detalle de un registrado no se marca como rechazado y no expone remitente en ingesta', out.detalle[0].registrado === undefined && out.detalle[0].from === undefined);
+  const clean = (await runResumen([['registrado', 201], ['ya_registrado', 200]]))[0].json;
+  check('05b: sin rechazos el resultado es «completo» y no hay aviso', clean.resultado === 'completo' && clean.aviso === undefined);
+  let temporal = null;
+  try { await runResumen([['rechazado', 400], ['error_temporal', 503]]); } catch (e) { temporal = e.message; }
+  check('05b: un error temporal sigue haciendo fallar la ejecución (reejecutar es seguro)', /error_temporal=1/.test(temporal ?? '') && /Reejecutar es seguro/.test(temporal ?? ''));
+}
+
 console.log(bad ? `\nFALLARON ${bad} de ${ok + bad}` : `\nTodo correcto: ${ok} comprobaciones`);
 process.exitCode = bad ? 1 : 0;

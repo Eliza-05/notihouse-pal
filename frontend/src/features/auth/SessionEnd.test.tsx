@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
-const loginBody = (token: string, expiresIn = 1800) => ({
+const loginBody = (token: string, expiresIn = 7200) => ({
   accessToken: token,
   expiresIn,
   user: { id: 'u1', email: 'camila@demo.test', displayName: 'Camila' },
@@ -48,7 +48,7 @@ describe('login tras un cierre de sesión', () => {
         <LoginPage />
       </MemoryRouter>,
     )
-    expect(screen.getByRole('status').textContent).toMatch(/Tu sesión venció \(dura 30 minutos\)/)
+    expect(screen.getByRole('status').textContent).toMatch(/Tu sesión venció \(dura 2 horas\)/)
     fireEvent.click(screen.getByRole('button', { name: 'Entendido' }))
     expect(screen.queryByText(/Tu sesión venció/)).toBeNull()
     expect(sessionStorage.getItem('notihouse-pal.session-notice')).toBeNull()
@@ -114,7 +114,7 @@ describe('login tras un cierre de sesión', () => {
 describe('RequireAuth y vencimiento proactivo', () => {
   it('al vencer, la pantalla protegida redirige a /login sin esperar a ninguna petición y conserva la ruta completa', async () => {
     const { session, LoginPage, RequireAuth } = await loadApp()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(200, loginBody('t1', 1800)))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(200, loginBody('t1', 7200)))
     await session.login({ email: 'a@b.c', password: 'x' })
     window.history.pushState({}, '', '/alertas?tipo=vencidas')
 
@@ -129,7 +129,7 @@ describe('RequireAuth y vencimiento proactivo', () => {
     expect(screen.getByText('contenido protegido')).toBeTruthy()
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1800 * 1000 + 100)
+      await vi.advanceTimersByTimeAsync(7200 * 1000 + 100)
     })
 
     expect(screen.queryByText('contenido protegido')).toBeNull()
@@ -141,13 +141,13 @@ describe('RequireAuth y vencimiento proactivo', () => {
 describe('advertencia previa al vencimiento', () => {
   it('aparece unos 5 minutos antes, cuenta hacia atrás y desaparece al cerrar sesión', async () => {
     const { session, SessionExpiryBanner } = await loadApp()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(200, loginBody('t1', 1800)))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(200, loginBody('t1', 7200)))
     await session.login({ email: 'a@b.c', password: 'x' })
     render(<SessionExpiryBanner />)
     expect(screen.queryByRole('status')).toBeNull()
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync((1800 - 5 * 60) * 1000 + 100)
+      await vi.advanceTimersByTimeAsync((7200 - 5 * 60) * 1000 + 100)
     })
     expect(screen.getByRole('status').textContent).toMatch(/Tu sesión vence en 5 minutos/)
 
@@ -166,7 +166,7 @@ describe('advertencia previa al vencimiento', () => {
     const { session, SessionExpiryBanner } = await loadApp()
     render(<SessionExpiryBanner />)
     expect(screen.queryByRole('status')).toBeNull()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(200, loginBody('t1', 1800)))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(200, loginBody('t1', 7200)))
     await act(async () => {
       await session.login({ email: 'a@b.c', password: 'x' })
     })

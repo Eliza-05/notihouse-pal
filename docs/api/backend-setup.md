@@ -99,7 +99,7 @@ Todos los endpoints funcionales usan el prefijo **`/api/v1`**.
 |---|---|---|
 | `GET` | `/api/v1/health` | Liveness: confirma que el proceso de la API responde. **Público** |
 | `GET` | `/api/v1/health/ready` | Readiness: `SELECT 1` a PostgreSQL con 3 s de límite; 503 si no responde. Sin detalles internos. **Público** |
-| `POST` | `/api/v1/auth/login` | Inicio de sesión con correo y contraseña. Devuelve un JWT de 30 minutos. **Público**, máximo 5 intentos por minuto por IP |
+| `POST` | `/api/v1/auth/login` | Inicio de sesión con correo y contraseña. Devuelve un JWT de 2 horas. **Público**, máximo 5 intentos por minuto por IP |
 | `GET` | `/api/v1/auth/me` | Usuario autenticado. Requiere `Authorization: Bearer <token>` |
 | `GET` `POST` | `/api/v1/properties` | Listar o crear inmuebles propios |
 | `GET` `PATCH` | `/api/v1/properties/:id` | Consultar o editar un inmueble propio |

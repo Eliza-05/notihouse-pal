@@ -210,7 +210,7 @@ CORS es una barrera del navegador: el servidor responde siempre con el origen co
 
 ## 9. Usuarios demo
 
-Laura Martínez, Andrés Gómez, Camila Torres y Daniel Rojas ya existen en Neon; sus correos están en `backend/src/database/seed/demo-data.ts`. Las contraseñas **no se publican**: se comparten por un gestor de contraseñas. Las sesiones duran 30 minutos, así que inicia sesión justo antes de presentar.
+Laura Martínez, Andrés Gómez, Camila Torres y Daniel Rojas ya existen en Neon; sus correos están en `backend/src/database/seed/demo-data.ts`. Las contraseñas **no se publican**: se comparten por un gestor de contraseñas. Las sesiones duran 2 horas, así que inicia sesión justo antes de presentar.
 
 **Riesgo.** Hoy las cuatro cuentas comparten una contraseña temporal débil que además apareció en salidas locales. Con la API pública, quien la conozca o la adivine puede ver y modificar los datos ficticios de las cuatro cuentas. El límite de 5 intentos por minuto dificulta adivinarla, pero no protege si ya se conoce.
 
@@ -250,7 +250,7 @@ Laura Martínez, Andrés Gómez, Camila Torres y Daniel Rojas ya existen en Neon
 | La primera solicitud tarda cerca de un minuto | Render Free dormido | Normal. Abre `/health` antes de presentar |
 | Login → 429 | Límite de 5 por minuto, compartido si `TRUST_PROXY_HOPS=0` | Espera un minuto y mide el valor (sección 6) |
 | Login → 401 con la contraseña correcta | Se rotó la contraseña | Usa la del gestor |
-| Sesión → 401 de repente | JWT vencido (30 min), o cambió `JWT_SECRET` o la contraseña | Inicia sesión otra vez |
+| Sesión → 401 de repente | JWT vencido (2 h), o cambió `JWT_SECRET` o la contraseña | Inicia sesión otra vez |
 | Error de CORS en el navegador | `FRONTEND_URL` distinta del dominio real | Corrige el origen exacto, sin barra final |
 | Subida o descarga → 503 | Bucket no disponible o credenciales incorrectas | Ejecuta `npm run storage:check` con esas variables |
 | n8n → 401 | Token distinto al de Render | Compara la credencial con `N8N_SERVICE_TOKEN` |

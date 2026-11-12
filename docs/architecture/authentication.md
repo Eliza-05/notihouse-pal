@@ -7,7 +7,7 @@ Diseño de la autenticación de NotiHouse-Pal, implementada en la Fase 4.1.
 ## 1. Decisiones
 
 - **Acceso cerrado.** No hay registro público, recuperación de contraseña, refresh tokens, login con Google ni panel de administración de usuarios. Las cuentas las crea el equipo.
-- **Autenticación local:** correo + contraseña, contraseñas con **Argon2id** y sesión con **JWT** de 30 minutos.
+- **Autenticación local:** correo + contraseña, contraseñas con **Argon2id** y sesión con **JWT** de 2 horas.
 - **Privado por defecto.** Un guard global exige token en todas las rutas, salvo las marcadas con `@Public()`.
 - **La identidad sale solo del token.** El propietario de los datos es siempre el `profileId` autenticado. Nunca se acepta un `ownerId` o `userId` enviado por el cliente.
 - **Cierre de sesión:** el frontend descarta el token. No existe un endpoint `logout`, porque no hay un mecanismo real de revocación de tokens individuales (ver "Limitaciones").
@@ -55,7 +55,7 @@ Prefijo `/api/v1`. Están documentados en Swagger (`/api/docs`, solo fuera de pr
 
 | Caso | Respuesta |
 |---|---|
-| Credenciales correctas y cuenta activa | **200** `{ accessToken, tokenType: "Bearer", expiresIn: 1800, user: { id, email, displayName } }` |
+| Credenciales correctas y cuenta activa | **200** `{ accessToken, tokenType: "Bearer", expiresIn: 7200, user: { id, email, displayName } }` |
 | Contraseña incorrecta, correo inexistente o cuenta inactiva | **401** `"Credenciales inválidas"`. Es exactamente la misma respuesta en los tres casos. |
 | Correo mal formado, contraseña vacía, tipos incorrectos, propiedades extra (p. ej. `ownerId`) | **400**. El `ValidationPipe` global usa `whitelist` y `forbidNonWhitelisted`. |
 | Más de 5 intentos por minuto desde la misma IP | **429** |
@@ -76,7 +76,7 @@ Solo `GET /health` y `POST /auth/login`. Swagger no pasa por el guard porque no 
 |---|---|
 | Algoritmo | `HS256`. Al verificar solo se acepta HS256, así que `alg: none` y otros algoritmos se rechazan. |
 | Secreto | `JWT_SECRET`: obligatorio fuera de `test`, mínimo 43 caracteres (32 bytes aleatorios). Se rechazan valores de ejemplo y de baja entropía. |
-| Vencimiento | 1800 s (30 min), sin refresh tokens |
+| Vencimiento | 7200 s (2 h), sin refresh tokens |
 | `sub` | UUID del perfil (`profiles.id`) |
 | `iss` | `notihouse-pal-api` |
 | `aud` | `notihouse-pal-web` |
@@ -196,9 +196,9 @@ Se ejecutó una vez sobre Neon el 2026-10-24.
    - dejar `neondb_owner` solo para administración y migraciones (`DATABASE_URL_DIRECT`).
 2. **Row-Level Security:** evaluarla como defensa adicional sobre `owner_id`. No está activada.
 3. **Autorización por propietario** en todos los endpoints de negocio, con pruebas (Fase 4.2).
-4. **Revocación:** no hay lista de revocación. La desactivación de cuentas y `password_changed_at` invalidan tokens, y la duración máxima de una sesión es de 30 minutos.
+4. **Revocación:** no hay lista de revocación. La desactivación de cuentas y `password_changed_at` invalidan tokens, y la duración máxima de una sesión es de 2 horas.
 5. **Rate limiting** en memoria: ver la sección 8. Con varias instancias, cada una cuenta por separado. `TRUST_PROXY_HOPS` debe fijarse en Render tras verificar la topología.
 6. **Rotación de `JWT_SECRET`:** cambiarlo invalida todos los tokens. En Render se definirá como variable secreta de la plataforma.
 7. **Cambio de contraseña:** no hay endpoint. La rotación se hace con `npm run db:demo:rotate-passwords` (Fase 4.2F.1, preparado y no ejecutado), que actualiza hash y `password_changed_at` en una transacción. Ver [backend-security-review.md](../security/backend-security-review.md).
 8. **Contraseña demo compartida:** las cuatro cuentas actuales comparten una contraseña temporal (ver sección 7). Hay que reemplazarla por contraseñas individuales antes de publicar el backend.
-9. **Granularidad de la invalidación:** `iat` se expresa en segundos. Un token emitido en el mismo segundo en que se cambia la contraseña, pero antes del cambio, seguiría siendo válido hasta expirar (máximo 30 minutos). Los tokens de segundos anteriores se rechazan, como se comprobó contra Neon. Es una limitación aceptada para el MVP.
+9. **Granularidad de la invalidación:** `iat` se expresa en segundos. Un token emitido en el mismo segundo en que se cambia la contraseña, pero antes del cambio, seguiría siendo válido hasta expirar (máximo 2 horas). Los tokens de segundos anteriores se rechazan, como se comprobó contra Neon. Es una limitación aceptada para el MVP.

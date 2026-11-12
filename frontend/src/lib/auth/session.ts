@@ -4,7 +4,7 @@ import type { AuthenticatedUser, LoginRequest, LoginResponse } from '../api/type
 /**
  * Módulo de sesión (§7, §11.4 de la guía). Reglas del backend que esto debe
  * respetar:
- * - El JWT dura 30 minutos desde el login (`expiresIn`), SIN refresh token.
+ * - El JWT dura 2 horas desde el login (`expiresIn`), SIN refresh token.
  * - No hay endpoint de logout en el servidor: "cerrar sesión" = descartar el
  *   token en el cliente.
  * - Un 401 en cualquier ruta (salvo el propio login) significa "sesión
@@ -145,7 +145,7 @@ function setState(next: SessionState): void {
 
 // --- Vencimiento proactivo -------------------------------------------------
 
-// setTimeout no admite más de 2^31-1 ms; el JWT dura 30 min, esto es solo un tope defensivo.
+// setTimeout no admite más de 2^31-1 ms; el JWT dura 2 h, esto es solo un tope defensivo.
 const MAX_TIMER_MS = 2_147_483_647
 let expiryTimer: ReturnType<typeof setTimeout> | undefined
 

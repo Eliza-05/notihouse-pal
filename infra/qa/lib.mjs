@@ -31,7 +31,7 @@ export async function http(method, path, { token, body, service, form, headers =
 }
 
 const TOKEN_CACHE = resolve(ROOT, '.local', 'qa', 'tokens.json');
-/** Inicia sesión (JWT de 30 min, cacheado 20 min en .local/ para respetar el límite de 5 logins/min). */
+/** Inicia sesión (JWT de 2 h, cacheado 20 min en .local/ para respetar el límite de 5 logins/min). */
 export async function login(who = 'DANIEL', { fresh = false } = {}) {
   let cache = {}; try { cache = JSON.parse(readFileSync(TOKEN_CACHE, 'utf8')); } catch { /* sin caché */ }
   if (!fresh && cache[who] && Date.now() - cache[who].at < 20 * 60 * 1000) return cache[who].token;

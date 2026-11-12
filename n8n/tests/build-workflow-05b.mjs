@@ -128,7 +128,29 @@ dc = patch(dc, 'decoded: true, mailbox,', 'decoded: true, mailbox: deliveryMailb
 dec.parameters.jsCode = dc;
 
 // Resumen: los rechazos de destinatario no son fallos de la ejecución (no hay nada que reintentar), pero se cuentan y se explican.
-// (Sin cambios: «destinatario_rechazado» aparece en el conteo y en el detalle con su motivo.)
+// («destinatario_rechazado» aparece en el conteo y en el detalle con su motivo.)
+// Rechazos definitivos del backend (400/413/415, outcome «rechazado»): la ejecución sigue en verde (reintentar no cambia nada),
+// pero el resumen deja explícito que el documento NO fue registrado y por qué, sin detalle técnico. Los errores temporales
+// (red, 5xx, 429...) siguen haciendo fallar la ejecución: ahí sí conviene reejecutar.
+const summary = wf.nodes.find((n) => n.name === 'Resumen');
+let sm = summary.parameters.jsCode;
+sm = patch(sm, "const detail = items.map(({ attachmentId, download, ...x }) => (cfg.ingestAuthorized ? { ...x, from: undefined, subject: undefined } : x));\n",
+  [
+    "const REJECTION_NOTE = { 400: 'No se registró: el archivo no cumple las reglas de seguridad o de formato del sistema.', 413: 'No se registró: el archivo supera el tamaño permitido.', 415: 'No se registró: el tipo de archivo no es admitido.' };",
+    "const detail = items.map(({ attachmentId, download, ...x }) => {",
+    "  const shown = cfg.ingestAuthorized ? { ...x, from: undefined, subject: undefined } : x;",
+    "  return x.outcome === 'rechazado' ? { ...shown, registrado: false, mensaje: REJECTION_NOTE[x.httpStatus] ?? 'No se registró: el archivo fue rechazado.' } : shown;",
+    "});",
+    "",
+  ].join('\n'), 'detalle del resumen');
+sm = patch(sm, "return [{ json: { modo: cfg.ingestAuthorized ? 'ingesta' : 'solo_revision', conteo: counts, hayMasMensajes: moreMessages, detalle: detail } }];",
+  [
+    "const rejected = counts.rechazado ?? 0;",
+    "const resultado = rejected > 0 ? 'con_rechazos' : 'completo';",
+    "const aviso = rejected > 0 ? rejected + ' documento(s) NO fueron registrados porque el sistema los rechazó de forma definitiva; reintentar no cambia el resultado (revisa el detalle).' : undefined;",
+    "return [{ json: { modo: cfg.ingestAuthorized ? 'ingesta' : 'solo_revision', resultado, aviso, conteo: counts, hayMasMensajes: moreMessages, detalle: detail } }];",
+  ].join('\n'), 'retorno del resumen');
+summary.parameters.jsCode = sm;
 
 // Sin disparador programado.
 wf.nodes = wf.nodes.filter((n) => !['Disparo programado', 'Marcar programado'].includes(n.name));

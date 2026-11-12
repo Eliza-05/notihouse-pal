@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
-const loginBody = (token: string, expiresIn = 1800) => ({
+const loginBody = (token: string, expiresIn = 7200) => ({
   accessToken: token,
   expiresIn,
   user: { id: 'u1', email: 'camila@demo.test', displayName: 'Camila' },
@@ -116,10 +116,10 @@ describe('sesión: 401 y token vigente', () => {
 describe('sesión: vencimiento proactivo', () => {
   it('vence por sí sola a expiresAt, sin necesidad de una petición', async () => {
     const { session } = await load()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(200, loginBody('t1', 1800)))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(200, loginBody('t1', 7200)))
     await session.login(credentials)
 
-    await vi.advanceTimersByTimeAsync(1800 * 1000 - 1000)
+    await vi.advanceTimersByTimeAsync(7200 * 1000 - 1000)
     expect(session.isAuthenticated()).toBe(true)
     await vi.advanceTimersByTimeAsync(1500)
 
@@ -129,11 +129,11 @@ describe('sesión: vencimiento proactivo', () => {
 
   it('al volver a la pestaña tras una suspensión, comprueba el vencimiento aunque el temporizador no corriera', async () => {
     const { session } = await load()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(200, loginBody('t1', 1800)))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(200, loginBody('t1', 7200)))
     await session.login(credentials)
 
     // Equipo suspendido: el reloj avanza pero los temporizadores no se ejecutan.
-    vi.setSystemTime(new Date('2026-11-12T16:00:00Z'))
+    vi.setSystemTime(new Date('2026-11-12T17:30:00Z'))
     expect(session.getSnapshot().token).toBe('t1')
     document.dispatchEvent(new Event('visibilitychange'))
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { daysBetween, describeDueDate, formatCalendarDate, formatLongDate, formatPeriod, isPastDue } from './dates'
+import { daysBetween, describeDueDate, formatCalendarDate, formatLongDate, formatPeriod, humanizeDates, isPastDue } from './dates'
 import { label } from './labels'
 import { formatMoney, formatMoneyWithCurrency } from './money'
 
@@ -68,5 +68,13 @@ describe('etiquetas', () => {
     expect(label({ pending: 'Pendiente' }, 'pending')).toBe('Pendiente')
     expect(typeof label({ pending: 'Pendiente' }, 'otro_valor')).toBe('string')
     expect(typeof label({}, null)).toBe('string')
+  })
+})
+
+describe('humanizeDates', () => {
+  it('convierte fechas ISO dentro de textos del servidor y deja el resto intacto', () => {
+    expect(humanizeDates('El período vence el 2026-11-13. Confírmalo.')).toBe('El período vence el 13 de noviembre de 2026. Confírmalo.')
+    expect(humanizeDates('Plazo hasta el 2026-12-01 (2026-12-05).')).toBe('Plazo hasta el 1 de diciembre de 2026 (5 de diciembre de 2026).')
+    expect(humanizeDates('Sin fechas aquí, pero 12345-6789 no es fecha.')).toBe('Sin fechas aquí, pero 12345-6789 no es fecha.')
   })
 })

@@ -22,7 +22,7 @@ function minutesLeft(expiresAt: number | null, now: number) {
 /**
  * Menú del avatar. El backend solo expone GET /auth/me (id, correo, nombre):
  * no hay edición de perfil, cambio de contraseña ni logout en servidor, así
- * que el menú muestra el perfil, el tiempo restante del JWT (30 min, sin
+ * que el menú muestra el perfil, el tiempo restante del JWT (2 h, sin
  * refresh) y accesos rápidos.
  */
 export function UserMenu({ isDark, onToggleTheme }: { isDark: boolean; onToggleTheme: () => void }) {
@@ -91,7 +91,7 @@ export function UserMenu({ isDark, onToggleTheme }: { isDark: boolean; onToggleT
 
           <div className="user-pop-session">
             <Clock size={14} aria-hidden="true" />
-            {left === null ? 'Sesión activa' : left <= 1 ? 'Tu sesión vence en menos de un minuto' : `Tu sesión vence en ${left} min`}
+            {left === null ? 'Sesión activa' : left <= 1 ? 'Tu sesión vence en menos de un minuto' : `Tu sesión vence en ${left >= 60 ? `${Math.floor(left / 60)} h ${left % 60} min` : `${left} min`}`}
           </div>
           {me.isError && <div className="user-pop-note">No pudimos confirmar tu perfil con el servidor.</div>}
 

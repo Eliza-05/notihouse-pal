@@ -481,9 +481,9 @@ describe('Proposal application (e2e)', () => {
         sv: sessionVersion(user.profileId, user.passwordChangedAt),
         ...claims,
       })}`;
-    /** Token válido en firma, pero emitido hace 31 min (duración real: 30 min). */
+    /** Token válido en firma, pero emitido hace 121 min (duración real: 120 min). */
     const expiredBearer = (user: TestUser) =>
-      bearerFor(user, { iat: Math.floor(Date.now() / 1000) - 31 * 60 });
+      bearerFor(user, { iat: Math.floor(Date.now() / 1000) - 121 * 60 });
     const post = (path: string, authorization: string, body: object = {}) =>
       request(w.h.app.getHttpServer())
         .post(`/api/v1${path}`)

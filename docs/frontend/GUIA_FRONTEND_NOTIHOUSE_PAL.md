@@ -67,7 +67,7 @@ No necesitas Docker, n8n, Neon ni ejecutar el backend: basta Node.js y la API de
 | # | Hallazgo (verificado) | Consecuencia para el frontend |
 |---|---|---|
 | 1 | En `develop`, `frontend/` solo tiene `.gitkeep`, pero **existe un scaffold y trabajo en ramas remotas apiladas** (`feature/frontend-base` → `feature/frontend-landing` → `feature/login-transition`: cliente HTTP, sesión, landing y login). Ninguna pantalla de negocio está conectada y ninguna rama está fusionada en `develop`. | Parte de esas ramas (§12.2). Todavía no hay script `test`: se crea. |
-| 2 | La API usa **un único JWT de acceso de 30 minutos** (HS256). **No hay refresh token, ni cookies, ni endpoint de logout.** | La sesión caduca sola a los 30 min; el cliente debe guardar `expiresIn`, detectar el 401 y volver a pedir login (§7). |
+| 2 | La API usa **un único JWT de acceso de 2 horas** (HS256). **No hay refresh token, ni cookies, ni endpoint de logout.** | La sesión caduca sola a las 2 h; el cliente debe guardar `expiresIn`, detectar el 401 y volver a pedir login (§7). |
 | 3 | CORS permite **un solo origen** (`FRONTEND_URL`), solo `GET, POST, PATCH` y las cabeceras `Authorization`, `Content-Type`, `X-Correlation-Id`. Sin credenciales. | Al auditar, Render respondía con `Access-Control-Allow-Origin: http://localhost:5173`. El servidor local de Vite **debe usar el puerto 5173** (`strictPort`). El dominio de Vercel solo podrá llamar a la API cuando el responsable lo autorice; con un único origen admitido, convivir con `localhost` exige un cambio coordinado de backend (§12.4, §17.2). |
 | 4 | Los **dinero van como texto** (`"145000.00"`), las **fechas de calendario como `YYYY-MM-DD`** y los instantes como ISO 8601. | Nunca convertir dinero a `number` para calcular; usar texto o una librería decimal (§4). |
 | 5 | Los **filtros y cuerpos son estrictos**: cualquier campo o parámetro de query no declarado devuelve **400**. | No enviar `ownerId`, ni campos "extra", ni parámetros de query inventados (§4). |
@@ -337,7 +337,7 @@ Todos los identificadores de ejemplo son **ficticios** (`00000000-0000-4000-8000
 {
   "accessToken": "<JWT>",
   "tokenType": "Bearer",
-  "expiresIn": 1800,
+  "expiresIn": 7200,
   "user": {
     "id": "00000000-0000-4000-8000-000000000001",
     "email": "laura.martinez@notihouse.com",
@@ -820,7 +820,7 @@ El PDF debe tener `%%EOF` al final y **no** contener JavaScript, acciones ni arc
 | Mecanismo | Estado |
 |---|---|
 | Login con correo y contraseña → JWT HS256 | ✅ Implementado |
-| Duración del token | ✅ **30 minutos**, fija (`expiresIn: 1800`) |
+| Duración del token | ✅ **2 horas**, fija (`expiresIn: 7200`) |
 | Cabecera `Authorization: Bearer <token>` | ✅ Único medio de sesión |
 | Refresh token / renovación | ❌ **No existe.** No inventar un endpoint |
 | Cookies de sesión | ❌ No existen (CORS sin credenciales) |
@@ -1165,14 +1165,14 @@ sequenceDiagram
   R->>A: GET /health (despertar)
   U->>R: correo y contraseña
   R->>A: POST /auth/login
-  A-->>R: 200 accessToken, expiresIn 1800, user
+  A-->>R: 200 accessToken, expiresIn 7200, user
   R->>R: guarda token y expiresAt
   R->>A: GET /auth/me (Bearer)
   A-->>R: 200 id, email, displayName
   R->>A: GET /dashboard/summary y GET /attention
   A-->>R: datos del usuario
   R-->>U: dashboard
-  Note over R,A: A los 30 min, cualquier 401 limpia la sesión y vuelve a /login
+  Note over R,A: A las 2 h, cualquier 401 limpia la sesión y vuelve a /login
 ```
 
 ### Flujo B — Factura PDF
@@ -1518,7 +1518,7 @@ Para `proposedData` usa un **esquema Zod** con unión discriminada por `action` 
 
 ### 11.4 Módulo de sesión y rutas protegidas
 
-Ver §7. Resumen: `session.ts` (memoria + `sessionStorage` con `try/catch`), `useAuth()` con `login`, `logout`, `user`, `isAuthenticated`, `expiresAt`; `RequireAuth` que redirige a `/login`; `logout()` limpia la caché de datos. **La caché también se limpia al detectar un usuario distinto** (`user.id` del login/`/auth/me` diferente del anterior) y al vencer la sesión, y las claves de caché incluyen el `user.id` (§7.6). La sesión dura **30 minutos** desde el login (`expiresIn`), sin renovación: conforme al backend.
+Ver §7. Resumen: `session.ts` (memoria + `sessionStorage` con `try/catch`), `useAuth()` con `login`, `logout`, `user`, `isAuthenticated`, `expiresAt`; `RequireAuth` que redirige a `/login`; `logout()` limpia la caché de datos. **La caché también se limpia al detectar un usuario distinto** (`user.id` del login/`/auth/me` diferente del anterior) y al vencer la sesión, y las claves de caché incluyen el `user.id` (§7.6). La sesión dura **2 horas** desde el login (`expiresIn`), sin renovación: conforme al backend.
 
 ### 11.5 Hooks de consulta y actualización de estados
 
@@ -1935,7 +1935,7 @@ Realizar desde la **URL de Vercel**, con una cuenta demo autorizada. Las pruebas
 - [ ] **Login real** mediante `POST /auth/login` y JWT; errores 400/401/429 diferenciados.
 - [ ] **Dashboard** con datos del usuario autenticado.
 - [ ] Consultas privadas y navegación entre pantallas.
-- [ ] **Sesión expirada** (a los 30 minutos o con un token inválido): el `401` limpia la sesión, avisa y redirige a login conservando el borrador.
+- [ ] **Sesión expirada** (a las 2 horas o con un token inválido): el `401` limpia la sesión, avisa y redirige a login conservando el borrador.
 - [ ] **Logout local** borra token y caché de datos.
 - [ ] **Cambio entre usuarios** (cerrar sesión y entrar con otra cuenta) sin rastro de los datos del anterior.
 - [ ] **Descarga autenticada** de un documento existente (si hay uno) abre/descarga el archivo y libera los recursos.
@@ -2100,7 +2100,7 @@ REGLAS DURAS (no negociables)
 4. No llames rutas `/internal/*`. No accedas a Neon, Tigris, Gemini, n8n ni Gmail. No cambies estados de casos, propuestas, revisiones o alertas de forma artificial.
 5. PRUEBAS SEGURAS (§12.8). Render usa la base Neon compartida y el responsable sigue haciendo pruebas de integración. Clase A (libre): componentes, pruebas unitarias, mocks, validaciones, responsive, build y lint. Clase B (lectura autorizada): health, readiness, login con cuentas demo autorizadas entregadas por canal privado, GET de recursos propios, consultas moderadas. Clase C (requiere mi autorización previa): cualquier POST/PATCH, crear inmuebles/obligaciones/arriendos, confirmar pagos o cobros, subir PDF o audio, decisiones HITL, aplicar propuestas, cualquier cosa que genere trabajos para n8n. Clase D (requiere integraciones disponibles): procesamiento de PDF, transcripción de voz, propuestas de Gemini, cierre HITL, alertas programadas: avísame antes para que yo compruebe Docker/n8n y la cuota de Gemini. NUNCA ejecutes seeds, migraciones ni limpiezas contra la Neon compartida, ni scripts de `backend/src/database/scripts`. No hagas escrituras reales sin mi autorización explícita para esa prueba y esa cuenta; usa datos ficticios y nunca documentos reales ni datos personales. Tus pruebas automatizadas no deben escribir en la API real.
 6. Los mocks locales son solo para desarrollo: tipados con los contratos de la guía, claramente diferenciados (nombre, carpeta y bandera de desarrollo), nunca enviados a la API real, excluidos del build de producción y jamás presentados como una integración funcionando.
-7. Sesión JWT conforme al backend: login real con POST /auth/login, token de 30 minutos, sin refresh token, sin cookies, sin endpoint de logout (cerrar sesión = descartar el token y vaciar la caché). Maneja un único 401 como sesión vencida (salvo en el login), limpia la caché al cerrar sesión o cambiar de usuario, y no guardes el token en localStorage ni en el código.
+7. Sesión JWT conforme al backend: login real con POST /auth/login, token de 2 horas, sin refresh token, sin cookies, sin endpoint de logout (cerrar sesión = descartar el token y vaciar la caché). Maneja un único 401 como sesión vencida (salvo en el login), limpia la caché al cerrar sesión o cambiar de usuario, y no guardes el token en localStorage ni en el código.
 8. Escrituras: nunca las reintentes automáticamente; botón deshabilitado desde el primer clic; usa `requestId` (mismo valor al reintentar el mismo envío) en las cargas; entiende que `alreadyApplied: true` en apply es un 200 normal que significa que ya estaba aplicada, no un error ni una nueva aplicación. No distingas todos los errores como "sin conexión": separa red, 401, 4xx, 409, 429 y 5xx, y trata el 503 y el arranque en frío de Render Free (health y ready) como estados temporales.
 9. Dinero siempre como texto: no uses Number ni parseFloat para operarlo; formatea desde el texto. Fechas `YYYY-MM-DD` sin desfase de zona. Descargas autenticadas con fetch + Blob, creando y liberando la URL de objeto correctamente.
 10. Nunca apliques propuestas ni decidas revisiones HITL automáticamente. Aprobar y Aplicar son acciones explícitas y separadas del usuario; el orden es aprobar → aplicar → (n8n) cierre.

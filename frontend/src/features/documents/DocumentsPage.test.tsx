@@ -37,6 +37,7 @@ const settle = async () => {
   for (let i = 0; i < 4; i++) await act(async () => { await vi.advanceTimersByTimeAsync(20) })
 }
 const pick = (file: File) => fireEvent.change(screen.getByLabelText('Elegir factura PDF'), { target: { files: [file] } })
+const send = () => fireEvent.click(screen.getByRole('button', { name: 'Enviar documento' }))
 const pdf = (name = 'factura.pdf', size = 1000) => {
   const f = new File(['%PDF-1.4'], name, { type: 'application/pdf' })
   Object.defineProperty(f, 'size', { value: size })
@@ -88,10 +89,64 @@ describe('subida de facturas', () => {
     expect(state.uploads).toBe(0)
   })
 
+  it('elegir un archivo NO lo envía: muestra nombre, tipo y tamaño y pide confirmar', async () => {
+    mount()
+    await settle()
+    pick(pdf('ENS-1114-aseo.pdf', 2048))
+    await settle()
+    expect(state.uploads).toBe(0)
+    expect(screen.getByText('ENS-1114-aseo.pdf')).toBeTruthy()
+    expect(screen.getByText('PDF · 2 KB')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Enviar documento' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Elegir otro archivo' })).toBeTruthy()
+    expect(screen.queryByText(/Recibimos «/)).toBeNull()
+  })
+
+  it('«Elegir otro archivo» descarta la selección anterior y solo se envía el nuevo', async () => {
+    const sent: string[] = []
+    state.handler = (path, opts) => {
+      if (path === '/ingestions/documents') {
+        state.uploads++
+        sent.push(String((opts as { body?: FormData } | undefined)?.body?.get?.('file') instanceof File ? ((opts as { body: FormData }).body.get('file') as File).name : ''))
+        return { documentId: 'd2', caseId: 'c2', duplicateContent: false }
+      }
+      if (opts?.method !== 'POST') return { items: [], total: 0, page: 1, pageSize: 50 }
+    }
+    mount()
+    await settle()
+    pick(pdf('equivocada.pdf'))
+    await settle()
+    pick(pdf('correcta.pdf'))
+    await settle()
+    expect(screen.queryByText('equivocada.pdf')).toBeNull()
+    expect(screen.getByText('correcta.pdf')).toBeTruthy()
+    expect(state.uploads).toBe(0)
+    send()
+    await settle()
+    expect(state.uploads).toBe(1)
+    expect(sent.join()).not.toMatch(/equivocada/)
+    expect(screen.getByText(/Recibimos «correcta\.pdf»/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Enviar documento' })).toBeNull() // la selección se limpia tras enviar
+  })
+
+  it('un archivo inválido no queda seleccionado ni se puede enviar', async () => {
+    mount()
+    await settle()
+    pick(pdf('buena.pdf'))
+    await settle()
+    pick(new File(['x'], 'foto.png', { type: 'image/png' }))
+    await settle()
+    expect(screen.queryByText('buena.pdf')).toBeNull() // la selección anterior se descartó
+    expect(screen.queryByRole('button', { name: 'Enviar documento' })).toBeNull()
+    expect(alertText()).toMatch(/Solo se admiten facturas en PDF/)
+  })
+
   it('subida correcta: «Recibimos tu documento», procesamiento en segundo plano y enlace al avance', async () => {
     mount()
     await settle()
     pick(pdf('ENS-1114-aseo.pdf'))
+    await settle()
+    send()
     await settle()
     expect(state.uploads).toBe(1)
     expect(screen.getByText(/Recibimos «ENS-1114-aseo\.pdf»/)).toBeTruthy()
@@ -111,10 +166,16 @@ describe('subida de facturas', () => {
     await settle()
     pick(pdf())
     await settle()
-    expect(screen.getByText('Enviando tu factura…')).toBeTruthy()
-    expect(screen.getByRole('button', { name: /Subir factura PDF/ }).getAttribute('aria-busy')).toBe('true')
-    pick(pdf('otra.pdf')) // un segundo intento mientras sube no debe duplicar la petición
+    send()
+    send() // varios clics seguidos no deben duplicar la petición
     await settle()
+    expect(screen.getByText('Enviando tu factura…')).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'Archivo seleccionado' }).getAttribute('aria-busy')).toBe('true')
+    expect((screen.getByRole('button', { name: 'Enviar documento' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Elegir otro archivo' }) as HTMLButtonElement).disabled).toBe(true)
+    pick(pdf('otra.pdf')) // cambiar de archivo mientras sube tampoco debe tener efecto
+    await settle()
+    expect(screen.getByText('factura.pdf')).toBeTruthy()
     expect(state.uploads).toBe(1)
     release?.()
     await settle()
@@ -131,6 +192,8 @@ describe('subida de facturas', () => {
     await settle()
     pick(pdf())
     await settle()
+    send()
+    await settle()
     expect(alertText()).toMatch(/elementos interactivos o archivos incrustados/)
     expect(alertText()).toMatch(/Guardar como PDF/)
     expect(screen.queryByText('Enviando tu factura…')).toBeNull()
@@ -146,13 +209,18 @@ describe('subida de facturas', () => {
     await settle()
     pick(pdf())
     await settle()
+    send()
+    await settle()
     expect(alertText()).toMatch(/Esta factura ya fue registrada/)
+    expect(screen.getByText('factura.pdf')).toBeTruthy() // tras un error el archivo sigue seleccionado para reintentar o cambiarlo
 
     state.handler = (path, opts) => {
       if (path === '/ingestions/documents') throw new TypeError('Failed to fetch')
       if (opts?.method !== 'POST') return { items: [], total: 0, page: 1, pageSize: 50 }
     }
     pick(pdf('otra.pdf'))
+    await settle()
+    send()
     await settle()
     expect(alertText()).toMatch(/No pudimos conectar con el servicio/)
   })
@@ -165,6 +233,8 @@ describe('subida de facturas', () => {
     mount()
     await settle()
     pick(pdf())
+    await settle()
+    send()
     await settle()
     expect(screen.getByText(/ya se había subido antes/)).toBeTruthy()
   })

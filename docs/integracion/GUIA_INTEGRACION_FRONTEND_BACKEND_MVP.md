@@ -100,7 +100,7 @@ Jerarquía cuando dos fuentes se contradicen: **(1)** código y contratos realme
 | **IA** | Google Gemini (`gemini-2.5-flash`, nivel gratuito, 20 peticiones/día) llamado **solo desde n8n** | Interpretar PDF y voz. Propone; no decide. |
 | **Gmail** | OAuth de solo lectura en n8n (workflow 05), un buzón ligado a una cuenta demo | Ingesta automática de facturas. **Sin pantalla en el MVP.** |
 | **Asistente de texto/voz y recurrencias automáticas** | *Propuesto* (§19): backend NestJS nuevo (ruta de texto, resolución, generación recurrente); interpretación y programación en n8n | **No existen hoy.** Backend y frontend: integrador. n8n: **solo la responsable** (§24) |
-| **Autenticación** | JWT HS256, 30 min, sin refresh ni cookies ni logout de servidor | Ver §5. |
+| **Autenticación** | JWT HS256, 2 h, sin refresh ni cookies ni logout de servidor | Ver §5. |
 
 ### 2.2 Diagrama
 
@@ -244,9 +244,9 @@ Prefijo: `/api/v1`. Base de pruebas: `https://notihouse-pal-api.onrender.com/api
 
 ### 5.1 Qué implementa el backend (verificado en `backend/src/auth/`)
 
-- `POST /auth/login` (público, 5 intentos/min/IP): devuelve `{ accessToken, tokenType: "Bearer", expiresIn: 1800, user: { id, email, displayName } }`. El correo se normaliza (trim + minúsculas). Error único `401 «Credenciales inválidas»` (no revela si la cuenta existe).
+- `POST /auth/login` (público, 5 intentos/min/IP): devuelve `{ accessToken, tokenType: "Bearer", expiresIn: 7200, user: { id, email, displayName } }`. El correo se normaliza (trim + minúsculas). Error único `401 «Credenciales inválidas»` (no revela si la cuenta existe).
 - `GET /auth/me` → `{ id, email, displayName }`.
-- JWT HS256, emisor `notihouse-pal-api`, audiencia `notihouse-pal-web`, **30 minutos** (`ACCESS_TOKEN_TTL_SECONDS`). Lleva un claim `sv` (versión de sesión): **rotar la contraseña invalida todos los JWT al instante**.
+- JWT HS256, emisor `notihouse-pal-api`, audiencia `notihouse-pal-web`, **2 horas** (`ACCESS_TOKEN_TTL_SECONDS`). Lleva un claim `sv` (versión de sesión): **rotar la contraseña invalida todos los JWT al instante**.
 - **No hay refresh token, ni cookies, ni endpoint de logout.** Cerrar sesión = descartar el token en el cliente y vaciar la caché.
 - Guard global: toda ruta exige JWT salvo `@Public()` (`/health`, `/health/ready`, `/auth/login`). Si la API no puede validar la sesión por un fallo de BD, responde **503** (no 401).
 

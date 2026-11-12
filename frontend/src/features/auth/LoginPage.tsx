@@ -170,7 +170,7 @@ export function LoginPage() {
           {notice && (
             <p role="status" className="login-screen__session-notice">
               {notice.reason === 'expired'
-                ? 'Tu sesión venció (dura 30 minutos). Inicia sesión de nuevo para continuar donde estabas.'
+                ? 'Tu sesión venció (dura 2 horas). Inicia sesión de nuevo para continuar donde estabas.'
                 : 'Tu sesión ya no es válida. Inicia sesión de nuevo para continuar.'}{' '}
               <button
                 type="button"

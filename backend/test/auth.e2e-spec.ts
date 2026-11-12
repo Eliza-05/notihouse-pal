@@ -100,7 +100,7 @@ describe('Auth (e2e)', () => {
       expect(res.body).toEqual({
         accessToken: expect.any(String),
         tokenType: 'Bearer',
-        expiresIn: 1800,
+        expiresIn: 7200,
         user: {
           id: userA.profileId,
           email: userA.email,
@@ -133,7 +133,7 @@ describe('Auth (e2e)', () => {
         iss: 'notihouse-pal-api',
         aud: 'notihouse-pal-web',
       });
-      expect(payload.exp - payload.iat).toBe(1800);
+      expect(payload.exp - payload.iat).toBe(7200);
     });
 
     it('normalizes the email (case and surrounding spaces)', async () => {
@@ -255,7 +255,7 @@ describe('Auth (e2e)', () => {
           iss: 'notihouse-pal-api',
           aud: 'notihouse-pal-web',
           iat: Math.floor(Date.now() / 1000),
-          exp: Math.floor(Date.now() / 1000) + 1800,
+          exp: Math.floor(Date.now() / 1000) + 7200,
         }),
       ).toString('base64url');
       await me(`${header}.${forged}.${signature}`).expect(401);

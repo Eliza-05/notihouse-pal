@@ -17,7 +17,7 @@ import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { ServiceTokenVerifier } from './service-token.verifier.js';
 
 /**
- * Autenticación local (correo + contraseña Argon2id) con JWT de 30 minutos.
+ * Autenticación local (correo + contraseña Argon2id) con JWT de 2 horas.
  * Registra `JwtAuthGuard` como guard global: las rutas son privadas por defecto.
  */
 @Module({

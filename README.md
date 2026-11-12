@@ -47,7 +47,7 @@ Estado a la fecha de la fotografía. "Probado" significa que el responsable del 
 
 | Funcionalidad | Estado | Dependencia pendiente |
 |---|---|---|
-| Autenticación y perfiles (JWT de 30 minutos, cuentas demo) | Implementada y probada contra Render | — (sin registro público, refresh token ni logout en servidor) |
+| Autenticación y perfiles (JWT de 2 horas, cuentas demo) | Implementada y probada contra Render | — (sin registro público, refresh token ni logout en servidor) |
 | Gestión de inmuebles | Implementada en la API | Pantalla de frontend |
 | Obligaciones y períodos (con confirmación humana de pago) | Implementada en la API | Pantalla de frontend |
 | Arriendos y cobros (con confirmación humana de recepción) | Implementada en la API | Pantalla de frontend |
@@ -173,7 +173,7 @@ sequenceDiagram
   participant A as API
   U->>F: correo y contraseña
   F->>A: POST /auth/login
-  A-->>F: JWT de 30 minutos y perfil
+  A-->>F: JWT de 2 horas y perfil
   F->>A: GET /auth/me con Bearer
   A-->>F: perfil autenticado
   Note over F,A: sin refresh token: al vencer, se vuelve a iniciar sesión
@@ -349,7 +349,7 @@ Las plantillas [`.env.example`](.env.example) y [`backend/.env.example`](backend
 
 **Mecanismos de seguridad implementados** (detalle en [docs/security/backend-security-review.md](docs/security/backend-security-review.md) y [docs/architecture/authentication.md](docs/architecture/authentication.md)):
 
-- **JWT de usuario:** HS256, 30 minutos, sin refresh token ni cookies; el cierre de sesión consiste en descartar el token en el cliente. Cambiar la contraseña de una cuenta invalida sus tokens anteriores.
+- **JWT de usuario:** HS256, 2 horas, sin refresh token ni cookies; el cierre de sesión consiste en descartar el token en el cliente. Cambiar la contraseña de una cuenta invalida sus tokens anteriores.
 - **Token de servicio para n8n:** solo válido en `/internal/*`; un JWT de usuario no sirve allí.
 - **Aislamiento por propietario:** el propietario sale siempre del JWT (nunca de un campo enviado por el cliente) y un recurso ajeno responde 404.
 - **Almacenamiento privado:** los archivos se guardan en un bucket privado y se descargan solo a través de la API autenticada.

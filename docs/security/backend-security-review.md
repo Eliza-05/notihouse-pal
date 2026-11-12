@@ -19,7 +19,7 @@ Revisión integral del backend NestJS antes de las integraciones reales (n8n, Gm
 | Aspecto | Estado | Evidencia |
 |---|---|---|
 | Login con correo y contraseña Argon2id, mismo mensaje para cualquier fallo y tiempo constante (hash ficticio) | VERIFICADO | `auth.service.ts`, `auth.e2e-spec.ts` |
-| JWT HS256 de 30 min; algoritmo, `iss`, `aud`, firma y expiración verificados; `alg: none` rechazado | VERIFICADO | `jwt-auth.guard.ts`, `auth.e2e-spec.ts` |
+| JWT HS256 de 2 h; algoritmo, `iss`, `aud`, firma y expiración verificados; `alg: none` rechazado | VERIFICADO | `jwt-auth.guard.ts`, `auth.e2e-spec.ts` |
 | Cuenta inactiva → 401 inmediato (el guard consulta la cuenta en cada solicitud) | VERIFICADO | `auth.e2e-spec.ts` |
 | Sin registro público ni recuperación de contraseña | VERIFICADO | Prueba sobre `/auth/register` y `/auth/signup`; inventario de Swagger |
 | Invalidación de tokens en el mismo segundo de un cambio de contraseña | **CORREGIDO** | Ver 1.1 |
@@ -28,11 +28,11 @@ Revisión integral del backend NestJS antes de las integraciones reales (n8n, Gm
 ### 1.1 Defecto: tokens del mismo segundo (CORREGIDO)
 
 - **Causa.** El guard rechazaba un token si `iat < floor(password_changed_at)`. Como `iat` tiene precisión de segundos, un token emitido antes del cambio pero dentro del mismo segundo tiene un `iat` igual al segundo truncado del cambio, así que se aceptaba.
-- **Consecuencia.** Un token robado o anterior a una rotación seguía siendo válido hasta 30 minutos si se emitió en el mismo segundo en que cambió la contraseña. La ventana es estrecha pero real, y crece con procesos automatizados de rotación.
+- **Consecuencia.** Un token robado o anterior a una rotación seguía siendo válido hasta 2 horas si se emitió en el mismo segundo en que cambió la contraseña. La ventana es estrecha pero real, y crece con procesos automatizados de rotación.
 - **Reproducción.** `auth.e2e-spec.ts › password change within the same second`. Con el código anterior respondía 200; ahora responde 401.
 - **Corrección, sin migración.** Cada JWT lleva el claim `sv` (versión de sesión): una huella opaca de 22 caracteres, SHA-256 de `profileId:password_changed_at` con precisión de milisegundos (`src/auth/session-version.ts`). El guard exige `sv` y que coincida con el valor vigente en la base.
   - Cualquier cambio de contraseña invalida todas las sesiones anteriores, sea cual sea el segundo.
-  - Tras el despliegue, los tokens previos sin `sv` dejan de valer (falla cerrada): como máximo obliga a iniciar sesión de nuevo, porque los tokens duran 30 minutos.
+  - Tras el despliegue, los tokens previos sin `sv` dejan de valer (falla cerrada): como máximo obliga a iniciar sesión de nuevo, porque los tokens duran 2 horas.
 - **Alternativa descartada.** Usar `iat <= cambio` habría rechazado también inicios de sesión legítimos realizados justo después del cambio en el mismo segundo.
 - **Alternativa futura.** Un contador `token_version` en `auth_accounts` tendría el mismo efecto, pero exige una migración. No es necesario.
 

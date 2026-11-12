@@ -47,7 +47,7 @@ export interface AuthenticatedUser {
 export interface LoginResponse {
   accessToken: string
   tokenType: 'Bearer'
-  /** Segundos de validez desde el momento de la respuesta (hoy, 1800 = 30 min). */
+  /** Segundos de validez desde el momento de la respuesta (hoy, 7200 = 2 h). */
   expiresIn: number
   user: AuthenticatedUser
 }
