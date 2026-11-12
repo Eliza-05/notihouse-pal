@@ -26,6 +26,7 @@ import { NotificationBell } from '../features/notifications/NotificationBell'
 import { NotificationToaster } from '../features/notifications/NotificationToaster'
 import { NotificationsProvider } from '../features/notifications/NotificationsProvider'
 import { ToastViewport } from './Toasts'
+import { SessionExpiryBanner } from './SessionExpiryBanner'
 import { UserMenu } from './UserMenu'
 import './tokens.css'
 import './AppShell.css'
@@ -210,7 +211,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          <div className="page">{children}</div>
+          <div className="page">
+            <SessionExpiryBanner />
+            {children}
+          </div>
         </main>
       </div>
 

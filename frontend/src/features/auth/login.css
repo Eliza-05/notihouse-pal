@@ -211,6 +211,24 @@
   text-align: center;
 }
 
+.login-screen__session-notice {
+  margin: 4px 0 16px;
+  font-size: 14px;
+  color: rgb(255 255 255 / 88%);
+  text-align: center;
+}
+
+.login-screen__session-notice-close {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .login-screen__status {
   margin: 4px 0 20px;
   font-size: 13px;

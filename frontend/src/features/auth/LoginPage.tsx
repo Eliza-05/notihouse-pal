@@ -6,6 +6,7 @@ import { z } from 'zod'
 import landingBackground from '../../assets/backgrounds/LandingBackground.png'
 import { Spinner } from '../../components/Feedback'
 import { friendlyError } from '../../lib/api/messages'
+import { clearSessionNotice, getSessionNotice, safeReturnPath } from '../../lib/auth/session'
 import { useAuth } from '../../lib/auth/useAuth'
 import { transitionClassName } from '../landing/transitionClassName'
 // Reutiliza los tokens de color/tipografía (.landing-page) y la imagen de
@@ -64,7 +65,13 @@ export function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(schema) })
 
-  const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/'
+  // Ruta de retorno completa (pathname + búsqueda + hash). Si se recargó el login, la recuerda el aviso de sesión.
+  const [notice, setNotice] = useState(getSessionNotice)
+  const fromState = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)?.from
+  const from =
+    safeReturnPath(fromState?.pathname ? `${fromState.pathname}${fromState.search ?? ''}${fromState.hash ?? ''}` : null) ??
+    notice?.returnTo ??
+    '/'
 
   async function onSubmit(values: FormValues) {
     setServerError(null)
@@ -159,6 +166,24 @@ export function LoginPage() {
               </span>
             )}
           </div>
+
+          {notice && (
+            <p role="status" className="login-screen__session-notice">
+              {notice.reason === 'expired'
+                ? 'Tu sesión venció (dura 30 minutos). Inicia sesión de nuevo para continuar donde estabas.'
+                : 'Tu sesión ya no es válida. Inicia sesión de nuevo para continuar.'}{' '}
+              <button
+                type="button"
+                className="login-screen__session-notice-close"
+                onClick={() => {
+                  clearSessionNotice()
+                  setNotice(null)
+                }}
+              >
+                Entendido
+              </button>
+            </p>
+          )}
 
           {serverError && (
             <p role="alert" className="login-screen__server-error">

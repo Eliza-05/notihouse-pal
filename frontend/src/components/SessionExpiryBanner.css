@@ -1,0 +1,11 @@
+/* Aviso discreto de sesión próxima a vencer. Solo tokens existentes (tokens.css). */
+.app-shell .session-expiry-banner {
+  margin: 0 0 12px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--warn-soft);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}

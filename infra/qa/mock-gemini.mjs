@@ -8,6 +8,7 @@
  * - Interpretación: extractor por reglas sobre el texto entre <mensaje>…</mensaje>.
  * - Transcripción: devuelve la transcripción fijada con POST /__control {"transcript":"…"}
  *   (el audio de prueba es ficticio). Un tono corto (preflight) → sin voz.
+ * - POST /__control {"nextInterpretation": {...}, "nextSkip": 1} fuerza la interpretación posterior a `nextSkip` llamadas (el sondeo previo de una ejecución manual cuenta como una)
  * - POST /__control {"nextInterpretation": {...}} fuerza la PRÓXIMA interpretación
  *   (p. ej. un modelo que inventa un proveedor) para probar los controles deterministas.
  * - failNext también admite 'invalid_json' (200 con texto no JSON), 'empty' (sin candidatos) y 'hang' (no responde).
@@ -16,7 +17,7 @@
  */
 import http from 'node:http';
 
-const state = { transcript: 'Registra la factura de agua de Acueducto por 98.500 pesos', nextInterpretation: null, failNext: null, failSkip: 0, calls: { transcribe: 0, interpret: 0, preflight: 0 } };
+const state = { transcript: 'Registra la factura de agua de Acueducto por 98.500 pesos', nextInterpretation: null, nextSkip: 0, failNext: null, failSkip: 0, calls: { transcribe: 0, interpret: 0, preflight: 0 } };
 
 const PROVIDERS = [
   ['Claro', 'mobile', 'Servicio móvil'], ['Movistar', 'mobile', 'Servicio móvil'], ['Tigo', 'internet', 'Internet'], ['ETB', 'internet', 'Internet'],
@@ -108,7 +109,9 @@ http.createServer((req, res) => {
       return send(200, wrap({ hasSpeech: true, language: 'es', transcript: state.transcript, uncertainFragments: [] }));
     }
     state.calls.interpret += 1;
-    if (state.nextInterpretation) { const o = state.nextInterpretation; state.nextInterpretation = null; return send(200, wrap(o)); }
+    // `nextSkip`: interpretaciones que se responden con el extractor por defecto antes de aplicar `nextInterpretation` (p. ej. 1 = el sondeo previo de una ejecución manual).
+    if (state.nextInterpretation && state.nextSkip > 0) state.nextSkip -= 1;
+    else if (state.nextInterpretation) { const o = state.nextInterpretation; state.nextInterpretation = null; return send(200, wrap(o)); }
     const dm = /<documento>\n([\s\S]*?)\n<\/documento>/.exec(r.contents?.[0]?.parts?.[0]?.text ?? '');
     if (dm) return send(200, wrap(interpretInvoice(dm[1])));
     const m = /<mensaje>\n([\s\S]*?)\n<\/mensaje>/.exec(r.contents?.[0]?.parts?.[0]?.text ?? '');

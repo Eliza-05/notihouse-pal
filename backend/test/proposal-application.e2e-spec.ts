@@ -1,5 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { JwtService } from '@nestjs/jwt';
+import request from 'supertest';
 import { AuditService } from '../src/audit/audit.service.js';
+import { sessionVersion } from '../src/auth/session-version.js';
 import { createTestUser, type TestUser } from './support/pglite.js';
 import {
   type ClaimedJob,
@@ -460,6 +463,87 @@ describe('Proposal application (e2e)', () => {
     it('does not let the service token apply proposals', async () => {
       const { c, p } = await reviewed(occurrenceAction());
       await svc().post(`/cases/${c.id}/proposals/${p.id}/apply`).expect(401);
+    });
+  });
+
+  /**
+   * Semántica real de un 401 en una operación HITL (el frontend no debe suponerla):
+   * el guard global verifica el JWT ANTES de entrar al controlador, así que una petición
+   * rechazada con 401 no ejecuta nada. Aun así, la interfaz relee el estado del servidor al volver
+   * a entrar, y estas pruebas fijan las garantías en que se apoya: sin efectos con el 401 y
+   * decisión/aplicación idempotentes al repetirlas con una sesión válida.
+   */
+  describe('authentication failures on HITL operations (401)', () => {
+    const jwt = () => w.h.app.get(JwtService);
+    const bearerFor = (user: TestUser, claims: object = {}) =>
+      `Bearer ${jwt().sign({
+        sub: user.profileId,
+        sv: sessionVersion(user.profileId, user.passwordChangedAt),
+        ...claims,
+      })}`;
+    /** Token válido en firma, pero emitido hace 31 min (duración real: 30 min). */
+    const expiredBearer = (user: TestUser) =>
+      bearerFor(user, { iat: Math.floor(Date.now() / 1000) - 31 * 60 });
+    const post = (path: string, authorization: string, body: object = {}) =>
+      request(w.h.app.getHttpServer())
+        .post(`/api/v1${path}`)
+        .set('Authorization', authorization)
+        .send(body);
+
+    it('decision with an expired token: 401, nothing recorded; the same decision later succeeds once and is idempotent', async () => {
+      const { r, c } = await reviewed(occurrenceAction(), { decision: null });
+      const path = `/hitl-requests/${r.id}/decision`;
+
+      const denied = await post(path, expiredBearer(w.laura), {
+        decision: 'approved',
+      }).expect(401);
+      expect(denied.body.message).toBe('Autenticación requerida');
+      const afterDenied = (
+        await w.h.as(w.laura).get(`/hitl-requests/${r.id}`).expect(200)
+      ).body;
+      expect(afterDenied.status).toBe('pending');
+      expect(afterDenied.decision).toBeNull();
+      expect(await countAudit('hitl_request.approve', r.id)).toBe(0);
+
+      await w.h.as(w.laura).post(path, { decision: 'approved' }).expect(200);
+      await w.h.as(w.laura).post(path, { decision: 'approved' }).expect(200);
+      expect(await countAudit('hitl_request.approve', r.id)).toBe(1);
+      // El caso sigue siendo el mismo y no se creó nada de negocio.
+      expect(c.id).toBeDefined();
+    });
+
+    it('apply with an expired or tampered token: 401, no period, no application; a valid retry applies once and repeating it does not duplicate', async () => {
+      const { c, p } = await reviewed(occurrenceAction());
+      const path = `/cases/${c.id}/proposals/${p.id}/apply`;
+      const before = await occurrencesOf(w.lauraObligation);
+
+      await post(path, expiredBearer(w.laura)).expect(401);
+      await post(path, `${bearerFor(w.laura)}x`).expect(401); // firma alterada
+      await post(path, 'Bearer ').expect(401);
+      await request(w.h.app.getHttpServer()).post(`/api/v1${path}`).expect(401); // sin Authorization
+      expect(await occurrencesOf(w.lauraObligation)).toBe(before);
+      expect(
+        await count(
+          `SELECT count(*) AS n FROM proposal_applications WHERE proposal_id = $1`,
+          [p.id],
+        ),
+      ).toBe(0);
+
+      const first = await post(path, bearerFor(w.laura)).expect(201);
+      expect(first.body.alreadyApplied).toBe(false);
+      const again = await post(path, bearerFor(w.laura)).expect(200);
+      expect(again.body.alreadyApplied).toBe(true);
+      expect(await occurrencesOf(w.lauraObligation)).toBe(before + 1);
+    });
+
+    it("a token from before the user's last password change is rejected with 401 and has no effect", async () => {
+      const { c, p } = await reviewed(occurrenceAction());
+      const before = await occurrencesOf(w.lauraObligation);
+      const stale = bearerFor(w.laura, {
+        sv: sessionVersion(w.laura.profileId, new Date(0)),
+      });
+      await post(`/cases/${c.id}/proposals/${p.id}/apply`, stale).expect(401);
+      expect(await occurrencesOf(w.lauraObligation)).toBe(before);
     });
   });
 

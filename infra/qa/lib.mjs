@@ -52,7 +52,8 @@ export function n8nRun(id) {
   const out = (r.stdout ?? '') + (r.stderr ?? '');
   return { status: r.status, out };
 }
-export const mock = async (path, body) => (await fetch(MOCK + path, body ? { method: 'POST', body: JSON.stringify(body) } : {})).json();
+// `connection: close`: tras una ejecución larga de n8n el servidor simulado ya cerró el socket inactivo (5 s) y reutilizarlo daba ECONNRESET.
+export const mock = async (path, body) => (await fetch(MOCK + path, { headers: { connection: 'close' }, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) })).json();
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const assert = (cond, msg) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}`); if (!cond) process.exitCode = 1; };
 

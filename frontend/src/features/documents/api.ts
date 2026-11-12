@@ -1,7 +1,6 @@
-import { api } from '../../lib/api/client'
+import { api, reportUnauthorized } from '../../lib/api/client'
 import { getToken } from '../../lib/auth/session'
 import { ApiError } from '../../lib/api/errors'
-import { logout } from '../../lib/auth/session'
 import type { DocumentMeta, IngestionResponse, ListDocumentsParams, Page } from '../../lib/api/types'
 
 function qs(params: object): string {
@@ -37,11 +36,13 @@ export function uploadDocument(file: File, requestId: string, obligationId?: str
  */
 export async function downloadDocument(id: string, fileName: string): Promise<void> {
   const base = import.meta.env.VITE_API_BASE_URL
+  // Mismo criterio que api(): el 401 solo cuenta contra la sesión del token con el que se envió.
+  const sentToken = getToken()
   const res = await fetch(`${base}/documents/${id}/content`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
+    headers: sentToken ? { Authorization: `Bearer ${sentToken}` } : {},
   })
   if (res.status === 401) {
-    logout()
+    reportUnauthorized(sentToken)
     throw new ApiError(401, ['Sesión vencida'])
   }
   if (!res.ok) throw await ApiError.from(res)

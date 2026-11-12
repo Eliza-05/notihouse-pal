@@ -278,7 +278,7 @@ export function HitlDetailPage() {
           <p className="text-muted review-note">Se generarán cobros esperados; no se cobra ni se envía ningún mensaje.</p>
         )}
 
-        {pending && <ContextNotes context={context} />}
+        {pending && <ContextNotes context={context} applicable={info.mode === 'applicable'} />}
 
         {parsed?.kind === 'guided' && (
           <p className="text-muted">Esta solicitud se completa manualmente; no tiene un botón «Aplicar».</p>
@@ -309,7 +309,7 @@ export function HitlDetailPage() {
             {choices.map((c) => (
               <label key={c.key} className="row" style={{ marginBottom: '0.3rem' }}>
                 <input type="radio" name="choice" value={c.key} checked={choice === c.key} onChange={() => setChoice(c.key)} />
-                {c.label}
+                {humanizeText(c.label)}
               </label>
             ))}
           </fieldset>
@@ -334,7 +334,9 @@ export function HitlDetailPage() {
                     ? hasConsequences
                       ? 'Tu decisión queda registrada.'
                       : 'Aprobar solo confirma que los datos son correctos: todavía no se crea nada. Después podrás aplicar el cambio. Tu decisión queda registrada.'
-                    : 'Tu decisión queda registrada y no se puede cambiar después.'}
+                    : info.mode === 'choice'
+                      ? 'Tu elección queda registrada y no ejecuta ningún cambio por sí sola. No se puede cambiar después.'
+                      : 'Con «Entendido» solo registras que revisaste este aviso: no se crea ni se cambia nada. No se puede cambiar después.'}
                 </p>
                 <div className="row">
                   <LoadingButton className="btn btn-primary" loading={decide.isPending} loadingText="Guardando decisión…" onClick={() => void handleDecision('approved')}>
@@ -459,8 +461,11 @@ const CONTEXT_LABELS: Record<string, string> = {
 }
 
 /** Muestra solo textos (o listas de textos) conocidos del contexto; nunca vuelca JSON técnico. */
-function ContextNotes({ context }: { context: Record<string, unknown> }) {
+function ContextNotes({ context, applicable }: { context: Record<string, unknown>; applicable: boolean }) {
+  // «Qué pasaría» habla de aprobar y aplicar una propuesta: solo tiene sentido si la revisión es aplicable.
+  // En una revisión informativa o de alternativas no hay nada que aplicar y el texto confundiría.
   const rows = Object.entries(CONTEXT_LABELS).flatMap(([key, title]) => {
+    if (key === 'consecuencias' && !applicable) return []
     const v = context[key]
     const items = typeof v === 'string' ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
     return items.length ? [{ key, title, items }] : []
