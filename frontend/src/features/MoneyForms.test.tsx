@@ -14,6 +14,9 @@ const m = vi.hoisted(() => ({
   updateCharge: vi.fn(),
 }))
 const mut = (fn: ReturnType<typeof vi.fn>) => ({ mutateAsync: fn, isPending: false })
+vi.mock('../components/Toasts', () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), notify: vi.fn(), dismiss: vi.fn(), clear: vi.fn() }),
+}))
 
 vi.mock('./obligations/hooks', () => ({
   useCreateObligation: () => mut(m.createObligation),

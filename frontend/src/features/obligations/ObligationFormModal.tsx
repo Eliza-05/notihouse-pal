@@ -1,9 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
+import { useToast } from '../../components/Toasts'
 import { MoneyInput } from '../../components/MoneyInput'
-import { ApiError } from '../../lib/api/errors'
+import { friendlyError } from '../../lib/api/messages'
 import { moneyToDisplay, toWireMoney } from '../../lib/format/cop'
 import { moneyField } from '../../lib/format/validation'
 import { OBLIGATION_CATEGORY_LABELS, OBLIGATION_FREQUENCY_LABELS } from '../../lib/format/labels'
@@ -60,6 +62,7 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
   const dueDay = watch('dueDay')
   const reminderDaysBefore = watch('reminderDaysBefore')
 
+  const toast = useToast()
   async function onSubmit(values: FormValues) {
     const dueDayNum = values.dueDay ? Number(values.dueDay) : undefined
     const reminderNum = values.reminderDaysBefore ? Number(values.reminderDaysBefore) : undefined
@@ -98,9 +101,10 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
           autoGenerate: values.autoGenerate,
         })
       }
+      toast.success(isEdit ? 'Cambios guardados.' : 'Obligación registrada.')
       onClose()
     } catch (err) {
-      if (err instanceof ApiError) setError('providerName', { message: err.messages.join(' ') })
+      setError('providerName', { message: friendlyError(err, 'save') })
     }
   }
 
@@ -200,9 +204,9 @@ export function ObligationFormModal({ obligation, onClose }: { obligation?: Obli
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Guardando…' : 'Guardar'}
-          </button>
+          <LoadingButton type="submit" loading={isSubmitting} loadingText="Guardando…">
+            Guardar
+          </LoadingButton>
         </div>
       </form>
     </Modal>

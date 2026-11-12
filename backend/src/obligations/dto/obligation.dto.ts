@@ -296,3 +296,11 @@ export class ObligationPageDto extends PageMetaDto {
   @ApiProperty({ type: [ObligationResponseDto] })
   items: ObligationResponseDto[];
 }
+
+export class ArchiveObligationResponseDto extends ObligationResponseDto {
+  @ApiProperty({
+    description:
+      'Períodos pendientes o vencidos que se conservan sin cambios tras archivar',
+  })
+  pendingOccurrences: number;
+}

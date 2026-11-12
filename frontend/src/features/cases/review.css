@@ -1,0 +1,148 @@
+/* Revisión HITL y progreso del caso: solo utilidades de maquetación sobre los tokens existentes. */
+.app-shell .review-head {
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.app-shell .review-head h1 {
+  font-size: 1.35rem;
+  overflow-wrap: anywhere;
+}
+.app-shell .review-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem 1.5rem;
+  margin: 0.75rem 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.app-shell .review-fact dt {
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 700;
+}
+.app-shell .review-fact dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+.app-shell .review-note,
+.app-shell .review-help {
+  font-size: 0.85rem;
+  margin: 0.25rem 0;
+}
+.app-shell .review-decision,
+.app-shell .review-apply {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+.app-shell .review-note-box summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent-ink);
+  width: fit-content;
+}
+.app-shell .review-note-box .field {
+  margin-top: 0.5rem;
+}
+.app-shell .review-status {
+  margin: 0.9rem 0 0;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--info-soft);
+}
+.app-shell .review-done {
+  background: var(--good-soft);
+}
+.app-shell .review-record {
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px dashed var(--line);
+}
+.app-shell .review-quote {
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.9rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.app-shell .review-quote-label {
+  display: block;
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 700;
+  margin-bottom: 0.15rem;
+}
+.app-shell .review-choices {
+  margin-top: 0.75rem;
+}
+
+/* Progreso de la solicitud */
+.app-shell .progress-steps {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+.app-shell .progress-step {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 0.7rem;
+  align-items: start;
+}
+.app-shell .progress-dot {
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--line);
+  color: var(--text-faint);
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--surface-strong);
+}
+.app-shell .progress-step.is-done .progress-dot {
+  border-color: var(--good);
+  background: var(--good);
+  color: #fff;
+}
+.app-shell .progress-step.is-active .progress-dot {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.app-shell .progress-step.is-failed .progress-dot {
+  border-color: var(--critical);
+  background: var(--critical);
+  color: #fff;
+}
+.app-shell .progress-step.is-skipped {
+  opacity: 0.6;
+}
+.app-shell .progress-title {
+  font-weight: 700;
+  margin: 0;
+}
+.app-shell .progress-text {
+  margin: 0.1rem 0 0;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+
+.app-shell .review-proposals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}

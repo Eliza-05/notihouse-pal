@@ -1,8 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
-import { ApiError } from '../../lib/api/errors'
+import { useToast } from '../../components/Toasts'
+import { friendlyError } from '../../lib/api/messages'
 import { MoneyInput } from '../../components/MoneyInput'
 import { moneyToDisplay, toWireMoney } from '../../lib/format/cop'
 import { calendarDateField, positiveMoneyField } from '../../lib/format/validation'
@@ -47,6 +49,7 @@ export function RentalFormModal({ rental, onClose }: { rental?: Rental; onClose:
     },
   })
 
+  const toast = useToast()
   async function onSubmit(values: FormValues) {
     try {
       if (isEdit) {
@@ -72,9 +75,10 @@ export function RentalFormModal({ rental, onClose }: { rental?: Rental; onClose:
           autoGenerate: values.autoGenerate,
         })
       }
+      toast.success(isEdit ? 'Cambios guardados.' : 'Arriendo registrado.')
       onClose()
     } catch (err) {
-      if (err instanceof ApiError) setError('propertyId', { message: err.messages.join(' ') })
+      setError('propertyId', { message: friendlyError(err, 'save') })
     }
   }
 
@@ -131,9 +135,9 @@ export function RentalFormModal({ rental, onClose }: { rental?: Rental; onClose:
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Guardando…' : 'Guardar'}
-          </button>
+          <LoadingButton type="submit" loading={isSubmitting} loadingText="Guardando…">
+            Guardar
+          </LoadingButton>
         </div>
       </form>
     </Modal>

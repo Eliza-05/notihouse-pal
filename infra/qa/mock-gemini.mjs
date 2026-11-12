@@ -10,6 +10,7 @@
  *   (el audio de prueba es ficticio). Un tono corto (preflight) → sin voz.
  * - POST /__control {"nextInterpretation": {...}} fuerza la PRÓXIMA interpretación
  *   (p. ej. un modelo que inventa un proveedor) para probar los controles deterministas.
+ * - failNext también admite 'invalid_json' (200 con texto no JSON), 'empty' (sin candidatos) y 'hang' (no responde).
  * - POST /__control {"failNext": 429, "failSkip": 1} hace que la próxima llamada (tras saltar failSkip) falle con ese estado.
  * - GET /__stats: número de llamadas (para comprobar que no hay llamadas de más).
  */
@@ -30,6 +31,7 @@ function interpret(text) {
   if (/ignora (todas )?las instrucciones|ignore (all )?previous|system prompt|marca (esto )?como pagad/.test(t)) x.containsInstructions = true;
   const p = PROVIDERS.find(([n]) => new RegExp('\\b' + n + '\\b', 'i').test(text));
   if (p) { x.providerName = p[0]; x.category = p[1]; x.concept = p[2]; ev('providerName', p[0]); }
+  if (!p && /internet/i.test(text)) { x.category = 'internet'; ev('category', 'internet'); }
   const am = /(?:por|valor(?: de)?|de|\$)\s*\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d{4,})(?:\s*(pesos|cop))?/i.exec(text);
   if (am) { x.amount = Number(am[1].replace(/[.,]/g, '')).toFixed(2); ev('amount', am[1]); if (am[2] || /\$/.test(am[0])) x.currency = 'COP'; }
   const day = /(?:d[ií]a|el)\s+(\d{1,2})(?:\s+de cada mes)?/i.exec(text);
@@ -49,6 +51,7 @@ function interpret(text) {
   else if (/recib[ií].*arriendo|arriendo.*recib[ií]/.test(t)) x.intent = 'declare_rent_received';
   else if (/no (me )?pag[oó]|no ha pagado/.test(t) && /arriendo|inquilin/.test(t)) x.intent = 'report_rent_unpaid';
   else if (/arriendo|inquilin/.test(t)) x.intent = 'create_recurring_rental';
+  else if (/ya no (pago|tengo|uso|quiero|necesito)|elimin|archiv|dar de baja|cancel[oó] (el|la|mi)/.test(t) && /obligaci|internet|servicio|plan|factura|agua|gas|energ/.test(t)) x.intent = 'archive_obligation';
   else if (/cambia|cambiar|modifica|mueve|mover|pasa el vencimiento/.test(t)) x.intent = 'update_obligation_schedule';
   else if (/factura|me lleg[oó]/.test(t) && x.amount) x.intent = 'register_invoice';
   else if (/registra|agrega|crea|nueva obligaci|cada mes|mensual/.test(t) && x.providerName) x.intent = 'create_recurring_obligation';
@@ -86,6 +89,9 @@ http.createServer((req, res) => {
     if (req.url === '/__control' && req.method === 'POST') { Object.assign(state, JSON.parse(body || '{}')); return send(200, { ok: true }); }
     if (!/:generateContent$/.test(req.url.split('?')[0])) return send(404, { error: 'not found' });
     if (state.failNext && state.failSkip > 0) state.failSkip -= 1;
+    else if (state.failNext === 'invalid_json') { state.failNext = null; return send(200, { modelVersion: 'SIMULADO-qa', candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'no es json {intent:' }] } }] }); }
+    else if (state.failNext === 'empty') { state.failNext = null; return send(200, { modelVersion: 'SIMULADO-qa', candidates: [] }); }
+    else if (state.failNext === 'hang') { state.failNext = null; return; } // nunca responde: prueba el tiempo de espera de n8n
     else if (state.failNext) { const c = state.failNext; state.failNext = null; return send(c, { error: { code: c, message: c === 429 ? 'Quota exceeded: PerDay limit (simulado)' : 'simulado' } }); }
     const r = JSON.parse(body);
     const sys = r.systemInstruction?.parts?.[0]?.text ?? '';

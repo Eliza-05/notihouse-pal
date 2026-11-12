@@ -1,6 +1,10 @@
 import { useState } from 'react'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
-import { ApiError } from '../../lib/api/errors'
+import { useToast } from '../../components/Toasts'
+import { friendlyError } from '../../lib/api/messages'
+import { formatMoneyWithCurrency } from '../../lib/format/money'
+import { formatLongDate } from '../../lib/format/dates'
 import { useConfirmCharge } from './hooks'
 import type { RentCharge } from '../../lib/api/types'
 
@@ -16,6 +20,7 @@ export function ConfirmChargeModal({
   const [evidence, setEvidence] = useState('')
   const [error, setError] = useState<string | null>(null)
   const confirm = useConfirmCharge(rentalId)
+  const toast = useToast()
 
   async function handleConfirm() {
     if (!evidence.trim()) {
@@ -25,15 +30,21 @@ export function ConfirmChargeModal({
     setError(null)
     try {
       await confirm.mutateAsync({ chargeId: charge.id, input: { evidence: evidence.trim() } })
+      toast.success('Declaraste el cobro como recibido.')
       onClose()
     } catch (err) {
-      setError(err instanceof ApiError ? err.messages.join(' ') : 'No se pudo registrar la confirmación.')
+      setError(friendlyError(err, 'save'))
     }
   }
 
   return (
-    <Modal title="Confirmar recepción" onClose={onClose}>
-      <p>Declaras que recibiste este pago. NotiHouse-Pal no realiza ni verifica pagos: tú declaras que lo recibiste.</p>
+    <Modal title="Confirmar cobro recibido" onClose={onClose}>
+      <p>
+        Cobro con vencimiento el {formatLongDate(charge.dueDate)} por <strong>{formatMoneyWithCurrency(charge.expectedAmount, charge.currency)}</strong>.
+      </p>
+      <p>
+        Declaras que recibiste este pago. NotiHouse-Pal no realiza ni verifica pagos: es tu declaración. Después de confirmarlo, este cobro ya no se podrá editar desde la aplicación.
+      </p>
       <div className="field">
         <label htmlFor="evidence">Evidencia (obligatoria)</label>
         <textarea
@@ -50,9 +61,9 @@ export function ConfirmChargeModal({
         <button type="button" className="btn btn-secondary" onClick={onClose}>
           Cancelar
         </button>
-        <button type="button" className="btn btn-primary" disabled={confirm.isPending} onClick={handleConfirm}>
-          {confirm.isPending ? 'Confirmando…' : 'Confirmar'}
-        </button>
+        <LoadingButton loading={confirm.isPending} loadingText="Guardando…" onClick={handleConfirm}>
+          Declarar como recibido
+        </LoadingButton>
       </div>
     </Modal>
   )

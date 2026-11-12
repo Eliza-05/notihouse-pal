@@ -81,6 +81,14 @@ const createRecurringRental = z.object({
   }),
 })
 
+const archiveObligation = z.object({
+  action: z.literal('archive_obligation'),
+  data: z.object({
+    obligationId: z.string(),
+    expected: z.object({ providerName: z.string(), concept: z.string() }),
+  }),
+})
+
 const guided = z.object({
   guided: z.object({
     kind: z.string(),
@@ -98,6 +106,7 @@ const knownProposal = z.discriminatedUnion('action', [
   updateObligationSchedule,
   updateOccurrenceDetails,
   createRecurringRental,
+  archiveObligation,
 ])
 
 export type KnownProposal = z.infer<typeof knownProposal>

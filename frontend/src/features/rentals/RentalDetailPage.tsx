@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { SkeletonCard } from '../../components/Feedback'
+import { SkeletonTable } from '../../components/Feedback'
+import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { formatCalendarDate, describeDueDate } from '../../lib/format/dates'
 import { formatMoney } from '../../lib/format/money'
@@ -24,7 +26,7 @@ export function RentalDetailPage() {
   const [editingCharge, setEditingCharge] = useState<RentCharge | null>(null)
   const [confirming, setConfirming] = useState<RentCharge | null>(null)
 
-  if (isLoading) return <LoadingBlock label="Cargando arriendo…" />
+  if (isLoading) return <SkeletonCard lines={4} label="Cargando arriendo…" />
   if (isError || !rental) return <ErrorBlock error={error} onRetry={refetch} />
 
   return (
@@ -74,7 +76,7 @@ export function RentalDetailPage() {
             </button>
           )}
         </div>
-        {loadingCharges && <LoadingBlock label="Cargando cobros…" />}
+        {loadingCharges && <SkeletonTable rows={2} cols={5} label="Cargando cobros…" />}
         {!loadingCharges && charges && charges.items.length === 0 && <EmptyBlock title="Sin cobros registrados" />}
         {!loadingCharges && charges && charges.items.length > 0 && (
           <div className="table-wrap">

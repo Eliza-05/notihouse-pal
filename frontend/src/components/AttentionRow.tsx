@@ -4,6 +4,7 @@ import { formatCalendarDate } from '../lib/format/dates'
 import { formatMoney } from '../lib/format/money'
 import { ATTENTION_CONDITION_LABELS, SUGGESTED_ACTION_LABELS, label } from '../lib/format/labels'
 import type { AttentionCondition, AttentionItem, AttentionKind } from '../lib/api/types'
+import type { ReviewHeading } from '../features/cases/reviewSummary'
 
 const CONDITION_TONE: Record<AttentionCondition, 'danger' | 'warning' | 'neutral'> = {
   overdue: 'danger',
@@ -29,10 +30,13 @@ function whenLabel(item: AttentionItem) {
  * Fila de la lista de vencimientos (diseño housepal_mvp): ícono por tipo,
  * título, descripción, pill de condición y monto. Toda la fila es un botón.
  */
-export function AttentionRow({ item, onOpen, showAction = false }: { item: AttentionItem; onOpen: (item: AttentionItem) => void; showAction?: boolean }) {
+export function AttentionRow({ item, onOpen, showAction = false, heading }: { item: AttentionItem; onOpen: (item: AttentionItem) => void; showAction?: boolean; heading?: ReviewHeading }) {
   const tone = CONDITION_TONE[item.condition]
   const Icon = item.condition === 'overdue' ? CalendarClock : KIND_ICON[item.kind]
   const unread = item.alert !== null && !item.alert.read
+  // Revisiones: el título distinguible (proveedor + importe) reemplaza al genérico del servidor.
+  const title = item.kind === 'hitl_request' && heading ? heading.title : item.title
+  const amount = item.amount ?? (item.kind === 'hitl_request' ? (heading?.amount ?? null) : null)
 
   return (
     <button type="button" className="row-item" onClick={() => onOpen(item)}>
@@ -42,7 +46,7 @@ export function AttentionRow({ item, onOpen, showAction = false }: { item: Atten
       <span style={{ minWidth: 0 }}>
         <span className="row-title" style={{ display: 'block' }}>
           {unread && <span className="visually-hidden">Sin leer: </span>}
-          {item.title}
+          {title}
         </span>
         <span className="row-sub" style={{ display: 'block' }}>
           {item.description} · {whenLabel(item)}
@@ -55,7 +59,7 @@ export function AttentionRow({ item, onOpen, showAction = false }: { item: Atten
       </span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 12, justifySelf: 'end' }}>
         <StatusBadge label={label(ATTENTION_CONDITION_LABELS, item.condition)} tone={tone} />
-        {item.amount && <span className="row-amount">{formatMoney(item.amount, item.currency ?? 'COP')}</span>}
+        {amount && <span className="row-amount">{formatMoney(amount, item.currency ?? 'COP')}</span>}
       </span>
     </button>
   )

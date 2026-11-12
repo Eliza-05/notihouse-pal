@@ -4,7 +4,8 @@ import { useForm } from 'react-hook-form'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 import landingBackground from '../../assets/backgrounds/LandingBackground.png'
-import { ApiError, isNetworkError } from '../../lib/api/errors'
+import { Spinner } from '../../components/Feedback'
+import { friendlyError } from '../../lib/api/messages'
 import { useAuth } from '../../lib/auth/useAuth'
 import { transitionClassName } from '../landing/transitionClassName'
 // Reutiliza los tokens de color/tipografía (.landing-page) y la imagen de
@@ -73,15 +74,7 @@ export function LoginPage() {
       await login(values)
       navigate(from, { replace: true })
     } catch (err) {
-      if (isNetworkError(err)) {
-        setServerError('No pudimos conectar con el servidor. Verifica tu conexión e intenta de nuevo.')
-      } else if (err instanceof ApiError) {
-        if (err.status === 401) setServerError('Correo o contraseña incorrectos.')
-        else if (err.status === 429) setServerError('Demasiados intentos. Espera un minuto e inténtalo de nuevo.')
-        else setServerError(err.messages.join(' '))
-      } else {
-        setServerError('Ocurrió un error inesperado.')
-      }
+      setServerError(friendlyError(err, 'login'))
     } finally {
       clearTimeout(wakeTimer)
       setWakingUp(false)
@@ -172,10 +165,20 @@ export function LoginPage() {
               {serverError}
             </p>
           )}
-          {wakingUp && <p className="login-screen__status">Despertando el servidor, puede tardar hasta un minuto…</p>}
+          {wakingUp && (
+            <p className="login-screen__status" role="status">
+              Estamos despertando el servidor, puede tardar hasta un minuto. No cierres esta pantalla.
+            </p>
+          )}
 
-          <button type="submit" className="login-screen__submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Entrando…' : 'Iniciar sesión'}
+          <button type="submit" className="login-screen__submit" disabled={isSubmitting} aria-busy={isSubmitting || undefined}>
+            {isSubmitting ? (
+              <span className="login-screen__busy">
+                <Spinner size={16} /> Verificando tus datos…
+              </span>
+            ) : (
+              'Iniciar sesión'
+            )}
           </button>
         </form>
       </main>

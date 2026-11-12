@@ -137,6 +137,11 @@ export interface Obligation {
   updatedAt: IsoInstant
 }
 
+/** Respuesta del archivado: la obligación y cuántos períodos abiertos se conservan sin cambios. */
+export interface ArchivedObligation extends Obligation {
+  pendingOccurrences: number
+}
+
 export interface CreateObligationInput {
   propertyId?: string
   providerName: string
@@ -560,6 +565,11 @@ export interface Proposal {
   reviewedBy: string | null
   createdAt: IsoInstant
   updatedAt: IsoInstant
+  /**
+   * Fecha en que la propuesta se aplicó a los datos de negocio. `null` = aún no aplicada;
+   * `undefined` = el backend desplegado todavía no informa este dato (no asumir ni aplicada ni pendiente).
+   */
+  appliedAt?: IsoInstant | null
 }
 
 export interface ListProposalsParams {
@@ -592,6 +602,8 @@ export interface HitlOptions {
 export interface HitlDecision {
   outcome: 'approved' | 'rejected'
   choice?: string
+  /** A-7: revisión de aprobación que el backend creó al elegir una alternativa (archivar / modificar). */
+  followUpRequestId?: string
   comment?: string
 }
 

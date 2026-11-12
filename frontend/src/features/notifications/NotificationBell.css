@@ -1,0 +1,158 @@
+/* Panel de la campana. Reutiliza .icon-btn.bell y .bell-count de AppShell.css. */
+.notif-root {
+  position: relative;
+}
+
+.notif-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 80;
+  width: min(400px, calc(100vw - 28px));
+  max-height: min(70vh, 560px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-solid, rgba(255, 255, 255, 0.94));
+  border: 1px solid var(--border-soft, rgba(158, 27, 48, 0.08));
+  border-radius: var(--radius-md, 18px);
+  box-shadow: var(--shadow-lg, 0 28px 70px rgba(158, 27, 48, 0.2));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: notif-in 0.2s var(--ease-smooth, cubic-bezier(0.22, 1, 0.36, 1));
+}
+@keyframes notif-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.notif-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+}
+.notif-head-title {
+  font-family: var(--font-display, inherit);
+  font-weight: 800;
+  font-size: 1rem;
+}
+.notif-scroll {
+  overflow-y: auto;
+  padding: 0 8px 4px;
+  min-height: 0;
+}
+.notif-section {
+  margin: 10px 8px 4px;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint, #a69894);
+  font-weight: 700;
+}
+.notif-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.notif-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  text-align: left;
+  padding: 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 12px);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.notif-item:hover {
+  background: var(--accent-soft, rgba(196, 34, 59, 0.1));
+}
+.notif-item:focus-visible {
+  outline: 2px solid var(--accent, #c4223b);
+  outline-offset: -2px;
+}
+.notif-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft, rgba(196, 34, 59, 0.1));
+  color: var(--accent, #c4223b);
+}
+.notif-medium .notif-icon {
+  background: var(--warn-soft, rgba(180, 83, 9, 0.12));
+  color: var(--warn, #b45309);
+}
+.notif-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.notif-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.notif-body {
+  font-size: 0.82rem;
+  color: var(--text-muted, #6e615e);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.notif-action {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent, #c4223b);
+}
+.notif-empty {
+  padding: 22px 14px;
+  text-align: center;
+  color: var(--text-muted, #6e615e);
+}
+.notif-empty p {
+  margin: 0 0 10px;
+}
+.notif-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--line, rgba(158, 27, 48, 0.1));
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.notif-foot a {
+  color: var(--accent, #c4223b);
+}
+
+/* En pantallas estrechas el panel se ancla a la pantalla, no al botón. */
+@media (max-width: 560px) {
+  .notif-panel {
+    position: fixed;
+    right: 14px;
+    left: 14px;
+    top: 64px;
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notif-panel {
+    animation: none;
+  }
+}

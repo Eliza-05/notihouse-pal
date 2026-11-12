@@ -9,6 +9,7 @@ export const APPLICABLE_ACTIONS: ReadonlySet<string> = new Set([
   'update_obligation_schedule',
   'update_occurrence_details',
   'create_recurring_rental',
+  'archive_obligation',
 ])
 
 /**

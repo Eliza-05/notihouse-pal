@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { SkeletonTable } from '../../components/Feedback'
+import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { Pagination } from '../../components/Pagination'
 import { formatMoney } from '../../lib/format/money'
@@ -51,7 +52,7 @@ export function RentalsPage() {
         </select>
       </div>
 
-      {isLoading && <LoadingBlock label="Cargando arriendos…" />}
+      {isLoading && <SkeletonTable rows={4} cols={5} label="Cargando arriendos…" />}
       {isError && <ErrorBlock error={error} onRetry={refetch} />}
       {!isLoading && !isError && data && data.items.length === 0 && (
         <EmptyBlock

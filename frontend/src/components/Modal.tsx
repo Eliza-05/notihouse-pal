@@ -13,6 +13,14 @@ export function Modal({
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
+  // Al cerrar, el foco vuelve al control que abrió el diálogo (accesibilidad por teclado).
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    return () => {
+      if (opener && document.contains(opener)) opener.focus()
+    }
+  }, [])
+
   useEffect(() => {
     ref.current?.focus()
     function onKeyDown(e: KeyboardEvent) {

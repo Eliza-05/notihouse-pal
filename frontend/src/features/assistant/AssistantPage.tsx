@@ -1,7 +1,13 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Mic, Square, Trash2 } from 'lucide-react'
-import { ApiError } from '../../lib/api/errors'
+import { useQueryClient } from '@tanstack/react-query'
+import { LoadingButton } from '../../components/Feedback'
+import { useToast } from '../../components/Toasts'
+import { friendlyError } from '../../lib/api/messages'
+import { queryKey } from '../../lib/api/queryKey'
+import { createRequestKeeper } from '../../lib/requestKey'
+import { useAuth } from '../../lib/auth/useAuth'
 import { useAudioRecorder } from '../../lib/useAudioRecorder'
 import { uploadVoice } from '../voice/api'
 import { sendTextIngestion } from './api'
@@ -22,6 +28,16 @@ export function AssistantPage() {
   const [textError, setTextError] = useState<string | null>(null)
   const [textCaseId, setTextCaseId] = useState<string | null>(null)
 
+  const toast = useToast()
+  const qc = useQueryClient()
+  const { user } = useAuth()
+  const refreshLists = () => {
+    void qc.invalidateQueries({ queryKey: queryKey(user!.id, 'cases') })
+    void qc.invalidateQueries({ queryKey: queryKey(user!.id, 'dashboard') })
+  }
+
+  const textKey = useRef(createRequestKeeper())
+  const voiceKey = useRef(createRequestKeeper())
   const recorder = useAudioRecorder()
   const [sendingVoice, setSendingVoice] = useState(false)
   const [voiceError, setVoiceError] = useState<string | null>(null)
@@ -33,11 +49,14 @@ export function AssistantPage() {
     setSendingText(true)
     setTextError(null)
     try {
-      const res = await sendTextIngestion({ text: trimmed, requestId: crypto.randomUUID() })
+      const res = await sendTextIngestion({ text: trimmed, requestId: textKey.current.for(trimmed) })
+      textKey.current.done()
       setTextCaseId(res.caseId)
       setText('')
+      refreshLists()
+      toast.success('Recibimos tu mensaje.')
     } catch (err) {
-      setTextError(err instanceof ApiError ? err.messages.join(' ') : 'No se pudo enviar el mensaje.')
+      setTextError(friendlyError(err, 'upload'))
     } finally {
       setSendingText(false)
     }
@@ -47,11 +66,14 @@ export function AssistantPage() {
     setSendingVoice(true)
     setVoiceError(null)
     try {
-      const res = await uploadVoice(blob, `nota.${extensionFor(mimeType)}`, crypto.randomUUID())
+      const res = await uploadVoice(blob, `nota.${extensionFor(mimeType)}`, voiceKey.current.for(`${blob.size}:${blob.type}`))
+      voiceKey.current.done()
       setVoiceCaseId(res.caseId)
       recorder.reset()
+      refreshLists()
+      toast.success('Recibimos tu nota de voz.')
     } catch (err) {
-      setVoiceError(err instanceof ApiError ? err.messages.join(' ') : 'No se pudo enviar la nota de voz.')
+      setVoiceError(friendlyError(err, 'upload'))
     } finally {
       setSendingVoice(false)
     }
@@ -83,13 +105,13 @@ export function AssistantPage() {
         </div>
         {textError && <p role="alert" className="field-error">{textError}</p>}
         <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <button type="button" className="btn btn-primary" disabled={sendingText || !text.trim()} onClick={handleSendText}>
-            {sendingText ? 'Enviando…' : 'Enviar'}
-          </button>
+          <LoadingButton loading={sendingText} loadingText="Enviando…" disabled={!text.trim()} onClick={handleSendText}>
+            Enviar mensaje
+          </LoadingButton>
         </div>
         {textCaseId && (
           <p role="status">
-            Mensaje recibido. <Link to={`/casos/${textCaseId}`}>Seguir el estado</Link>
+            Recibimos tu mensaje y lo estamos analizando. Puedes seguir usando la aplicación. <Link to={`/casos/${textCaseId}`}>Ver el avance</Link>
           </p>
         )}
       </div>
@@ -116,14 +138,9 @@ export function AssistantPage() {
               <button type="button" className="btn btn-secondary" onClick={recorder.reset}>
                 <Trash2 size={16} /> Regrabar
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={sendingVoice}
-                onClick={() => handleSendVoice(recorder.result!.blob, recorder.result!.mimeType)}
-              >
-                {sendingVoice ? 'Enviando…' : 'Enviar'}
-              </button>
+              <LoadingButton loading={sendingVoice} loadingText="Enviando…" onClick={() => handleSendVoice(recorder.result!.blob, recorder.result!.mimeType)}>
+                Enviar nota
+              </LoadingButton>
             </div>
           </div>
         )}
@@ -131,7 +148,7 @@ export function AssistantPage() {
         {voiceError && <p role="alert" className="field-error">{voiceError}</p>}
         {voiceCaseId && (
           <p role="status">
-            Nota recibida. <Link to={`/casos/${voiceCaseId}`}>Seguir el estado</Link>
+            Recibimos tu nota de voz y la estamos transcribiendo. Puedes seguir usando la aplicación. <Link to={`/casos/${voiceCaseId}`}>Ver el avance</Link>
           </p>
         )}
       </div>

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, count, desc, eq, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
 import {
@@ -62,6 +62,22 @@ export const proposalColumns = {
   reviewedBy: caseProposals.reviewedBy,
   createdAt: caseProposals.createdAt,
   updatedAt: caseProposals.updatedAt,
+};
+
+/**
+ * Columnas de LECTURA de una propuesta: las mismas más `appliedAt`, la fecha en
+ * que se aplicó a los datos de negocio (NULL si aún no se aplicó), en ISO 8601 UTC como las demás fechas de la API. Permite a la
+ * interfaz distinguir «aprobada» de «aplicada»; `case.status = completed` no lo
+ * indica (el flujo de cierre puede terminar antes de que se aplique).
+ * La referencia a la tabla va calificada a mano: en consultas de una sola tabla Drizzle
+ * quita el prefijo y `"id"` se resolvería a `pa.id` (siempre NULL).
+ * Solo se usa en consultas de lectura: los INSERT/UPDATE siguen con `proposalColumns`.
+ */
+export const proposalReadColumns = {
+  ...proposalColumns,
+  appliedAt: sql<string | null>`(select to_char(pa.applied_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') from proposal_applications pa where pa.proposal_id = "case_proposals"."id" limit 1)`.as(
+    'applied_at',
+  ),
 };
 
 const SUBJECT_FIELDS = ['obligationId', 'rentalId', 'contractId'] as const;
@@ -199,7 +215,7 @@ export class CasesService {
     const where = and(...filters);
     const [items, [total]] = await Promise.all([
       this.db
-        .select(proposalColumns)
+        .select(proposalReadColumns)
         .from(caseProposals)
         .where(where)
         .orderBy(asc(caseProposals.version))

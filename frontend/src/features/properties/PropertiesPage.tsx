@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search } from 'lucide-react'
-import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { SkeletonTable } from '../../components/Feedback'
+import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { Pagination } from '../../components/Pagination'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
+import { useToast } from '../../components/Toasts'
+import { friendlyError } from '../../lib/api/messages'
 import { PROPERTY_STATUS_LABELS, label } from '../../lib/format/labels'
 import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import { useProperties, useUpdateProperty } from './hooks'
@@ -18,6 +22,8 @@ export function PropertiesPage() {
   const q = debouncedSearch.trim().length >= 2 ? debouncedSearch.trim() : undefined
   const { data, isLoading, isError, error, refetch } = useProperties({ page, pageSize: 20, q })
   const [editing, setEditing] = useState<Property | 'new' | null>(null)
+  const toast = useToast()
+  const [actionError, setActionError] = useState<string | null>(null)
   const [archiving, setArchiving] = useState<Property | null>(null)
   const update = useUpdateProperty()
 
@@ -49,7 +55,7 @@ export function PropertiesPage() {
         </div>
       </div>
 
-      {isLoading && <LoadingBlock label="Cargando inmuebles…" />}
+      {isLoading && <SkeletonTable rows={4} cols={4} label="Cargando inmuebles…" />}
       {isError && <ErrorBlock error={error} onRetry={refetch} />}
       {!isLoading && !isError && data && data.items.length === 0 && q && (
         <EmptyBlock title={`Ningún resultado para "${q}"`} />
@@ -113,23 +119,30 @@ export function PropertiesPage() {
       {archiving && (
         <Modal title="Archivar inmueble" onClose={() => setArchiving(null)}>
           <p>
-            Un inmueble inactivo no admite nuevas obligaciones ni arriendos. ¿Archivar <strong>{archiving.name}</strong>?
+            Un inmueble archivado no admite nuevas obligaciones ni arriendos. ¿Archivar <strong>{archiving.name}</strong>?
           </p>
+          {actionError && <p className="field-error" role="alert">{actionError}</p>}
           <div className="row" style={{ justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setArchiving(null)}>
+            <button type="button" className="btn btn-secondary" onClick={() => setArchiving(null)} disabled={update.isPending}>
               Cancelar
             </button>
-            <button
-              type="button"
+            <LoadingButton
               className="btn btn-danger"
-              disabled={update.isPending}
+              loading={update.isPending}
+              loadingText="Archivando…"
               onClick={async () => {
-                await update.mutateAsync({ id: archiving.id, input: { status: 'archived' } })
-                setArchiving(null)
+                setActionError(null)
+                try {
+                  await update.mutateAsync({ id: archiving.id, input: { status: 'archived' } })
+                  toast.success('Inmueble archivado.')
+                  setArchiving(null)
+                } catch (err) {
+                  setActionError(friendlyError(err, 'save'))
+                }
               }}
             >
-              Archivar
-            </button>
+              Sí, archivar
+            </LoadingButton>
           </div>
         </Modal>
       )}

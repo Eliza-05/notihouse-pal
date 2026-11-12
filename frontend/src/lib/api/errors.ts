@@ -44,6 +44,17 @@ export class ApiError extends Error {
   }
 }
 
+/** La petición superó el tiempo máximo que esperamos (p. ej. Render despertando). Distinto de una red caída. */
+export class RequestTimeoutError extends Error {
+  /** true si la petición modificaba datos: el servidor pudo procesarla aunque no respondiera a tiempo. */
+  readonly isWrite: boolean
+  constructor(isWrite = false) {
+    super('La solicitud superó el tiempo de espera')
+    this.name = 'RequestTimeoutError'
+    this.isWrite = isWrite
+  }
+}
+
 /**
  * `fetch` lanza un TypeError cuando no hubo respuesta en absoluto
  * (red caída, CORS bloqueado, el proxy de Render cortó la conexión, etc.).

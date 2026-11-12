@@ -1,8 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { LoadingButton } from '../../components/Feedback'
 import { Modal } from '../../components/Modal'
-import { ApiError } from '../../lib/api/errors'
+import { useToast } from '../../components/Toasts'
+import { friendlyError } from '../../lib/api/messages'
 import { MoneyInput } from '../../components/MoneyInput'
 import { moneyToDisplay, toWireMoney } from '../../lib/format/cop'
 import { calendarDateField, positiveMoneyField } from '../../lib/format/validation'
@@ -47,6 +49,7 @@ export function ChargeFormModal({
     },
   })
 
+  const toast = useToast()
   async function onSubmit(values: FormValues) {
     try {
       if (isEdit) {
@@ -67,9 +70,10 @@ export function ChargeFormModal({
           expectedAmount: toWireMoney(values.expectedAmount),
         })
       }
+      toast.success(isEdit ? 'Cambios guardados.' : 'Cobro registrado.')
       onClose()
     } catch (err) {
-      if (err instanceof ApiError) setError('dueDate', { message: err.messages.join(' ') })
+      setError('dueDate', { message: friendlyError(err, 'save') })
     }
   }
 
@@ -104,9 +108,9 @@ export function ChargeFormModal({
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Cancelar
           </button>
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Guardando…' : 'Guardar'}
-          </button>
+          <LoadingButton type="submit" loading={isSubmitting} loadingText="Guardando…">
+            Guardar
+          </LoadingButton>
         </div>
       </form>
     </Modal>

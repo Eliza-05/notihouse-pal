@@ -1,0 +1,140 @@
+/* Avisos flotantes. Mismos tokens y lenguaje de vidrio que el resto de la app. */
+.toast-viewport {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 28px));
+  pointer-events: none;
+}
+.toast-region {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.toast-region:empty {
+  display: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 12px 12px 14px;
+  border-radius: var(--radius-md, 18px);
+  background: var(--surface-solid, rgba(255, 255, 255, 0.94));
+  border: 1px solid var(--border-soft, rgba(158, 27, 48, 0.08));
+  border-left: 4px solid var(--info, #2f5f9e);
+  box-shadow: var(--shadow-md, 0 12px 40px rgba(158, 27, 48, 0.14));
+  color: var(--text, #241b1a);
+  /* La entrada y la salida usan la misma transition: sin saltos ni parpadeos. */
+  animation: toast-in 0.28s var(--ease-smooth, cubic-bezier(0.22, 1, 0.36, 1));
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.toast.is-leaving {
+  opacity: 0;
+  transform: translateX(16px);
+}
+.toast-success {
+  border-left-color: var(--good, #4c8b5f);
+}
+.toast-error {
+  border-left-color: var(--critical, #9e1b30);
+}
+.toast-notice {
+  border-left-color: var(--accent, #c4223b);
+}
+.toast-icon {
+  margin-top: 1px;
+  display: inline-flex;
+}
+.toast-success .toast-icon {
+  color: var(--good, #4c8b5f);
+}
+.toast-error .toast-icon {
+  color: var(--critical, #9e1b30);
+}
+.toast-notice .toast-icon {
+  color: var(--accent, #c4223b);
+}
+.toast-info .toast-icon {
+  color: var(--info, #2f5f9e);
+}
+.toast-body {
+  min-width: 0;
+}
+.toast-title {
+  margin: 0 0 2px;
+  font-family: var(--font-display, inherit);
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+.toast-msg {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-muted, #6e615e);
+  overflow-wrap: anywhere;
+}
+.toast-action {
+  display: inline-block;
+  margin-top: 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--accent, #c4223b);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.toast-close {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted, #6e615e);
+  padding: 4px;
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 0;
+}
+.toast-close:hover {
+  background: var(--accent-soft, rgba(196, 34, 59, 0.1));
+}
+.toast-close:focus-visible,
+.toast-action:focus-visible {
+  outline: 2px solid var(--accent, #c4223b);
+  outline-offset: 2px;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* En móvil el dock inferior ocupa la parte baja: el aviso sube por encima. */
+@media (max-width: 900px) {
+  .toast-viewport {
+    right: 14px;
+    left: 14px;
+    width: auto;
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+    transition: opacity 0.1s linear;
+  }
+  .toast.is-leaving {
+    transform: none;
+  }
+}

@@ -1,5 +1,6 @@
 import { api } from '../../lib/api/client'
 import type {
+  ArchivedObligation,
   ConfirmOccurrenceInput,
   CreateObligationInput,
   CreateOccurrenceInput,
@@ -34,6 +35,11 @@ export function createObligation(input: CreateObligationInput) {
 
 export function updateObligation(id: string, input: UpdateObligationInput) {
   return api<Obligation>(`/obligations/${id}`, { method: 'PATCH', body: input })
+}
+
+/** Archivado manual: nunca borra; conserva períodos, documentos e historial. */
+export function archiveObligation(id: string) {
+  return api<ArchivedObligation>(`/obligations/${id}/archive`, { method: 'POST' })
 }
 
 export function listOccurrences(obligationId: string, status?: OccurrenceStatus, page = 1, pageSize = 50) {

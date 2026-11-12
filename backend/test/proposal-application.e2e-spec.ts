@@ -713,7 +713,16 @@ describe('Proposal application (e2e)', () => {
       const after = (
         await w.h.as(w.laura).get(`/cases/${c.id}/proposals`).expect(200)
       ).body;
-      expect(after).toEqual(before);
+      // El historial no cambia; solo appliedAt pasa de null a la fecha de aplicación (ISO).
+      expect(before.items[0].appliedAt).toBeNull();
+      expect(after.items[0].appliedAt).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+      );
+      const strip = (b: { items: Record<string, unknown>[] }) => ({
+        ...b,
+        items: b.items.map(({ appliedAt: _a, ...rest }) => rest),
+      });
+      expect(strip(after)).toEqual(strip(before));
       expect(after.items[0]).toMatchObject({
         version: 1,
         reviewStatus: 'accepted',

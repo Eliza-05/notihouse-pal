@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AttentionRow } from '../../components/AttentionRow'
-import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
+import { SkeletonRows } from '../../components/Feedback'
 import { Pagination } from '../../components/Pagination'
 import { resourcePathToRoute } from '../../lib/navigation'
 import { useMarkAlertRead } from '../alerts/hooks'
+import { useNotificationsState } from '../notifications/NotificationsProvider'
 import { useAttention } from './hooks'
 import type { AttentionItem } from '../../lib/api/types'
 
@@ -13,6 +15,7 @@ export function AttentionPage() {
   const navigate = useNavigate()
   const { data, isLoading, isError, error, refetch } = useAttention({ page, pageSize: 20 })
   const markRead = useMarkAlertRead()
+  const { reviewHeadings } = useNotificationsState()
 
   function openItem(item: AttentionItem) {
     if (item.alert && !item.alert.read) markRead.mutate(item.alert.id)
@@ -24,7 +27,7 @@ export function AttentionPage() {
       <h1>Bandeja de atención</h1>
       <p className="text-muted">Todo lo que necesita tu revisión, ordenado por urgencia.</p>
 
-      {isLoading && <LoadingBlock label="Cargando bandeja…" />}
+      {isLoading && <section className="glass"><SkeletonRows rows={5} label="Cargando bandeja…" /></section>}
       {isError && <ErrorBlock error={error} onRetry={refetch} />}
       {!isLoading && !isError && data && data.items.length === 0 && (
         <EmptyBlock title="No tienes nada pendiente" description="Aquí verás vencimientos, cobros y revisiones que requieran tu atención." />
@@ -34,7 +37,7 @@ export function AttentionPage() {
           <ul className="list">
             {data.items.map((item) => (
               <li key={`${item.kind}-${item.id}`}>
-                <AttentionRow item={item} onOpen={openItem} showAction />
+                <AttentionRow item={item} onOpen={openItem} showAction heading={reviewHeadings.get(item.id)} />
               </li>
             ))}
           </ul>

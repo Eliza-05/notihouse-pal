@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search } from 'lucide-react'
-import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { EmptyBlock, ErrorBlock } from '../../components/StateBlocks'
+import { SkeletonTable } from '../../components/Feedback'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { Pagination } from '../../components/Pagination'
-import { formatMoney } from '../../lib/format/money'
+import { listAmountText, recurrenceText } from './presentation'
 import { OBLIGATION_CATEGORY_LABELS, OBLIGATION_STATUS_LABELS, label } from '../../lib/format/labels'
 import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import { useProperties } from '../properties/hooks'
@@ -104,7 +105,7 @@ export function ObligationsPage() {
         </label>
       </div>
 
-      {isLoading && <LoadingBlock label="Cargando obligaciones…" />}
+      {isLoading && <SkeletonTable rows={6} cols={5} label="Cargando obligaciones…" />}
       {isError && <ErrorBlock error={error} onRetry={refetch} />}
       {!isLoading && !isError && data && data.items.length === 0 && q && (
         <EmptyBlock title={`Ningún resultado para "${q}"`} />
@@ -129,8 +130,8 @@ export function ObligationsPage() {
                   <th>Proveedor</th>
                   <th>Concepto</th>
                   <th>Categoría</th>
-                  <th>Monto esperado</th>
-                  <th>Vence (día)</th>
+                  <th>Monto base</th>
+                  <th>Vence</th>
                   <th>Estado</th>
                   <th>Recurrencia</th>
                 </tr>
@@ -143,12 +144,12 @@ export function ObligationsPage() {
                     </td>
                     <td>{o.concept}</td>
                     <td>{label(OBLIGATION_CATEGORY_LABELS, o.category)}</td>
-                    <td>{formatMoney(o.expectedAmount, o.currency)}</td>
-                    <td>{o.dueDay ?? '—'}</td>
+                    <td>{(() => { const a = listAmountText(o); return a.muted ? <span className="text-muted">{a.text}</span> : a.text })()}</td>
+                    <td>{o.dueDay ? `día ${o.dueDay}` : <span className="text-muted">Según cada período</span>}</td>
                     <td>
                       <StatusBadge label={label(OBLIGATION_STATUS_LABELS, o.status)} tone={toneFor.obligation(o.status)} />
                     </td>
-                    <td>{o.autoGenerate ? 'Automática' : 'Manual'}</td>
+                    <td>{recurrenceText(o)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -22,6 +22,10 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../lib/auth/useAuth'
 import { useAlertSummary } from '../features/alerts/hooks'
+import { NotificationBell } from '../features/notifications/NotificationBell'
+import { NotificationToaster } from '../features/notifications/NotificationToaster'
+import { NotificationsProvider } from '../features/notifications/NotificationsProvider'
+import { ToastViewport } from './Toasts'
 import { UserMenu } from './UserMenu'
 import './tokens.css'
 import './AppShell.css'
@@ -128,7 +132,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
+    <NotificationsProvider>
     <div className="app-shell">
+      <a href="#contenido" className="skip-link">Saltar al contenido</a>
+      <NotificationToaster />
+      <ToastViewport />
       <div className="ambient" aria-hidden="true">
         <div className="blob a" />
         <div className="blob b" />
@@ -181,26 +189,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* ---------------- Contenido ---------------- */}
-        <main className="app-main">
+        <main className="app-main" id="contenido" tabIndex={-1}>
           <header className="topbar">
             <div className="topbar-copy">
               <div className="topbar-title">{firstName ? `Hola, ${firstName}` : 'Hola'}</div>
               <div className="topbar-date">{todayLabel()}</div>
             </div>
             <div className="topbar-right">
-              <NavLink
-                to="/alertas"
-                className="icon-btn bell"
-                aria-label={unread ? `Notificaciones, ${unread} sin leer` : 'Notificaciones'}
-                title="Alertas"
-              >
-                <Bell aria-hidden="true" />
-                {unread !== null && unread > 0 && (
-                  <span className="bell-count" aria-hidden="true">
-                    {unread > 99 ? '99+' : unread}
-                  </span>
-                )}
-              </NavLink>
+              <NotificationBell />
               <button
                 type="button"
                 className="icon-btn theme-toggle"
@@ -277,5 +273,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
     </div>
+    </NotificationsProvider>
   )
 }

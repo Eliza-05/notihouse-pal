@@ -45,6 +45,7 @@ import { type CaseRow, lockCase } from './case-lifecycle.js';
 import { CASE_NOT_FOUND } from './cases.service.js';
 import type { ProposalApplicationResponseDto } from './dto/proposal-application.dto.js';
 import {
+  type ArchiveObligationActionData,
   type CreateRecurringObligationActionData,
   type CreateRecurringRentalActionData,
   type ParsedProposalAction,
@@ -365,6 +366,9 @@ export class ProposalApplicationService {
         correlationId,
       );
     }
+    if (parsed.action === 'archive_obligation') {
+      return this.executeArchiveObligation(tx, user, parsed, trace, correlationId);
+    }
     if (parsed.action === 'update_occurrence_details') {
       return this.executeUpdateOccurrenceDetails(tx, user, parsed);
     }
@@ -610,6 +614,36 @@ export class ProposalApplicationService {
       createdObligation: false,
       createdRental: false,
       recalculatedOccurrenceId,
+    };
+  }
+
+  /**
+   * `archive_obligation`: la MISMA regla del archivado manual
+   * (`ObligationsService.archiveLocked`). Si la obligación ya fue archivada
+   * (por la persona o por otra propuesta) responde 409 y no modifica nada.
+   */
+  private async executeArchiveObligation(
+    tx: DbTransaction,
+    user: AuthenticatedUser,
+    parsed: { data: ArchiveObligationActionData },
+    trace: Trace,
+    correlationId: string,
+  ): Promise<ExecutionResult> {
+    const { obligationId, expected } = parsed.data;
+    await this.obligationsService.archiveLocked(
+      tx,
+      user,
+      correlationId,
+      obligationId,
+      { via: 'proposal', ...trace },
+      expected,
+    );
+    return {
+      obligationId,
+      occurrenceId: null,
+      rentalId: null,
+      createdObligation: false,
+      createdRental: false,
     };
   }
 

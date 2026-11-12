@@ -1,4 +1,4 @@
-import { ApiError } from './errors'
+import { ApiError, RequestTimeoutError } from './errors'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL
 
@@ -38,7 +38,14 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
   body?: BodyInit | object | null
   /** true = no envía Authorization ni dispara onUnauthorized en un 401 (solo /auth/login y /health*). */
   skipAuth?: boolean
+  /**
+   * Tiempo máximo de espera en ms. Por defecto 60 s (Render puede tardar ~50 s en despertar);
+   * `0` lo desactiva. Al vencer lanza `RequestTimeoutError` (no es un error de red).
+   */
+  timeoutMs?: number
 }
+
+export const DEFAULT_TIMEOUT_MS = 60_000
 
 /**
  * Cliente HTTP único para toda la app. Centraliza:
@@ -52,7 +59,7 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
  * cada feature (§11.5), no aquí: este cliente hace una sola petición por llamada.
  */
 export async function api<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { body, skipAuth, headers, ...rest } = options
+  const { body, skipAuth, headers, timeoutMs = DEFAULT_TIMEOUT_MS, signal, ...rest } = options
 
   const finalHeaders = new Headers(headers)
   let finalBody: BodyInit | null | undefined
@@ -70,11 +77,31 @@ export async function api<T>(path: string, options: ApiRequestOptions = {}): Pro
     if (token) finalHeaders.set('Authorization', `Bearer ${token}`)
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...rest,
-    headers: finalHeaders,
-    body: finalBody,
-  })
+  // Un solo AbortController: lo cancela el llamador (React Query al desmontar) o nuestro temporizador.
+  const controller = new AbortController()
+  let timedOut = false
+  const onCallerAbort = () => controller.abort(signal?.reason)
+  if (signal) {
+    if (signal.aborted) controller.abort(signal.reason)
+    else signal.addEventListener('abort', onCallerAbort, { once: true })
+  }
+  const timer = timeoutMs > 0 ? setTimeout(() => { timedOut = true; controller.abort() }, timeoutMs) : undefined
+
+  let res: Response
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      ...rest,
+      signal: controller.signal,
+      headers: finalHeaders,
+      body: finalBody,
+    })
+  } catch (e) {
+    if (timedOut) throw new RequestTimeoutError(!['GET', 'HEAD', undefined].includes(rest.method?.toUpperCase()))
+    throw e
+  } finally {
+    if (timer) clearTimeout(timer)
+    signal?.removeEventListener('abort', onCallerAbort)
+  }
 
   if (res.status === 401 && !skipAuth) {
     authHooks.onUnauthorized()

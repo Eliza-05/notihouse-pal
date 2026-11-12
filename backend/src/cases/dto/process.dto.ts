@@ -150,6 +150,15 @@ export class ProposalResponseDto {
 
   @ApiProperty({ type: String, format: 'date-time' })
   updatedAt: Date;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Fecha en que la propuesta se aplicó a los datos de negocio; null si aún no se aplicó. Solo aparece en lecturas.',
+  })
+  appliedAt?: string | null;
 }
 
 export class ProposalPageDto extends PageMetaDto {

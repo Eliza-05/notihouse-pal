@@ -1,11 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { AttentionRow } from '../../components/AttentionRow'
-import { ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { ErrorBlock } from '../../components/StateBlocks'
+import { SkeletonRows, SkeletonStats } from '../../components/Feedback'
 import { resourcePathToRoute } from '../../lib/navigation'
 import { formatMoney } from '../../lib/format/money'
 import { useMarkAlertRead } from '../alerts/hooks'
 import { useAttention } from '../attention/hooks'
 import { useCases } from '../cases/hooks'
+import { useNotificationsState } from '../notifications/NotificationsProvider'
 import { useDashboardSummary } from './hooks'
 import type { AttentionItem } from '../../lib/api/types'
 
@@ -27,9 +29,18 @@ export function DashboardPage() {
   const { data: attention } = useAttention({ pageSize: 6 })
   const { data: processingCases } = useCases({ status: 'processing', pageSize: 5 })
   const markRead = useMarkAlertRead()
+  const { reviewHeadings } = useNotificationsState()
   const navigate = useNavigate()
 
-  if (isLoading) return <LoadingBlock label="Cargando resumen…" />
+  if (isLoading) {
+    return (
+      <div className="stack" style={{ gap: 22 }}>
+        <h1 className="visually-hidden">Resumen</h1>
+        <SkeletonStats count={6} label="Cargando resumen…" />
+        <section className="glass"><SkeletonRows rows={4} label="Cargando próximos vencimientos…" /></section>
+      </div>
+    )
+  }
   if (isError || !data) return <ErrorBlock error={error} onRetry={refetch} />
 
   function openItem(item: AttentionItem) {
@@ -48,7 +59,7 @@ export function DashboardPage() {
         <Kpi label="Obligaciones por vencer" value={data.obligations.periodsDueSoon} hint="Períodos en la ventana de aviso" tone="warning" to="/obligaciones" />
         <Kpi label="Cobros por vencer" value={data.rentCharges.dueSoon} hint="Arriendos por recibir pronto" tone="warning" to="/arriendos" />
         <Kpi label="Contratos por vencer" value={data.contracts.endingSoon} hint="Próximos a revisión" tone="warning" to="/contratos" />
-        <Kpi label="Revisiones pendientes" value={data.hitl.pending} hint="Propuestas de IA esperando tu decisión" tone="warning" to="/casos" />
+        <Kpi label="Revisiones pendientes" value={data.hitl.pending} hint="Propuestas de IA esperando tu decisión" tone="warning" to="/atencion" />
         <Kpi label="Alertas sin leer" value={data.alerts.unread} hint={`${data.cases.open} caso(s) abierto(s)`} to="/alertas" />
       </div>
 
@@ -65,7 +76,7 @@ export function DashboardPage() {
           <ul className="list">
             {attention.items.map((item) => (
               <li key={`${item.kind}-${item.id}`}>
-                <AttentionRow item={item} onOpen={openItem} />
+                <AttentionRow item={item} onOpen={openItem} heading={reviewHeadings.get(item.id)} />
               </li>
             ))}
           </ul>

@@ -2,6 +2,7 @@
 import { focusManager, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { ToastProvider } from '../../components/Toasts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
@@ -24,11 +25,13 @@ function mountCase() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } })
   const utils = render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/casos/c1']}>
-        <Routes>
-          <Route path="/casos/:id" element={<CaseDetailPage />} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/casos/c1']}>
+          <Routes>
+            <Route path="/casos/:id" element={<CaseDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
   return { qc, ...utils }
@@ -62,11 +65,36 @@ describe('detalle de caso sin F5', () => {
   it('processing → awaiting_human: "Revisar" aparece solo, sin recargar', async () => {
     mountCase()
     await tick(0)
-    expect(screen.queryByText('Revisar')).toBeNull()
+    expect(screen.queryByText('Revisar propuesta')).toBeNull()
+    expect(screen.getAllByText('Estamos procesando tu factura').length).toBeGreaterThan(0)
     caseStatus = 'awaiting_human'
     hitlList = [{ id: 'h1', caseId: 'c1', status: 'pending' }]
     await tick(5_100)
-    expect(screen.getByText('Revisar').getAttribute('href')).toBe('/revisiones/h1')
+    expect(screen.getByText('Revisar propuesta').getAttribute('href')).toBe('/revisiones/h1')
+    expect(screen.getAllByText('La propuesta está lista para revisar').length).toBeGreaterThan(0)
+  })
+
+  it('processing → failed: explica sin tecnicismos, ofrece volver a intentarlo y detiene el indicador', async () => {
+    const base = state.handler
+    state.handler = (path) => {
+      if (path === '/cases/c1' && caseStatus === 'failed') {
+        return { id: 'c1', type: 'household_obligation', source: 'form', status: 'failed', createdAt: '2026-11-10T10:00:00Z', statusReason: 'TEMPORAL: Gemini respondió 503 Service Unavailable' }
+      }
+      return base(path)
+    }
+    mountCase()
+    await tick(0)
+    caseStatus = 'failed'
+    await tick(5_100)
+    const text = document.body.textContent ?? ''
+    expect(text).toMatch(/No pudimos completar el análisis/)
+    expect(text).toMatch(/El asistente no está disponible en este momento/)
+    expect(text).not.toMatch(/Gemini|503|TEMPORAL|Service Unavailable/)
+    expect(screen.getByRole('link', { name: 'Volver a intentarlo' }).getAttribute('href')).toBe('/asistente')
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull()
+    const n = calls.length
+    await tick(60_000)
+    expect(calls.length).toBe(n)
   })
 
   it('awaiting_human → completed: se actualiza el estado y se detiene el polling', async () => {
@@ -74,12 +102,13 @@ describe('detalle de caso sin F5', () => {
     hitlList = [{ id: 'h1', caseId: 'c1', status: 'pending' }]
     mountCase()
     await tick(0)
-    expect(screen.getAllByText('Esperando tu decisión').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('La propuesta está lista para revisar').length).toBeGreaterThan(0)
     caseStatus = 'completed'
     hitlList = [{ id: 'h1', caseId: 'c1', status: 'approved' }]
     await tick(10_100)
-    expect(screen.getAllByText('Completado').length).toBeGreaterThan(0)
-    expect(screen.queryByText('Revisar')).toBeNull()
+    // «Cerrado» ≠ «aplicado»: el titular lo dice la revisión, no el estado del caso.
+    expect(screen.getAllByText(/Cerrado/).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Revisar propuesta')).toBeNull()
     const n = calls.length
     await tick(60_000)
     expect(calls.length).toBe(n)
@@ -96,7 +125,7 @@ describe('detalle de caso sin F5', () => {
     focusManager.setFocused(true)
     await tick(0)
     expect(count('/cases/c1')).toBeGreaterThan(n)
-    expect(screen.getAllByText('Esperando tu decisión').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('La propuesta está lista para revisar').length).toBeGreaterThan(0)
   })
 
   it('al desmontar se limpian los intervalos', async () => {
@@ -118,11 +147,13 @@ describe('revisión HITL', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={['/revisiones/h1']}>
-          <Routes>
-            <Route path="/revisiones/:id" element={<HitlDetailPage />} />
-          </Routes>
-        </MemoryRouter>
+        <ToastProvider>
+          <MemoryRouter initialEntries={['/revisiones/h1']}>
+            <Routes>
+              <Route path="/revisiones/:id" element={<HitlDetailPage />} />
+            </Routes>
+          </MemoryRouter>
+        </ToastProvider>
       </QueryClientProvider>,
     )
   }
@@ -149,14 +180,14 @@ describe('revisión HITL', () => {
     mountHitl()
     await tick(0)
     expect(screen.getByText('Entendido')).toBeTruthy()
-    expect(screen.queryByText('Aprobar')).toBeNull()
-    expect(screen.queryByText('Aplicar')).toBeNull()
+    expect(screen.queryByText('Aprobar propuesta')).toBeNull()
+    expect(screen.queryByText('Aplicar propuesta')).toBeNull()
     expect(screen.queryByText(/providerName/)).toBeNull()
     expect(screen.getByText(/Falta proveedor/)).toBeTruthy()
     fireEvent.click(screen.getByText('Entendido'))
     await tick(0)
     expect(calls).toContain('/hitl-requests/h1/decision') // misma transición de servidor: approved
-    expect(screen.queryByText('Aplicar')).toBeNull()
+    expect(screen.queryByText('Aplicar propuesta')).toBeNull()
     expect(screen.getByText(/No se creó ni se cambió ningún dato/)).toBeTruthy()
   })
 
@@ -167,13 +198,13 @@ describe('revisión HITL', () => {
     })
     mountHitl()
     await tick(0)
-    expect(screen.queryByText('Aplicar')).toBeNull()
-    fireEvent.click(screen.getByText('Aprobar'))
+    expect(screen.queryByText('Aplicar propuesta')).toBeNull()
+    fireEvent.click(screen.getByText('Aprobar propuesta'))
     await tick(0)
     const before = count('/obligations/o1')
-    fireEvent.click(screen.getByText('Aplicar'))
+    fireEvent.click(screen.getByText('Aplicar propuesta'))
     await tick(0)
-    expect(screen.getByText('Cambio aplicado correctamente.')).toBeTruthy()
+    expect(screen.getByText('Propuesta aplicada.')).toBeTruthy()
     expect(count('/obligations/o1')).toBeGreaterThan(before)
     expect(screen.getAllByText('20').length).toBeGreaterThan(0)
   })
@@ -185,7 +216,8 @@ describe('revisión HITL', () => {
     })
     mountHitl()
     await tick(0)
-    expect(screen.getByText('$98.500,00')).toBeTruthy()
+    expect(screen.getAllByText(/\$98\.500/).length).toBeGreaterThan(0)
+    expect(screen.getByText('Monto de cada período')).toBeTruthy()
   })
 })
 

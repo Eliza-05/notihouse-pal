@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ErrorBlock, LoadingBlock } from '../../components/StateBlocks'
+import { SkeletonCard } from '../../components/Feedback'
+import { ErrorBlock } from '../../components/StateBlocks'
 import { StatusBadge, toneFor } from '../../components/StatusBadge'
 import { formatMoney } from '../../lib/format/money'
 import { formatCalendarDate } from '../../lib/format/dates'
@@ -19,7 +20,7 @@ export function PropertyDetailPage() {
   const { data: contracts } = useContracts({ propertyId: id, pageSize: 50 })
   const [editing, setEditing] = useState(false)
 
-  if (isLoading) return <LoadingBlock label="Cargando inmueble…" />
+  if (isLoading) return <SkeletonCard lines={4} label="Cargando inmueble…" />
   if (isError || !property) return <ErrorBlock error={error} onRetry={refetch} />
 
   return (

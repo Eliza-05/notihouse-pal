@@ -1,0 +1,1 @@
+ALTER TYPE "public"."proposal_application_action" ADD VALUE 'archive_obligation';

@@ -473,6 +473,15 @@
 .app-shell table.data-table tbody tr:last-child td {
   border-bottom: none;
 }
+/* Objetivo táctil mínimo de 24×24 px (WCAG 2.5.8) en los enlaces de las tablas, sin mover el diseño. */
+.app-shell table.data-table td a {
+  display: inline-block;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 3px 4px;
+  margin: -3px -4px;
+  box-sizing: border-box;
+}
 .app-shell table.data-table tbody tr td:first-child {
   border-radius: var(--radius-sm) 0 0 var(--radius-sm);
   font-weight: 600;
@@ -626,6 +635,24 @@
 .app-shell p.text-muted,
 .app-shell div.text-muted {
   font-size: 0.86rem;
+}
+.app-shell .skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -4rem;
+  z-index: 1000;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface, #fff);
+  color: inherit;
+  font-weight: 600;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+.app-shell .skip-link:focus {
+  top: 0.75rem;
+}
+.app-main:focus {
+  outline: none;
 }
 .app-shell .visually-hidden {
   position: absolute;
